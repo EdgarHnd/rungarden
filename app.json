@@ -17,7 +17,8 @@
       "infoPlist": {
         "NSHealthShareUsageDescription": "This app needs access to health data to track your running activities and provide insights about your fitness progress.",
         "NSHealthUpdateUsageDescription": "This app needs permission to write workout data to Apple Health to keep your fitness data synchronized.",
-        "NSHealthClinicalHealthRecordsShareUsageDescription": "This app needs access to health data to track your running activities."
+        "NSHealthClinicalHealthRecordsShareUsageDescription": "This app needs access to health data to track your running activities.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -52,7 +53,8 @@
           "healthUpdatePermission": "This app needs permission to write workout data to Apple Health to keep your fitness data synchronized."
         }
       ],
-      "expo-font"
+      "expo-font",
+      "expo-secure-store"
     ],
     "experiments": {
       "typedRoutes": true

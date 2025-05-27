@@ -1,8 +1,8 @@
 import SuggestedActivityCard from '@/components/SuggestedActivityCard';
 import WorkoutCard from '@/components/WorkoutCard';
+import { RunningActivity } from '@/services/HealthService';
 import React, { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
-import { RunningActivity } from '../services/HealthService';
 import ActivityDetailModal from './ActivityDetailModal';
 import TrainingDetailModal from './TrainingDetailModal';
 

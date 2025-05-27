@@ -1,8 +1,8 @@
+import DayCard from '@/components/DayCard';
+import HealthService, { RunningActivity } from '@/services/HealthService';
 import React, { useEffect, useRef, useState } from 'react';
-import { Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Animated, Easing, Image, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Rive from 'rive-react-native';
-import DayCard from '../components/DayCard';
-import HealthService, { RunningActivity } from '../services/HealthService';
 
 interface Activity {
   type: 'run' | 'rest';
@@ -73,6 +73,10 @@ const weeklyPlan: Activity[] = [
   }
 ];
 
+// Constants for scrolling background
+const SCROLLING_BG_LOOP_WIDTH = 2000; // The width of one segment of the looping background
+const SCROLLING_BG_ANIMATION_DURATION = 8000; // Duration for one loop
+
 const getSuggestedActivityForDay = (date: Date): Activity => {
   const dayIndex = date.getDay(); // 0 = Sunday, 1 = Monday, etc.
   return weeklyPlan[dayIndex];
@@ -97,22 +101,21 @@ export default function HomeScreen() {
     loadTodayActivity();
 
     // Start the background scrolling animation
-    const startScrolling = () => {
-      const animate = () => {
-        scrollX.setValue((0)); // Reset to start position
-        Animated.timing(scrollX, {
-          toValue: -1000, // Scroll from 0 to -100 (left to right)
-          duration: 8000, // 8 seconds for one cycle
-          useNativeDriver: true,
-        }).start(() => {
-          animate(); // Restart the animation when it completes
-        });
-      };
-      animate();
-    };
+    scrollX.setValue(0); // Ensure starting at 0
+    const bgAnimation = Animated.loop(
+      Animated.timing(scrollX, {
+        toValue: -SCROLLING_BG_LOOP_WIDTH,
+        duration: SCROLLING_BG_ANIMATION_DURATION,
+        easing: Easing.linear, // Ensures constant speed
+        useNativeDriver: true,
+      })
+    );
+    bgAnimation.start();
 
-    startScrolling();
-  }, []);
+    return () => {
+      bgAnimation.stop(); // Clean up animation on unmount
+    };
+  }, [scrollX]); // scrollX is a stable ref, but good practice to list if logic depends on it. Or keep [] if mount-only.
 
   const loadTodayActivity = async () => {
     try {
@@ -248,15 +251,23 @@ export default function HomeScreen() {
   try {
     return (
       <View style={styles.container}>
-        <Animated.Image
-          source={require('../assets/images/bg/bgstadium.jpg')}
+        <Animated.View
           style={[
-            styles.backgroundImage,
+            styles.scrollingBackgroundContainer,
             {
               transform: [{ translateX: scrollX }],
             },
           ]}
-        />
+        >
+          <Image
+            source={require('@/assets/images/bg/bgstadium.jpg')}
+            style={styles.scrollingBackgroundImage}
+          />
+          <Image
+            source={require('@/assets/images/bg/bgstadium.jpg')}
+            style={styles.scrollingBackgroundImage}
+          />
+        </Animated.View>
         <View style={styles.content}>
           <View style={styles.logoContainer}>
             <Text style={styles.title}>Koko</Text>
@@ -267,7 +278,8 @@ export default function HomeScreen() {
 
           <View style={styles.animationContainer}>
             <Rive
-              url="https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a"
+              //url="https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a"
+              url="https://fast-dragon-309.convex.cloud/api/storage/04bf0340-7d79-4865-8dd6-2966b4befaff"
               style={styles.animation}
               autoplay={true}
             />
@@ -342,15 +354,19 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  backgroundImage: {
+  scrollingBackgroundContainer: {
     position: 'absolute',
     top: -300,
     left: 0,
-    right: 0,
-    bottom: 0,
-    width: '500%', // Make it wider to allow for scrolling
-    height: '140%',
-    resizeMode: 'cover',
+    height: '140%', // Should match original visual intent
+    width: SCROLLING_BG_LOOP_WIDTH * 2, // To hold two images side-by-side
+    flexDirection: 'row', // Arrange images horizontally
+    zIndex: 0, // Ensure it's behind other content
+  },
+  scrollingBackgroundImage: {
+    width: SCROLLING_BG_LOOP_WIDTH,
+    height: '100%',
+    resizeMode: 'cover', // Ensures the image covers the segment, maintaining aspect ratio
   },
   content: {
     flex: 1,

@@ -1,11 +1,34 @@
+import { useAuthActions } from "@convex-dev/auth/react";
+import { useRouter } from 'expo-router';
 import React from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { Alert, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ProfileScreen() {
+  const { signOut } = useAuthActions();
+  const router = useRouter();
+
+  const handleSignOut = async () => {
+    try {
+      await signOut();
+      // No need to manually navigate - Convex auth will handle this
+    } catch (error) {
+      Alert.alert("Error", "Failed to sign out");
+      console.error("Sign out error:", error);
+    }
+  };
+
   return (
     <ScrollView style={styles.container}>
       <View style={styles.content}>
-        <Text style={styles.title}>SF Pro Rounded Font Demo</Text>
+        <Text style={styles.title}>Profile & Settings</Text>
+
+        {/* Sign Out Section */}
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Account</Text>
+          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
+            <Text style={styles.signOutButtonText}>Sign Out</Text>
+          </TouchableOpacity>
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Available Font Weights</Text>
@@ -169,5 +192,16 @@ const styles = StyleSheet.create({
     padding: 12,
     borderRadius: 8,
     lineHeight: 18,
+  },
+  signOutButton: {
+    backgroundColor: '#FF3B30',
+    padding: 12,
+    borderRadius: 8,
+    alignItems: 'center',
+  },
+  signOutButtonText: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: 'white',
   },
 }); 

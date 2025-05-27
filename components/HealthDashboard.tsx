@@ -1,6 +1,6 @@
+import HealthService, { HealthStats, RunningActivity } from '@/services/HealthService';
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Button, Platform, ScrollView, StyleSheet, Text, View } from 'react-native';
-import HealthService, { HealthStats, RunningActivity } from '../services/HealthService';
 
 export default function HealthDashboard() {
   const [isLoading, setIsLoading] = useState(true);

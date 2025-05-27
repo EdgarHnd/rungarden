@@ -1,4 +1,5 @@
 import ActivityDetailModal from '@/components/ActivityDetailModal';
+import HealthService, { HealthStats, RunningActivity } from '@/services/HealthService';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
@@ -10,7 +11,6 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
-import HealthService, { HealthStats, RunningActivity } from '../services/HealthService';
 
 export default function RunsScreen() {
   const [isLoading, setIsLoading] = useState(true);

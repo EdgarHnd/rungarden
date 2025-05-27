@@ -1,3 +1,4 @@
+import { RunningActivity } from '@/services/HealthService';
 import React from 'react';
 import {
   Modal,
@@ -7,7 +8,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import { RunningActivity } from '../services/HealthService';
 
 interface ActivityDetailModalProps {
   activity: RunningActivity | null;
