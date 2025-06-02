@@ -25,6 +25,22 @@ function AuthenticatedApp() {
   return (
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(app)" />
+      <Stack.Screen
+        name="activity-detail"
+        options={{
+          presentation: 'card',
+          gestureEnabled: true,
+          animation: 'slide_from_right',
+        }}
+      />
+      <Stack.Screen
+        name="training-detail"
+        options={{
+          presentation: 'card',
+          gestureEnabled: true,
+          animation: 'slide_from_right',
+        }}
+      />
     </Stack>
   );
 }

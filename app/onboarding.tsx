@@ -1,5 +1,6 @@
 import { useAuthActions } from "@convex-dev/auth/react";
 import { makeRedirectUri } from "expo-auth-session";
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { openAuthSessionAsync } from "expo-web-browser";
 import React from 'react';
@@ -13,16 +14,19 @@ export default function OnboardingScreen() {
 
   const handleAnonymousSignIn = async () => {
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await signIn("anonymous");
-      // No need to manually navigate - Convex auth will handle this
+      router.replace('/(app)');
     } catch (error) {
-      Alert.alert("Error", "Failed to sign in");
       console.error("Sign in error:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", "Failed to sign in anonymously");
     }
   };
 
   const handleGoogleSignIn = async () => {
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       const { redirect } = await signIn("google", { redirectTo });
 
       if (Platform.OS === "web") {
@@ -36,17 +40,25 @@ export default function OnboardingScreen() {
         const { url } = result;
         const code = new URL(url).searchParams.get("code")!;
         await signIn("google", { code });
-        // No need to manually navigate - Convex auth will handle this
+        router.replace('/(app)');
       }
     } catch (error) {
-      Alert.alert("Error", "Failed to sign in with Google");
       console.error("Google sign in error:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", "Failed to sign in with Google");
     }
   };
 
   const handleAppleSignIn = async () => {
-    // Placeholder for Apple Sign-In
-    Alert.alert("Coming Soon", "Apple Sign-In is not yet implemented.");
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      await signIn("apple");
+      router.replace('/(app)');
+    } catch (error) {
+      console.error("Apple sign in error:", error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert("Error", "Failed to sign in with Apple");
+    }
   };
 
   return (

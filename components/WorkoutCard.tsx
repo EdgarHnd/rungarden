@@ -1,6 +1,6 @@
-import WeeklyProgressBar from '@/components/WeeklyProgressBar';
+import * as Haptics from 'expo-haptics';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface WorkoutCardProps {
   title?: string;
@@ -23,10 +23,17 @@ export default function WorkoutCard({
   weeklyGoal = "20",
   onPress
 }: WorkoutCardProps) {
+  const handlePress = () => {
+    if (onPress) {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      onPress();
+    }
+  };
+
   return (
     <TouchableOpacity
       style={styles.workoutCard}
-      onPress={onPress}
+      onPress={handlePress}
       activeOpacity={onPress ? 0.7 : 1}
       disabled={!onPress}
     >
@@ -44,8 +51,6 @@ export default function WorkoutCard({
           <Text style={styles.statValue}>🔥 {calories} Cal</Text>
         </View>
       </View>
-
-      <WeeklyProgressBar weeklyProgress={weeklyProgress} weeklyGoal={weeklyGoal} />
     </TouchableOpacity>
   );
 }
@@ -56,6 +61,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     padding: 20,
     marginVertical: 8,
+    width: Dimensions.get('window').width - 40,
     shadowColor: '#000',
     shadowOffset: {
       width: 0,

@@ -1,0 +1,303 @@
+import { getAuthUserId } from "@convex-dev/auth/server";
+import { v } from "convex/values";
+import { mutation, query } from "./_generated/server";
+
+// Calculate level from total distance
+function calculateLevelFromDistance(totalDistance: number): number {
+  let level = 1;
+  
+  // Progressive distance requirements: level^2 * 2.5km
+  while (getDistanceForLevel(level + 1) <= totalDistance) {
+    level++;
+  }
+  
+  return level;
+}
+
+// Distance required for each level (cumulative, in meters)
+function getDistanceForLevel(level: number): number {
+  if (level <= 1) return 0;
+  return Math.floor(Math.pow(level - 1, 2) * 2500); // 2500 meters = 2.5km
+}
+
+// Get user's activities with pagination
+export const getUserActivities = query({
+  args: {
+    limit: v.optional(v.number()),
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const limit = args.limit ?? 30;
+    const days = args.days ?? 30;
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - days);
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_user_and_date", (q) => 
+        q.eq("userId", userId)
+         .gte("startDate", startDate.toISOString())
+         .lte("startDate", endDate.toISOString())
+      )
+      .order("desc")
+      .take(limit);
+
+    return activities;
+  },
+});
+
+// Sync activities from HealthKit (bulk insert/update)
+export const syncActivitiesFromHealthKit = mutation({
+  args: {
+    activities: v.array(v.object({
+      healthKitUuid: v.string(),
+      startDate: v.string(),
+      endDate: v.string(),
+      duration: v.number(),
+      distance: v.number(),
+      calories: v.number(),
+      averageHeartRate: v.optional(v.number()),
+      workoutName: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const now = new Date().toISOString();
+    const syncResults = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      distanceGained: 0,
+      leveledUp: false,
+      newLevel: 1,
+      oldLevel: 1,
+    };
+
+    // Get current profile for level tracking
+    const currentProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    let totalDistanceGained = 0;
+
+    for (const activity of args.activities) {
+      // Check if activity already exists
+      const existingActivity = await ctx.db
+        .query("activities")
+        .withIndex("by_healthkit_uuid", (q) => 
+          q.eq("healthKitUuid", activity.healthKitUuid)
+        )
+        .first();
+
+      // Calculate pace (min/km)
+      const pace = activity.distance > 0 ? 
+        (activity.duration / (activity.distance / 1000)) : undefined;
+
+      if (existingActivity) {
+        // Update existing activity if data has changed
+        const hasChanges = 
+          existingActivity.duration !== activity.duration ||
+          existingActivity.distance !== activity.distance ||
+          existingActivity.calories !== activity.calories ||
+          existingActivity.averageHeartRate !== activity.averageHeartRate;
+
+        if (hasChanges) {
+          await ctx.db.patch(existingActivity._id, {
+            ...activity,
+            pace,
+            syncedAt: now,
+          });
+          syncResults.updated++;
+        } else {
+          syncResults.skipped++;
+        }
+      } else {
+        // Create new activity and track distance
+        await ctx.db.insert("activities", {
+          userId,
+          ...activity,
+          pace,
+          syncedAt: now,
+          createdAt: now,
+        });
+        syncResults.created++;
+
+        // Track distance for new activity
+        totalDistanceGained += activity.distance;
+      }
+    }
+
+    // Update user profile totals after sync
+    await updateUserProfileTotals(ctx, userId);
+    
+    // Update level if any new distance was gained
+    if (totalDistanceGained > 0 && currentProfile) {
+      const oldTotalDistance = currentProfile.totalDistance || 0;
+      const newTotalDistance = oldTotalDistance + totalDistanceGained;
+      const oldLevel = currentProfile.level || 1;
+      const newLevel = calculateLevelFromDistance(newTotalDistance);
+      
+      await ctx.db.patch(currentProfile._id, {
+        level: newLevel,
+        updatedAt: now,
+      });
+
+      syncResults.distanceGained = totalDistanceGained;
+      syncResults.leveledUp = newLevel > oldLevel;
+      syncResults.newLevel = newLevel;
+      syncResults.oldLevel = oldLevel;
+    }
+    
+    // Update last sync date
+    await updateLastSyncDate(ctx, userId, now);
+
+    return syncResults;
+  },
+});
+
+// Get activity statistics
+export const getActivityStats = query({
+  args: {
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const days = args.days ?? 30;
+    const startDate = new Date();
+    startDate.setDate(startDate.getDate() - days);
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_user_and_date", (q) => 
+        q.eq("userId", userId).gte("startDate", startDate.toISOString())
+      )
+      .collect();
+
+    if (activities.length === 0) {
+      return {
+        totalDistance: 0,
+        totalWorkouts: 0,
+        averagePace: 0,
+        totalCalories: 0,
+        averageDistance: 0,
+        longestRun: 0,
+      };
+    }
+
+    const totalDistance = activities.reduce((sum, a) => sum + a.distance, 0);
+    const totalCalories = activities.reduce((sum, a) => sum + a.calories, 0);
+    const validPaces = activities.filter(a => a.pace && a.pace > 0);
+    const averagePace = validPaces.length > 0 ? 
+      validPaces.reduce((sum, a) => sum + a.pace!, 0) / validPaces.length : 0;
+    const longestRun = Math.max(...activities.map(a => a.distance));
+
+    return {
+      totalDistance,
+      totalWorkouts: activities.length,
+      averagePace,
+      totalCalories,
+      averageDistance: totalDistance / activities.length,
+      longestRun,
+    };
+  },
+});
+
+// Delete an activity
+export const deleteActivity = mutation({
+  args: {
+    activityId: v.id("activities"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity || activity.userId !== userId) {
+      throw new Error("Activity not found or unauthorized");
+    }
+
+    await ctx.db.delete(args.activityId);
+    
+    // Update user profile totals after deletion
+    await updateUserProfileTotals(ctx, userId);
+
+    return { success: true };
+  },
+});
+
+// Helper function to update user profile totals
+async function updateUserProfileTotals(ctx: any, userId: any) {
+  const allActivities = await ctx.db
+    .query("activities")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .collect();
+
+  const totalDistance = allActivities.reduce((sum: number, a: any) => sum + a.distance, 0);
+  const totalCalories = allActivities.reduce((sum: number, a: any) => sum + a.calories, 0);
+  const totalWorkouts = allActivities.length;
+  
+  // Calculate level from total distance
+  const level = calculateLevelFromDistance(totalDistance);
+
+  const existingProfile = await ctx.db
+    .query("userProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+
+  const now = new Date().toISOString();
+
+  if (existingProfile) {
+    await ctx.db.patch(existingProfile._id, {
+      totalDistance,
+      totalWorkouts,
+      totalCalories,
+      level,
+      updatedAt: now,
+    });
+  } else {
+    await ctx.db.insert("userProfiles", {
+      userId,
+      weeklyGoal: 10000, // Default 10km
+      totalDistance,
+      totalWorkouts,
+      totalCalories,
+      level,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+}
+
+// Helper function to update last sync date
+async function updateLastSyncDate(ctx: any, userId: any, syncDate: string) {
+  const existingProfile = await ctx.db
+    .query("userProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+
+  if (existingProfile) {
+    await ctx.db.patch(existingProfile._id, {
+      lastSyncDate: syncDate,
+      updatedAt: syncDate,
+    });
+  }
+} 

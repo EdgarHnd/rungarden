@@ -1,10 +1,13 @@
-import ActivityDetailModal from '@/components/ActivityDetailModal';
-import HealthService, { HealthStats, RunningActivity } from '@/services/HealthService';
+import DatabaseHealthService, { DatabaseActivity, SyncResult } from '@/services/DatabaseHealthService';
+import { useConvex, useConvexAuth } from "convex/react";
+import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   Alert,
   Platform,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -13,43 +16,76 @@ import {
 } from 'react-native';
 
 export default function RunsScreen() {
+  const { isAuthenticated } = useConvexAuth();
+  const convex = useConvex();
+
   const [isLoading, setIsLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activities, setActivities] = useState<RunningActivity[]>([]);
-  const [stats, setStats] = useState<HealthStats | null>(null);
+  const [activities, setActivities] = useState<DatabaseActivity[]>([]);
+  const [stats, setStats] = useState<any>(null);
   const [hasPermissions, setHasPermissions] = useState(false);
-  const [selectedActivity, setSelectedActivity] = useState<RunningActivity | null>(null);
-  const [isModalVisible, setIsModalVisible] = useState(false);
+  const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
+  const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
 
   useEffect(() => {
-    checkPermissions();
-  }, []);
+    if (isAuthenticated && convex) {
+      const service = new DatabaseHealthService(convex);
+      setHealthService(service);
+      checkPermissions(service);
+    }
+  }, [isAuthenticated, convex]);
 
-  const checkPermissions = async () => {
+  const checkPermissions = async (service: DatabaseHealthService) => {
     try {
-      // Try to load health data directly
-      await loadHealthData();
+      // Try to load data from database first
+      await loadHealthData(service, false); // Load from cache first
       setHasPermissions(true);
+
+      // Then try to sync in background if needed
+      if (Platform.OS === 'ios') {
+        const syncNeeded = await service.isSyncNeeded();
+        if (syncNeeded) {
+          console.log('Background sync needed, attempting...');
+          await syncInBackground(service);
+        }
+      }
     } catch (err) {
-      // If loading fails, assume we need permissions
-      setHasPermissions(false);
+      console.error('Error checking permissions or loading data:', err);
+
+      if (Platform.OS === 'ios') {
+        // If database is empty, we need HealthKit permissions
+        setHasPermissions(false);
+      } else {
+        setError('This feature requires iOS and Apple HealthKit');
+      }
       setIsLoading(false);
     }
   };
 
   const requestPermissions = async () => {
+    if (!healthService) return;
+
     try {
       setIsLoading(true);
       setError(null);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       // Initialize HealthKit and request permissions
-      await HealthService.initializeHealthKit();
+      await healthService.initializeHealthKit();
       setHasPermissions(true);
-      await loadHealthData();
+
+      // Force sync after getting permissions
+      const syncResult = await healthService.forceSyncFromHealthKit(30);
+      setLastSyncResult(syncResult);
+
+      await loadHealthData(healthService, false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (err) {
       console.error('Error requesting permissions:', err);
       setError(err instanceof Error ? err.message : 'Failed to request permissions');
       setHasPermissions(false);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
 
       // Show alert with instructions if permissions are denied
       Alert.alert(
@@ -62,32 +98,84 @@ export default function RunsScreen() {
     }
   };
 
-  const loadHealthData = async () => {
+  const syncInBackground = async (service: DatabaseHealthService) => {
+    try {
+      const syncResult = await service.forceSyncFromHealthKit(30);
+      setLastSyncResult(syncResult);
+
+      if (syncResult.created > 0 || syncResult.updated > 0) {
+        // Reload data if there were changes
+        await loadHealthData(service, false);
+      }
+    } catch (err) {
+      console.error('Background sync failed:', err);
+      // Don't show error to user for background sync failures
+    }
+  };
+
+  const loadHealthData = async (service: DatabaseHealthService, forceSync: boolean = false) => {
     try {
       setIsLoading(true);
       setError(null);
 
-      // Get running activities for the last 30 days
-      const runningActivities = await HealthService.getRunningActivities(30);
+      let activitiesData: DatabaseActivity[];
+
+      if (forceSync) {
+        // Force sync from HealthKit
+        const syncResult = await service.forceSyncFromHealthKit(30);
+        setLastSyncResult(syncResult);
+        activitiesData = await service.getActivitiesFromDatabase(30, 50);
+      } else {
+        // Use auto-sync (will sync if needed)
+        activitiesData = await service.getActivitiesWithAutoSync(30);
+      }
+
       // Sort activities by date in descending order (most recent first)
-      const sortedActivities = runningActivities.sort((a, b) =>
+      const sortedActivities = activitiesData.sort((a, b) =>
         new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
       );
       setActivities(sortedActivities);
 
-      // Calculate stats from activities
-      const healthStats = HealthService.calculateHealthStats(sortedActivities);
+      // Get stats from database
+      const healthStats = await service.getActivityStats(30);
       setStats(healthStats);
     } catch (err) {
+      console.error('Error loading health data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load health data');
     } finally {
       setIsLoading(false);
+      setIsRefreshing(false);
     }
   };
 
-  const handleActivityPress = (activity: RunningActivity) => {
-    setSelectedActivity(activity);
-    setIsModalVisible(true);
+  const handleRefresh = async () => {
+    if (!healthService) return;
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsRefreshing(true);
+    await loadHealthData(healthService, true); // Force sync on refresh
+  };
+
+  const handleActivityPress = (activity: DatabaseActivity) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    // Convert database activity to the format expected by the activity detail screen
+    const activityForDetail = {
+      uuid: activity.healthKitUuid,
+      startDate: activity.startDate,
+      endDate: activity.endDate,
+      duration: activity.duration,
+      distance: activity.distance,
+      calories: activity.calories,
+      averageHeartRate: activity.averageHeartRate,
+      workoutName: activity.workoutName,
+    };
+
+    router.push({
+      pathname: '/activity-detail',
+      params: {
+        activity: JSON.stringify(activityForDetail)
+      }
+    });
   };
 
   const formatDate = (dateString: string) => {
@@ -122,7 +210,7 @@ export default function RunsScreen() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading && !isRefreshing) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -155,7 +243,7 @@ export default function RunsScreen() {
     );
   }
 
-  if (error) {
+  if (error && activities.length === 0) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -163,7 +251,7 @@ export default function RunsScreen() {
         </View>
         <View style={styles.errorContainer}>
           <Text style={styles.error}>{error}</Text>
-          <TouchableOpacity style={styles.button} onPress={checkPermissions}>
+          <TouchableOpacity style={styles.button} onPress={() => healthService && loadHealthData(healthService, true)}>
             <Text style={styles.buttonText}>Try Again</Text>
           </TouchableOpacity>
         </View>
@@ -176,10 +264,27 @@ export default function RunsScreen() {
       {/* Header */}
       <View style={styles.header}>
         <Text style={styles.headerTitle}>Activities</Text>
-        <Text style={styles.headerSubtitle}>Your running history</Text>
+        <View style={styles.headerSubtitleContainer}>
+          <Text style={styles.headerSubtitle}>Your running history</Text>
+          {lastSyncResult && (
+            <Text style={styles.syncStatus}>
+              Last sync: {lastSyncResult.created} new, {lastSyncResult.updated} updated
+            </Text>
+          )}
+        </View>
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        style={styles.content}
+        showsVerticalScrollIndicator={false}
+        refreshControl={
+          <RefreshControl
+            refreshing={isRefreshing}
+            onRefresh={handleRefresh}
+            tintColor="#007AFF"
+          />
+        }
+      >
         {/* Stats Summary */}
         {stats && (
           <View style={styles.statsContainer}>
@@ -192,7 +297,9 @@ export default function RunsScreen() {
               <Text style={styles.statLabel}>Total Distance</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{formatPace(stats.averagePace)}</Text>
+              <Text style={styles.statValue}>
+                {stats.averagePace > 0 ? formatPace(stats.averagePace) : '--'}
+              </Text>
               <Text style={styles.statLabel}>Avg Pace</Text>
             </View>
             <View style={styles.statBox}>
@@ -209,12 +316,17 @@ export default function RunsScreen() {
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateIcon}>🏃‍♂️</Text>
               <Text style={styles.emptyStateTitle}>No activities yet</Text>
-              <Text style={styles.emptyStateSubtitle}>Start running to see your activities here</Text>
+              <Text style={styles.emptyStateSubtitle}>
+                {Platform.OS === 'ios'
+                  ? 'Start running or pull down to sync from Health app'
+                  : 'Start running to see your activities here'
+                }
+              </Text>
             </View>
           ) : (
             activities.map((activity) => (
               <TouchableOpacity
-                key={activity.uuid}
+                key={activity._id}
                 style={styles.activityCard}
                 onPress={() => handleActivityPress(activity)}
                 activeOpacity={0.7}
@@ -241,12 +353,12 @@ export default function RunsScreen() {
                     <Text style={styles.activityValue}>{activity.calories}</Text>
                     <Text style={styles.activityLabel}>Calories</Text>
                   </View>
-                  {activity.averageHeartRate && (
+                  {activity.pace && (
                     <View style={styles.activityStat}>
                       <Text style={styles.activityValue}>
-                        {Math.round(activity.averageHeartRate)}
+                        {formatPace(activity.pace)}
                       </Text>
-                      <Text style={styles.activityLabel}>Avg HR</Text>
+                      <Text style={styles.activityLabel}>Pace</Text>
                     </View>
                   )}
                 </View>
@@ -255,19 +367,6 @@ export default function RunsScreen() {
           )}
         </View>
       </ScrollView>
-
-      {/* Activity Detail Modal */}
-      <ActivityDetailModal
-        activity={selectedActivity}
-        isVisible={isModalVisible}
-        onClose={() => {
-          setIsModalVisible(false);
-          setSelectedActivity(null);
-        }}
-        formatDistance={formatDistance}
-        formatPace={formatPace}
-        formatDate={formatDate}
-      />
     </View>
   );
 }
@@ -288,10 +387,20 @@ const styles = StyleSheet.create({
     color: '#000',
     marginBottom: 4,
   },
+  headerSubtitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
   headerSubtitle: {
     fontSize: 16,
     fontFamily: 'SF-Pro-Rounded-Medium',
     color: '#000',
+  },
+  syncStatus: {
+    fontSize: 14,
+    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: '#666',
+    marginLeft: 8,
   },
   content: {
     flex: 1,
