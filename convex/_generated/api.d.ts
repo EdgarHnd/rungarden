@@ -16,6 +16,7 @@ import type {
 import type * as activities from "../activities.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
+import type * as leaderboard from "../leaderboard.js";
 import type * as userProfile from "../userProfile.js";
 
 /**
@@ -30,6 +31,7 @@ declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   auth: typeof auth;
   http: typeof http;
+  leaderboard: typeof leaderboard;
   userProfile: typeof userProfile;
 }>;
 export declare const api: FilterApi<

@@ -20,6 +20,37 @@ function getDistanceForLevel(level: number): number {
   return Math.floor(Math.pow(level - 1, 2) * 2500); // 2500 meters = 2.5km
 }
 
+export const getUserActivitiesForYear = query({
+  args: {
+    year: v.number(),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const limit = args.limit ?? 30;
+    const endDate = new Date();
+    endDate.setHours(23, 59, 59, 999); // Set to end of today
+    const startDate = new Date(args.year, 0, 1);
+    startDate.setHours(0, 0, 0, 0); // Set to start of the start day
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_user_and_date", (q) => 
+        q.eq("userId", userId)
+         .gte("startDate", startDate.toISOString())
+         .lte("startDate", endDate.toISOString())
+      )
+      .order("desc")
+      .take(limit);
+
+    return activities;
+  },
+});
+
 // Get user's activities with pagination
 export const getUserActivities = query({
   args: {
@@ -35,10 +66,14 @@ export const getUserActivities = query({
     const limit = args.limit ?? 30;
     const days = args.days ?? 30;
 
-    // Calculate date range
+    // Calculate date range - fix date filtering issue
     const endDate = new Date();
+    endDate.setHours(23, 59, 59, 999); // Set to end of today
     const startDate = new Date();
     startDate.setDate(endDate.getDate() - days);
+    startDate.setHours(0, 0, 0, 0); // Set to start of the start day
+
+    console.log(`[getUserActivities] Querying activities from ${startDate.toISOString()} to ${endDate.toISOString()}`);
 
     const activities = await ctx.db
       .query("activities")
@@ -50,6 +85,7 @@ export const getUserActivities = query({
       .order("desc")
       .take(limit);
 
+    console.log(`[getUserActivities] Found ${activities.length} activities`);
     return activities;
   },
 });
@@ -106,6 +142,8 @@ export const syncActivitiesFromHealthKit = mutation({
       const pace = activity.distance > 0 ? 
         (activity.duration / (activity.distance / 1000)) : undefined;
 
+      console.log(`[syncActivitiesFromHealthKit] Processing activity: ${activity.workoutName} on ${activity.startDate}, distance: ${activity.distance}m`);
+
       if (existingActivity) {
         // Update existing activity if data has changed
         const hasChanges = 
@@ -121,12 +159,14 @@ export const syncActivitiesFromHealthKit = mutation({
             syncedAt: now,
           });
           syncResults.updated++;
+          console.log(`[syncActivitiesFromHealthKit] Updated existing activity: ${activity.healthKitUuid}`);
         } else {
           syncResults.skipped++;
+          console.log(`[syncActivitiesFromHealthKit] Skipped unchanged activity: ${activity.healthKitUuid}`);
         }
       } else {
         // Create new activity and track distance
-        await ctx.db.insert("activities", {
+        const newActivity = await ctx.db.insert("activities", {
           userId,
           ...activity,
           pace,
@@ -134,6 +174,7 @@ export const syncActivitiesFromHealthKit = mutation({
           createdAt: now,
         });
         syncResults.created++;
+        console.log(`[syncActivitiesFromHealthKit] Created new activity: ${activity.healthKitUuid}, ID: ${newActivity}`);
 
         // Track distance for new activity
         totalDistanceGained += activity.distance;

@@ -1,6 +1,7 @@
 import DatabaseHealthService, { UserProfile } from '@/services/DatabaseHealthService';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import { useAuthActions } from "@convex-dev/auth/react";
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useConvex, useConvexAuth } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -50,18 +51,6 @@ export default function ProfileScreen() {
       Alert.alert('Error', 'Failed to load profile data');
     } finally {
       setIsLoading(false);
-    }
-  };
-
-  const handleSignOut = async () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await signOut();
-      // No need to manually navigate - Convex auth will handle this
-    } catch (error) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", "Failed to sign out");
-      console.error("Sign out error:", error);
     }
   };
 
@@ -135,7 +124,7 @@ export default function ProfileScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Profile & Settings</Text>
+          <Text style={styles.title}>Profile</Text>
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#007AFF" />
@@ -149,7 +138,17 @@ export default function ProfileScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.title}>Profile & Settings</Text>
+        <Text style={styles.title}>Profile</Text>
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/settings');
+          }}
+          activeOpacity={0.7}
+        >
+          <FontAwesome5 name="cog" size={20} color="#333" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.contentScrollView}>
@@ -360,14 +359,6 @@ export default function ProfileScreen() {
             </Text>
           </View>
         )}
-
-        {/* Sign Out Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <TouchableOpacity style={styles.signOutButton} onPress={handleSignOut}>
-            <Text style={styles.signOutButtonText}>Sign Out</Text>
-          </TouchableOpacity>
-        </View>
       </ScrollView>
     </View>
   );
@@ -388,13 +379,16 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     backgroundColor: '#f5f5f5', // Match container background
     zIndex: 1, // Ensure header stays on top
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
+    position: 'relative',
   },
   title: {
     fontSize: 32,
     fontFamily: 'SF-Pro-Rounded-Bold',
     color: '#111827',
     marginBottom: 30,
-    textAlign: 'center',
   },
   loadingContainer: {
     flex: 1,
@@ -551,17 +545,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: 'SF-Pro-Rounded-Regular',
     color: '#666',
-  },
-  signOutButton: {
-    backgroundColor: '#FF3B30',
-    padding: 12,
-    borderRadius: 8,
-    alignItems: 'center',
-  },
-  signOutButtonText: {
-    fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: 'white',
   },
   levelSection: {
     backgroundColor: 'white',
@@ -740,5 +723,10 @@ const styles = StyleSheet.create({
     fontFamily: 'SF-Pro-Rounded-Regular',
     color: '#666',
     textAlign: 'center',
+  },
+  settingsButton: {
+    position: 'absolute',
+    right: 20,
+    top: 70,
   },
 }); 

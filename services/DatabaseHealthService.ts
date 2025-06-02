@@ -64,10 +64,12 @@ class DatabaseHealthService {
    */
   async getActivitiesFromDatabase(days: number = 30, limit: number = 30): Promise<DatabaseActivity[]> {
     try {
+      console.log(`[DatabaseHealthService] Fetching activities for ${days} days with limit ${limit}`);
       const activities = await this.convexClient.query(api.activities.getUserActivities, {
         days,
         limit,
       });
+      console.log(`[DatabaseHealthService] Fetched ${activities.length} activities from database`);
       return activities as DatabaseActivity[];
     } catch (error) {
       console.error('Error fetching activities from database:', error);

@@ -4,7 +4,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
 import React from 'react';
-import { TouchableOpacity, View } from 'react-native';
+import { Alert, TouchableOpacity, View } from 'react-native';
 
 export default function AppLayout() {
   const createTabBarButton = (onPress: () => void) => {
@@ -106,7 +106,13 @@ export default function AppLayout() {
               <FontAwesome5 name="circle" size={40} color="#fff" />
             </View>
           ),
-          tabBarButton: createTabBarButton(() => navigation.navigate('add')),
+          tabBarButton: createTabBarButton(() =>
+            Alert.alert(
+              "Coming Soon",
+              "Recording feature is coming soon!",
+              [{ text: "OK", style: "default" }]
+            )
+          ),
         })}
       />
       <Tabs.Screen

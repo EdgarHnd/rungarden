@@ -1,5 +1,7 @@
-import DatabaseHealthService, { DatabaseActivity, SyncResult } from '@/services/DatabaseHealthService';
-import { useConvex, useConvexAuth } from "convex/react";
+import { api } from '@/convex/_generated/api';
+import { Doc } from '@/convex/_generated/dataModel';
+import DatabaseHealthService, { DatabaseActivity, SyncResult, UserProfile } from '@/services/DatabaseHealthService';
+import { useConvex, useConvexAuth, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -18,12 +20,15 @@ import {
 export default function RunsScreen() {
   const { isAuthenticated } = useConvexAuth();
   const convex = useConvex();
+  const activitiesForYear = useQuery(api.activities.getUserActivitiesForYear, {
+    year: 2025,
+  });
 
   const [isLoading, setIsLoading] = useState(true);
   const [isRefreshing, setIsRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [activities, setActivities] = useState<DatabaseActivity[]>([]);
-  const [stats, setStats] = useState<any>(null);
+  const [activities, setActivities] = useState<Doc<"activities">[]>([]);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
   const [hasPermissions, setHasPermissions] = useState(false);
   const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
   const [lastSyncResult, setLastSyncResult] = useState<SyncResult | null>(null);
@@ -134,11 +139,11 @@ export default function RunsScreen() {
       const sortedActivities = activitiesData.sort((a, b) =>
         new Date(b.startDate).getTime() - new Date(a.startDate).getTime()
       );
-      setActivities(sortedActivities);
+      //setActivities(sortedActivities);
 
-      // Get stats from database
-      const healthStats = await service.getActivityStats(30);
-      setStats(healthStats);
+      // Get profile data for stats
+      const profileData = await service.getUserProfile();
+      setProfile(profileData);
     } catch (err) {
       console.error('Error loading health data:', err);
       setError(err instanceof Error ? err.message : 'Failed to load health data');
@@ -286,25 +291,23 @@ export default function RunsScreen() {
         }
       >
         {/* Stats Summary */}
-        {stats && (
+        {profile && (
           <View style={styles.statsContainer}>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{stats.totalWorkouts}</Text>
+              <Text style={styles.statValue}>{profile.totalWorkouts}</Text>
               <Text style={styles.statLabel}>Workouts</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{formatDistance(stats.totalDistance)}</Text>
+              <Text style={styles.statValue}>{formatDistance(profile.totalDistance)}</Text>
               <Text style={styles.statLabel}>Total Distance</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>
-                {stats.averagePace > 0 ? formatPace(stats.averagePace) : '--'}
-              </Text>
-              <Text style={styles.statLabel}>Avg Pace</Text>
+              <Text style={styles.statValue}>{profile.totalCalories}</Text>
+              <Text style={styles.statLabel}>Calories</Text>
             </View>
             <View style={styles.statBox}>
-              <Text style={styles.statValue}>{stats.totalCalories}</Text>
-              <Text style={styles.statLabel}>Calories</Text>
+              <Text style={styles.statValue}>{formatDistance(profile.weeklyGoal)}</Text>
+              <Text style={styles.statLabel}>Weekly Goal</Text>
             </View>
           </View>
         )}
@@ -312,7 +315,7 @@ export default function RunsScreen() {
         {/* Activities List */}
         <View style={styles.activitiesContainer}>
           <Text style={styles.sectionTitle}>Recent Activities</Text>
-          {activities.length === 0 ? (
+          {activitiesForYear?.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateIcon}>🏃‍♂️</Text>
               <Text style={styles.emptyStateTitle}>No activities yet</Text>
@@ -324,7 +327,7 @@ export default function RunsScreen() {
               </Text>
             </View>
           ) : (
-            activities.map((activity) => (
+            activitiesForYear?.map((activity) => (
               <TouchableOpacity
                 key={activity._id}
                 style={styles.activityCard}

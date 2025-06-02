@@ -77,8 +77,8 @@ class HealthService {
 
     return new Promise((resolve, reject) => {
       const endDate = new Date();
-      const startDate = new Date();
-      startDate.setDate(endDate.getDate() - days);
+      const startDate = new Date(2025, 1, 1);
+      //startDate.setDate(endDate.getDate() - days);
 
       // According to docs, we need to specify type as one of: ['Walking', 'StairClimbing', 'Running', 'Cycling', 'Workout']
       const options: WorkoutInputOptions = {

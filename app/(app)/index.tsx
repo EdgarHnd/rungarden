@@ -118,6 +118,8 @@ export default function HomeScreen() {
   const scrollX = useRef(new Animated.Value(0)).current;
   const [riveUrl, setRiveUrl] = useState("https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e");
   const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
+  const [isBgAnimationRunning, setIsBgAnimationRunning] = useState(false);
+  const bgAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
 
   // Leveling state
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
@@ -141,6 +143,31 @@ export default function HomeScreen() {
       const nextIndex = (currentIndex + 1) % RIVE_URLS.length;
       return RIVE_URLS[nextIndex];
     });
+  };
+
+  const toggleBgAnimation = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    if (isBgAnimationRunning) {
+      // Stop the animation
+      if (bgAnimationRef.current) {
+        bgAnimationRef.current.stop();
+      }
+      setIsBgAnimationRunning(false);
+    } else {
+      // Start the animation
+      scrollX.setValue(0);
+      const bgAnimation = Animated.loop(
+        Animated.timing(scrollX, {
+          toValue: -SCROLLING_BG_LOOP_WIDTH,
+          duration: SCROLLING_BG_ANIMATION_DURATION,
+          easing: Easing.linear,
+          useNativeDriver: true,
+        })
+      );
+      bgAnimationRef.current = bgAnimation;
+      bgAnimation.start();
+      setIsBgAnimationRunning(true);
+    }
   };
 
   // Helper function to get date string in local timezone (YYYY-MM-DD)
@@ -261,21 +288,14 @@ export default function HomeScreen() {
       setHealthService(service);
     }
 
-    // Start the background scrolling animation
-    scrollX.setValue(0);
-    const bgAnimation = Animated.loop(
-      Animated.timing(scrollX, {
-        toValue: -SCROLLING_BG_LOOP_WIDTH,
-        duration: SCROLLING_BG_ANIMATION_DURATION,
-        easing: Easing.linear,
-        useNativeDriver: true,
-      })
-    );
+    // Background animation is stopped by default - user can start it with the button
 
     return () => {
-      bgAnimation.stop();
+      if (bgAnimationRef.current) {
+        bgAnimationRef.current.stop();
+      }
     };
-  }, [isAuthenticated, convex, scrollX]);
+  }, [isAuthenticated, convex]);
 
   const handleRefresh = async () => {
     if (!healthService) return;
@@ -396,9 +416,14 @@ export default function HomeScreen() {
               <Ionicons name="flash-outline" size={20} color="white" />
               <Ionicons name="flash-outline" size={20} color="white" />
             </View>
-            <TouchableOpacity onPress={toggleRiveUrl} style={styles.toggleButton}>
-              <Text style={styles.toggleButtonText}>👀</Text>
-            </TouchableOpacity>
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity onPress={toggleRiveUrl} style={styles.toggleButton}>
+                <Text style={styles.toggleButtonText}>👀</Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={toggleBgAnimation} style={styles.toggleButton}>
+                <Text style={styles.toggleButtonText}>{isBgAnimationRunning ? '⏸️' : '▶️'}</Text>
+              </TouchableOpacity>
+            </View>
           </View>
 
           {levelInfo && (
@@ -652,13 +677,15 @@ const styles = StyleSheet.create({
     margin: 20,
   },
   toggleButton: {
-    // position: 'absolute',
-    // bottom: 10,
-    // right: 10,
+    marginHorizontal: 4,
   },
   toggleButtonText: {
     color: '#fff',
     fontFamily: 'SF-Pro-Rounded-Bold',
+  },
+  buttonContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
   },
   modalOverlay: {
     flex: 1,
