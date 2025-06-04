@@ -1,8 +1,10 @@
+import Theme from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+  Animated,
   ScrollView,
   StyleSheet,
   Text,
@@ -22,12 +24,21 @@ interface Activity {
 export default function TrainingDetailScreen() {
   const params = useLocalSearchParams();
   const [activity, setActivity] = useState<Activity | null>(null);
+  const [scaleAnim] = useState(new Animated.Value(0));
 
   useEffect(() => {
     if (params.activity) {
       try {
         const activityData = JSON.parse(params.activity as string);
         setActivity(activityData);
+
+        // Entrance animation
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }).start();
       } catch (error) {
         console.error('Error parsing training data:', error);
         router.back();
@@ -37,54 +48,99 @@ export default function TrainingDetailScreen() {
 
   const getIntensityColor = (intensity: string) => {
     switch (intensity) {
-      case 'Easy': return '#10B981';
-      case 'Medium': return '#F59E0B';
-      case 'Hard': return '#EF4444';
-      default: return '#6B7280';
+      case 'Easy': return Theme.colors.status.success;
+      case 'Medium': return Theme.colors.special.coin;
+      case 'Hard': return Theme.colors.status.error;
+      default: return Theme.colors.text.muted;
     }
   };
 
-  const getIntensityDescription = (intensity: string) => {
+  const getIntensityInfo = (intensity: string) => {
     switch (intensity) {
-      case 'Easy':
-        return 'Light effort, you should be able to hold a conversation comfortably.';
-      case 'Medium':
-        return 'Moderate effort, breathing should be slightly elevated but controlled.';
-      case 'Hard':
-        return 'High effort, this should feel challenging and push your limits.';
-      default:
-        return 'Adjust effort based on how you feel today.';
+      case 'Easy': return { level: 'EASY', emoji: '🌿', subtitle: 'Gentle & Relaxed' };
+      case 'Medium': return { level: 'MODERATE', emoji: '⚡', subtitle: 'Balanced Training' };
+      case 'Hard': return { level: 'CHALLENGING', emoji: '🔥', subtitle: 'Push Your Limits' };
+      default: return { level: 'CUSTOM', emoji: '⭐', subtitle: 'Personalized' };
     }
   };
 
-  const getTips = (activity: Activity) => {
+  const getWorkoutDescription = (activity: Activity) => {
+    switch (activity.type) {
+      case 'run':
+        switch (activity.intensity) {
+          case 'Easy':
+            return 'A gentle run focused on building your endurance foundation. Perfect for recovery and steady progress without stress.';
+          case 'Medium':
+            return 'A balanced training session that will challenge you while maintaining good form and building strength progressively.';
+          case 'Hard':
+            return 'An intense workout designed to push your limits and build mental resilience. Take it step by step!';
+          default:
+            return 'A personalized workout tailored to your current fitness level and training goals.';
+        }
+      case 'rest':
+        return 'A restorative session focused on recovery and flexibility. This will help your body repair and prepare for future workouts.';
+      default:
+        return 'A specialized training session designed to help you reach your running goals safely and effectively.';
+    }
+  };
+
+  const getExpectedRewards = (activity: Activity) => {
+    const baseXP = activity.type === 'run' ? 100 : 50;
+    const intensityMultiplier = activity.intensity === 'Hard' ? 2 : activity.intensity === 'Medium' ? 1.5 : 1;
+    const xp = Math.round(baseXP * intensityMultiplier);
+    const coins = Math.round(xp / 10);
+
+    return {
+      xp,
+      coins,
+      endurance: activity.type === 'run' ? '+5' : '+2',
+      recovery: activity.type === 'rest' ? '+10' : '+3',
+      strength: activity.intensity === 'Hard' ? '+8' : activity.intensity === 'Medium' ? '+5' : '+2',
+    };
+  };
+
+  const getHelpfulTips = (activity: Activity) => {
     switch (activity.type) {
       case 'run':
         return [
-          'Start with a 5-10 minute warm-up walk',
-          'Stay hydrated throughout your run',
-          'Listen to your body and adjust pace as needed',
-          'Cool down with gentle stretching',
+          { icon: '🔥', tip: 'Start with a 5-10 minute warm-up to prepare your muscles', category: 'Warm-up' },
+          { icon: '💧', tip: 'Stay hydrated before, during, and after your run', category: 'Hydration' },
+          { icon: '👂', tip: 'Listen to your body and adjust your pace as needed', category: 'Pacing' },
+          { icon: '🧘', tip: 'Finish with gentle stretching to aid recovery', category: 'Cool-down' },
         ];
       case 'rest':
         return [
-          'Focus on deep, controlled breathing',
-          'Hold each stretch for 20-30 seconds',
-          'Don\'t push beyond mild discomfort',
-          'Take time to relax and recover',
+          { icon: '🌬️', tip: 'Focus on deep, slow breathing to relax your muscles', category: 'Breathing' },
+          { icon: '⏰', tip: 'Hold each stretch for 20-30 seconds for best results', category: 'Technique' },
+          { icon: '🎯', tip: 'Stretch to the point of tension, not pain', category: 'Safety' },
+          { icon: '😌', tip: 'Take your time and enjoy this moment of self-care', category: 'Mindset' },
         ];
       default:
         return [];
     }
   };
 
+  const getDifficultyLevel = (intensity: string) => {
+    switch (intensity) {
+      case 'Easy': return 2;
+      case 'Medium': return 5;
+      case 'Hard': return 8;
+      default: return 1;
+    }
+  };
+
   if (!activity) {
     return (
       <View style={styles.container}>
-        <Text style={styles.loading}>Loading...</Text>
+        <Text style={styles.loading}>Loading workout...</Text>
       </View>
     );
   }
+
+  const intensityInfo = getIntensityInfo(activity.intensity);
+  const expectedRewards = getExpectedRewards(activity);
+  const helpfulTips = getHelpfulTips(activity);
+  const difficultyLevel = getDifficultyLevel(activity.intensity);
 
   return (
     <View style={styles.container}>
@@ -94,92 +150,219 @@ export default function TrainingDetailScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           router.back();
         }} style={styles.backButton}>
-          <Ionicons name="chevron-back-outline" size={24} color="#007AFF" />
+          <Ionicons name="chevron-back-outline" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Training Plan</Text>
+        <Text style={styles.headerTitle}>Today's Workout</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Activity Title */}
-        <View style={styles.titleSection}>
-          <View style={styles.titleRow}>
-            <Text style={styles.activityEmoji}>{activity.emoji}</Text>
-            <View style={styles.titleText}>
-              <Text style={styles.activityTitle}>{activity.title}</Text>
-              <Text style={styles.activitySubtitle}>Today's suggested workout</Text>
+        {/* Hero Section */}
+        <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
+          <View style={[styles.levelBadge, { backgroundColor: getIntensityColor(activity.intensity) }]}>
+            <Text style={styles.levelEmoji}>{intensityInfo.emoji}</Text>
+            <Text style={styles.levelText}>{intensityInfo.level}</Text>
+          </View>
+          <Text style={styles.heroTitle}>{activity.title}</Text>
+          <Text style={styles.heroSubtitle}>{intensityInfo.subtitle}</Text>
+          <View style={styles.workoutTypeContainer}>
+            <Text style={styles.workoutEmoji}>{activity.emoji}</Text>
+            <Text style={styles.workoutType}>{activity.type.toUpperCase()} WORKOUT</Text>
+          </View>
+        </Animated.View>
+
+        {/* Workout Details */}
+        <View style={styles.statsSection}>
+          <Text style={styles.sectionTitle}>📊 Workout Details</Text>
+          <View style={styles.statsGrid}>
+            <View style={styles.statCard}>
+              <View style={[styles.statIcon, { backgroundColor: Theme.colors.special.level }]}>
+                <Ionicons name="time-outline" size={24} color="#fff" />
+              </View>
+              <Text style={styles.statValue}>{activity.duration}</Text>
+              <Text style={styles.statLabel}>Duration</Text>
             </View>
-            <View style={[styles.intensityBadge, { backgroundColor: getIntensityColor(activity.intensity) }]}>
-              <Text style={styles.intensityText}>{activity.intensity}</Text>
+
+            <View style={styles.statCard}>
+              <View style={[styles.statIcon, { backgroundColor: getIntensityColor(activity.intensity) }]}>
+                <Ionicons name="flash-outline" size={24} color="#fff" />
+              </View>
+              <Text style={styles.statValue}>{activity.intensity}</Text>
+              <Text style={styles.statLabel}>Intensity</Text>
+            </View>
+
+            <View style={styles.statCard}>
+              <View style={[styles.statIcon, { backgroundColor: Theme.colors.accent.primary }]}>
+                <Ionicons name="analytics-outline" size={24} color="#fff" />
+              </View>
+              <Text style={styles.statValue}>{difficultyLevel}/10</Text>
+              <Text style={styles.statLabel}>Challenge</Text>
             </View>
           </View>
         </View>
 
-        {/* Quick Stats */}
-        <View style={styles.quickStats}>
-          <View style={styles.quickStat}>
-            <Text style={styles.quickStatLabel}>Duration</Text>
-            <Text style={styles.quickStatValue}>{activity.duration}</Text>
-          </View>
-          <View style={styles.quickStat}>
-            <Text style={styles.quickStatLabel}>Type</Text>
-            <Text style={styles.quickStatValue}>
-              {activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}
-            </Text>
-          </View>
-          <View style={styles.quickStat}>
-            <Text style={styles.quickStatLabel}>Intensity</Text>
-            <Text style={styles.quickStatValue}>{activity.intensity}</Text>
-          </View>
-        </View>
-
-        {/* Description */}
+        {/* Workout Description */}
         <View style={styles.descriptionSection}>
-          <Text style={styles.sectionTitle}>About This Workout</Text>
+          <Text style={styles.sectionTitle}>💡 About This Workout</Text>
           <View style={styles.descriptionCard}>
-            <Text style={styles.descriptionText}>{activity.description}</Text>
-          </View>
-        </View>
-
-        {/* Intensity Guide */}
-        <View style={styles.intensitySection}>
-          <Text style={styles.sectionTitle}>Intensity Guide</Text>
-          <View style={styles.intensityCard}>
-            <View style={styles.intensityHeader}>
-              <View style={[styles.intensityDot, { backgroundColor: getIntensityColor(activity.intensity) }]} />
-              <Text style={styles.intensityTitle}>{activity.intensity} Effort</Text>
+            <Text style={styles.descriptionText}>{getWorkoutDescription(activity)}</Text>
+            <View style={styles.originalDescription}>
+              <Text style={styles.originalDescriptionLabel}>Training Focus:</Text>
+              <Text style={styles.originalDescriptionText}>{activity.description}</Text>
             </View>
-            <Text style={styles.intensityDescription}>
-              {getIntensityDescription(activity.intensity)}
-            </Text>
           </View>
         </View>
 
-        {/* Tips & Guidelines */}
+        {/* Expected Progress */}
+        <View style={styles.rewardsSection}>
+          <Text style={styles.sectionTitle}>🎯 Expected Progress</Text>
+          <View style={styles.rewardsGrid}>
+            <View style={styles.rewardCard}>
+              <Text style={styles.rewardEmoji}>⭐</Text>
+              <Text style={styles.rewardValue}>+{expectedRewards.xp}</Text>
+              <Text style={styles.rewardLabel}>XP Points</Text>
+            </View>
+            <View style={styles.rewardCard}>
+              <Text style={styles.rewardEmoji}>🪙</Text>
+              <Text style={styles.rewardValue}>+{expectedRewards.coins}</Text>
+              <Text style={styles.rewardLabel}>Coins</Text>
+            </View>
+            <View style={styles.rewardCard}>
+              <Text style={styles.rewardEmoji}>💪</Text>
+              <Text style={styles.rewardValue}>{expectedRewards.endurance}</Text>
+              <Text style={styles.rewardLabel}>Endurance</Text>
+            </View>
+            <View style={styles.rewardCard}>
+              <Text style={styles.rewardEmoji}>❤️</Text>
+              <Text style={styles.rewardValue}>{expectedRewards.recovery}</Text>
+              <Text style={styles.rewardLabel}>Recovery</Text>
+            </View>
+          </View>
+        </View>
+
+        {/* Training Impact */}
+        <View style={styles.impactSection}>
+          <Text style={styles.sectionTitle}>📈 Training Impact</Text>
+          <View style={styles.impactCard}>
+            <View style={styles.impactHeader}>
+              <Text style={styles.impactTitle}>Fitness Benefits</Text>
+              <Text style={styles.impactScore}>{expectedRewards.xp} XP</Text>
+            </View>
+
+            <View style={styles.impactIndicators}>
+              <View style={styles.indicator}>
+                <Text style={styles.indicatorLabel}>Endurance</Text>
+                <View style={styles.indicatorBar}>
+                  <View style={[
+                    styles.indicatorFill,
+                    {
+                      width: `${Math.min(100, (difficultyLevel * 10))}%`,
+                      backgroundColor: Theme.colors.status.success
+                    }
+                  ]} />
+                </View>
+                <Text style={styles.indicatorValue}>{expectedRewards.endurance}</Text>
+              </View>
+
+              <View style={styles.indicator}>
+                <Text style={styles.indicatorLabel}>Strength</Text>
+                <View style={styles.indicatorBar}>
+                  <View style={[
+                    styles.indicatorFill,
+                    {
+                      width: `${Math.min(100, (difficultyLevel * 10))}%`,
+                      backgroundColor: Theme.colors.status.error
+                    }
+                  ]} />
+                </View>
+                <Text style={styles.indicatorValue}>{expectedRewards.strength}</Text>
+              </View>
+
+              <View style={styles.indicator}>
+                <Text style={styles.indicatorLabel}>Recovery</Text>
+                <View style={styles.indicatorBar}>
+                  <View style={[
+                    styles.indicatorFill,
+                    {
+                      width: `${Math.min(100, activity.type === 'rest' ? 90 : 30)}%`,
+                      backgroundColor: Theme.colors.special.level
+                    }
+                  ]} />
+                </View>
+                <Text style={styles.indicatorValue}>{expectedRewards.recovery}</Text>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Helpful Tips */}
         <View style={styles.tipsSection}>
-          <Text style={styles.sectionTitle}>Tips & Guidelines</Text>
-          {getTips(activity).map((tip, index) => (
+          <Text style={styles.sectionTitle}>💪 Helpful Tips</Text>
+          {helpfulTips.map((tip, index) => (
             <View key={index} style={styles.tipCard}>
               <View style={styles.tipIcon}>
-                <Text style={styles.tipIconText}>💡</Text>
+                <Text style={styles.tipIconText}>{tip.icon}</Text>
               </View>
-              <Text style={styles.tipText}>{tip}</Text>
+              <View style={styles.tipContent}>
+                <Text style={styles.tipCategory}>{tip.category}</Text>
+                <Text style={styles.tipText}>{tip.tip}</Text>
+              </View>
             </View>
           ))}
         </View>
 
-        {/* Weekly Progress Placeholder */}
+        {/* Weekly Progress */}
         <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>Weekly Progress</Text>
+          <Text style={styles.sectionTitle}>📅 Weekly Progress</Text>
           <View style={styles.progressCard}>
-            <Text style={styles.progressText}>
-              Complete this workout to contribute to your weekly training goal!
-            </Text>
-            <View style={styles.progressBar}>
-              <View style={[styles.progressFill, { width: '60%' }]} />
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressTitle}>This Week's Training</Text>
+              <Text style={styles.progressLevel}>Day 4/7</Text>
             </View>
-            <Text style={styles.progressLabel}>4 of 7 activities this week</Text>
+            <Text style={styles.progressDescription}>
+              Complete this workout to keep your weekly training streak going!
+            </Text>
+            <View style={styles.progressBarContainer}>
+              <View style={styles.progressBar}>
+                <View style={[styles.progressFill, { width: '60%' }]} />
+              </View>
+              <Text style={styles.progressLabel}>4 of 7 workouts completed</Text>
+            </View>
+
+            {/* Upcoming Workouts */}
+            <View style={styles.upcomingChain}>
+              <Text style={styles.upcomingChainTitle}>Coming Up Next</Text>
+              <View style={styles.upcomingChainItems}>
+                <View style={styles.upcomingChainItem}>
+                  <Text style={styles.upcomingChainEmoji}>🏃‍♂️</Text>
+                  <Text style={styles.upcomingChainText}>Tempo Run</Text>
+                </View>
+                <View style={styles.upcomingChainItem}>
+                  <Text style={styles.upcomingChainEmoji}>🧘‍♀️</Text>
+                  <Text style={styles.upcomingChainText}>Recovery</Text>
+                </View>
+                <View style={styles.upcomingChainItem}>
+                  <Text style={styles.upcomingChainEmoji}>🏆</Text>
+                  <Text style={styles.upcomingChainText}>Long Run</Text>
+                </View>
+              </View>
+            </View>
           </View>
+        </View>
+
+        {/* Start Workout Button */}
+        <View style={styles.actionSection}>
+          <TouchableOpacity
+            style={styles.startButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+              // Could navigate to a timer or tracking screen
+              router.back();
+            }}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.startButtonText}>🏃‍♂️ START WORKOUT</Text>
+          </TouchableOpacity>
         </View>
       </ScrollView>
     </View>
@@ -189,234 +372,388 @@ export default function TrainingDetailScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: Theme.colors.background.primary,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
+    paddingHorizontal: Theme.spacing.xl,
     paddingTop: 60,
-    paddingBottom: 16,
-    paddingHorizontal: 20,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e7',
+    paddingBottom: Theme.spacing.xl,
   },
   backButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 8,
-    paddingHorizontal: 12,
-  },
-  backButtonText: {
-    fontSize: 16,
-    color: '#007AFF',
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    marginLeft: 4,
+    padding: Theme.spacing.sm,
   },
   headerTitle: {
-    fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
   placeholder: {
-    width: 60,
+    width: 32,
   },
   content: {
     flex: 1,
   },
-  titleSection: {
-    padding: 24,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e7',
+  heroSection: {
+    alignItems: 'center',
+    paddingHorizontal: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.xxxl,
   },
-  titleRow: {
+  levelBadge: {
     flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.full,
+    marginBottom: Theme.spacing.lg,
   },
-  activityEmoji: {
-    fontSize: 40,
-    marginRight: 16,
+  levelEmoji: {
+    fontSize: 20,
+    marginRight: Theme.spacing.sm,
   },
-  titleText: {
-    flex: 1,
-  },
-  activityTitle: {
-    fontSize: 24,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#333',
-    marginBottom: 4,
-  },
-  activitySubtitle: {
-    fontSize: 14,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Regular',
-  },
-  intensityBadge: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  intensityText: {
-    fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#fff',
-  },
-  quickStats: {
-    flexDirection: 'row',
-    backgroundColor: '#fff',
-    paddingVertical: 20,
-    paddingHorizontal: 24,
-    borderBottomWidth: 1,
-    borderBottomColor: '#e5e5e7',
-  },
-  quickStat: {
-    flex: 1,
-    alignItems: 'center',
-  },
-  quickStatLabel: {
-    fontSize: 12,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    marginBottom: 4,
-  },
-  quickStatValue: {
+  levelText: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
-  descriptionSection: {
-    margin: 16,
+  heroTitle: {
+    fontSize: 36,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.sm,
+  },
+  heroSubtitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.xl,
+  },
+  workoutTypeContainer: {
+    alignItems: 'center',
+  },
+  workoutEmoji: {
+    fontSize: 48,
+    marginBottom: Theme.spacing.sm,
+  },
+  workoutType: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+    letterSpacing: 2,
+  },
+  statsSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
   },
   sectionTitle: {
-    fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#333',
-    marginBottom: 12,
+    fontSize: 22,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.xl,
+  },
+  statsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  statCard: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.lg,
+    alignItems: 'center',
+    marginHorizontal: 4,
+  },
+  statIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: Theme.borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  statValue: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.xs,
+  },
+  statLabel: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+  },
+  descriptionSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
   },
   descriptionCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
   },
   descriptionText: {
     fontSize: 16,
-    color: '#333',
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.medium,
     lineHeight: 24,
+    marginBottom: Theme.spacing.lg,
   },
-  intensitySection: {
-    margin: 16,
+  originalDescription: {
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.medium,
+    padding: Theme.spacing.md,
   },
-  intensityCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+  originalDescriptionLabel: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+    marginBottom: Theme.spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
-  intensityHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  intensityDot: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 8,
-  },
-  intensityTitle: {
-    fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
-  },
-  intensityDescription: {
+  originalDescriptionText: {
     fontSize: 14,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.regular,
     lineHeight: 20,
   },
+  rewardsSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
+  },
+  rewardsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  rewardCard: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.md,
+    alignItems: 'center',
+    marginHorizontal: 2,
+  },
+  rewardEmoji: {
+    fontSize: 24,
+    marginBottom: Theme.spacing.sm,
+  },
+  rewardValue: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+    marginBottom: Theme.spacing.xs,
+  },
+  rewardLabel: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+  },
+  impactSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
+  },
+  impactCard: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+  },
+  impactHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.xl,
+  },
+  impactTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+  },
+  impactScore: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+  },
+  impactIndicators: {
+    gap: Theme.spacing.lg,
+  },
+  indicator: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.md,
+  },
+  indicatorLabel: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    width: 80,
+  },
+  indicatorBar: {
+    flex: 1,
+    height: 8,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.xs,
+  },
+  indicatorFill: {
+    height: '100%',
+    borderRadius: Theme.borderRadius.xs,
+  },
+  indicatorValue: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    width: 30,
+    textAlign: 'right',
+  },
   tipsSection: {
-    margin: 16,
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
   },
   tipCard: {
     flexDirection: 'row',
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 8,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
-    elevation: 1,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
+    alignItems: 'flex-start',
   },
   tipIcon: {
-    marginRight: 12,
-    marginTop: 2,
+    width: 40,
+    height: 40,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.full,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Theme.spacing.md,
   },
   tipIconText: {
-    fontSize: 16,
+    fontSize: 20,
+  },
+  tipContent: {
+    flex: 1,
+  },
+  tipCategory: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+    marginBottom: Theme.spacing.xs,
+    textTransform: 'uppercase',
+    letterSpacing: 1,
   },
   tipText: {
-    flex: 1,
     fontSize: 14,
-    color: '#333',
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.regular,
     lineHeight: 20,
   },
   progressSection: {
-    margin: 16,
-    marginBottom: 32,
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
   },
   progressCard: {
-    backgroundColor: '#fff',
-    borderRadius: 16,
-    padding: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
-    elevation: 2,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
   },
-  progressText: {
+  progressHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  progressTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+  },
+  progressLevel: {
     fontSize: 14,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    marginBottom: 16,
-    textAlign: 'center',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+  },
+  progressDescription: {
+    fontSize: 14,
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.regular,
+    lineHeight: 20,
+    marginBottom: Theme.spacing.lg,
+  },
+  progressBarContainer: {
+    marginBottom: Theme.spacing.xl,
   },
   progressBar: {
-    backgroundColor: '#e5e5e7',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.small,
     height: 8,
-    marginBottom: 8,
+    marginBottom: Theme.spacing.sm,
   },
   progressFill: {
-    backgroundColor: '#10B981',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.special.level,
+    borderRadius: Theme.borderRadius.small,
     height: '100%',
   },
   progressLabel: {
     fontSize: 12,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
     textAlign: 'center',
   },
-  loading: {
-    fontSize: 16,
+  upcomingChain: {
+    borderTopWidth: 1,
+    borderTopColor: Theme.colors.border.primary,
+    paddingTop: Theme.spacing.lg,
+  },
+  upcomingChainTitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.md,
+  },
+  upcomingChainItems: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  upcomingChainItem: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  upcomingChainEmoji: {
+    fontSize: 24,
+    marginBottom: Theme.spacing.xs,
+  },
+  upcomingChainText: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
     textAlign: 'center',
-    margin: 20,
-    color: '#666',
+  },
+  actionSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    paddingBottom: 100,
+  },
+  startButton: {
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.lg,
+    alignItems: 'center',
+    ...Theme.shadows.medium,
+  },
+  startButtonText: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    letterSpacing: 1,
+  },
+  loading: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    marginTop: 100,
   },
 }); 

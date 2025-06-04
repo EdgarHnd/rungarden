@@ -1,3 +1,4 @@
+import Theme from '@/constants/theme';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useRef } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -36,12 +37,19 @@ interface WeekData {
   weeklyProgress: number;
 }
 
+interface LevelInfo {
+  level: number;
+  totalDistance: number;
+  distanceForNextLevel: number;
+  remainingDistanceForNextLevel: number;
+  progressToNextLevel: number;
+}
+
 interface WeekViewProps {
   dayData: DayData[];
   currentDayIndex: number;
   onDaySelect: (index: number) => void;
-  weeklyProgress: number;
-  weeklyGoal: number;
+  levelInfo: LevelInfo | null;
   currentWeekIndex: number;
   weeks: WeekData[];
   onWeekChange?: (weekIndex: number) => void;
@@ -54,16 +62,14 @@ export default function WeekView({
   dayData,
   currentDayIndex,
   onDaySelect,
-  weeklyProgress,
-  weeklyGoal,
+  levelInfo,
   currentWeekIndex,
   weeks,
   onWeekChange,
   weekStartDay
 }: WeekViewProps) {
   const scrollViewRef = useRef<ScrollView>(null);
-  const currentWeek = weeks[currentWeekIndex];
-  const progressPercentage = Math.min((currentWeek?.weeklyProgress || 0) / weeklyGoal * 100, 100);
+  const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
 
   // Calculate the actual width of each page in the ScrollView
   // This accounts for the horizontal padding of the parent container.
@@ -172,20 +178,38 @@ export default function WeekView({
     return weekStart;
   };
 
+  const formatDistance = (meters: number, showKm: boolean = true) => {
+    const kilometers = meters / 1000;
+    if (showKm) {
+      return `${kilometers.toFixed(1)}km`;
+    }
+    return `${kilometers.toFixed(1)}`;
+  };
+
   return (
     <View style={styles.container}>
-      {/* Weekly Progress Bar */}
-      <View style={styles.progressContainer}>
-        <View style={styles.progressHeader}>
-          <Text style={styles.progressLabel}>Weekly Goal</Text>
-          <Text style={styles.progressText}>
-            {(currentWeek?.weeklyProgress || 0).toFixed(1)} / {weeklyGoal} km
-          </Text>
+      {/* Level Progress Section */}
+      {levelInfo && (
+        <View style={styles.progressContainer}>
+          <View style={styles.progressHeader}>
+            <Text style={styles.progressLabel}>Level {levelInfo.level}</Text>
+            <Text style={styles.progressText}>
+              {formatDistance(levelInfo.totalDistance, false)} / {formatDistance(levelInfo.distanceForNextLevel, true)}
+            </Text>
+          </View>
+          <View style={styles.progressBar}>
+            <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
+          </View>
+          {/* <View style={styles.levelDetails}>
+            <Text style={styles.levelDetailText}>
+              {formatDistance(levelInfo.totalDistance)} total distance
+            </Text>
+            <Text style={styles.levelDetailText}>
+              {formatDistance(levelInfo.distanceForNextLevel)} for Level {levelInfo.level + 1}
+            </Text>
+          </View> */}
         </View>
-        <View style={styles.progressBar}>
-          <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
-        </View>
-      </View>
+      )}
 
       {/* Swipable Week Calendar */}
       <ScrollView
@@ -272,48 +296,58 @@ export default function WeekView({
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: 'white',
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
-    paddingTop: 20,
-    paddingHorizontal: 20,
+    backgroundColor: Theme.colors.background.primary,
+    borderTopLeftRadius: Theme.borderRadius.xl,
+    borderTopRightRadius: Theme.borderRadius.xl,
+    paddingTop: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xl,
     paddingBottom: 6,
   },
   progressContainer: {
-    marginBottom: 12,
+    marginBottom: Theme.spacing.md,
   },
   progressHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 12,
+    marginBottom: Theme.spacing.md,
   },
   progressLabel: {
     fontSize: 16,
-    color: '#6B7280',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
   },
   progressText: {
     fontSize: 16,
-    color: '#111827',
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
   },
   progressBar: {
     height: 8,
-    backgroundColor: '#E5E7EB',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.border.primary,
+    borderRadius: Theme.borderRadius.small,
     overflow: 'hidden',
-    marginBottom: 8,
+    marginBottom: Theme.spacing.sm,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#10B981',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: Theme.borderRadius.small,
+  },
+  levelDetails: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  levelDetailText: {
+    fontSize: 12,
+    color: Theme.colors.text.muted,
+    fontFamily: Theme.fonts.medium,
   },
   weekTitle: {
     fontSize: 14,
-    color: '#6B7280',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
     textAlign: 'center',
   },
   weeksContainer: {
@@ -323,75 +357,74 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    width: screenWidth - 40, // Account for container padding
+    width: screenWidth - 40,
   },
   dayContainer: {
     alignItems: 'center',
     flex: 1,
-    paddingVertical: 8,
+    paddingVertical: Theme.spacing.sm,
   },
   selectedDayContainer: {
   },
   dayLabel: {
     fontSize: 12,
-    color: '#6B7280',
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    marginBottom: 8,
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
+    marginBottom: Theme.spacing.sm,
   },
   selectedDayLabel: {
-    color: '#007AFF',
-    fontFamily: 'SF-Pro-Rounded-Semibold',
+    color: Theme.colors.accent.primary,
+    fontFamily: Theme.fonts.semibold,
   },
   dayCircle: {
     width: 36,
     height: 36,
     borderRadius: 18,
-    backgroundColor: '#F9FAFB',
+    backgroundColor: Theme.colors.border.primary,
     alignItems: 'center',
     justifyContent: 'center',
     position: 'relative',
-    //  marginBottom: 8,
   },
   selectedDayCircle: {
-    backgroundColor: '#007AFF',
+    backgroundColor: Theme.colors.accent.primary,
   },
   todayCircle: {
-    backgroundColor: '#E5E7EB',
+    backgroundColor: Theme.colors.background.secondary,
     borderWidth: 2,
-    borderColor: '#007AFF',
+    borderColor: Theme.colors.accent.primary,
   },
   dayNumber: {
     fontSize: 16,
-    color: '#374151',
-    fontFamily: 'SF-Pro-Rounded-Semibold',
+    color: Theme.colors.text.secondary,
+    fontFamily: Theme.fonts.semibold,
   },
   selectedDayNumber: {
-    color: 'white',
+    color: Theme.colors.text.primary,
   },
   todayDayNumber: {
-    color: '#007AFF',
+    color: Theme.colors.accent.primary,
   },
   checkmark: {
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: '#10B981',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.status.success,
+    borderRadius: Theme.borderRadius.small,
     width: 16,
     height: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
   selectedCheckmark: {
-    backgroundColor: 'white',
+    backgroundColor: Theme.colors.text.primary,
   },
   checkmarkText: {
     fontSize: 10,
-    color: 'white',
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
   },
   selectedCheckmarkText: {
-    color: '#10B981',
+    color: Theme.colors.status.success,
   },
   activityIndicator: {
     fontSize: 12,

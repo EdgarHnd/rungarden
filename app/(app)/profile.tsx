@@ -1,8 +1,9 @@
-import DatabaseHealthService, { UserProfile } from '@/services/DatabaseHealthService';
+import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5 } from '@expo/vector-icons';
-import { useConvex, useConvexAuth } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -12,51 +13,35 @@ export default function ProfileScreen() {
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
-  const convex = useConvex();
 
-  const [profile, setProfile] = useState<UserProfile | null>(null);
+  // Convex queries and mutations
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const weekProgress = useQuery(api.userProfile.getCurrentWeekProgress);
+  const updateWeeklyGoal = useMutation(api.userProfile.updateWeeklyGoal);
+
   const [isLoading, setIsLoading] = useState(true);
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [newWeeklyGoal, setNewWeeklyGoal] = useState('');
-  const [weekProgress, setWeekProgress] = useState<any>(null);
-  const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [showLevelDetails, setShowLevelDetails] = useState(false);
 
+  // Update loading state and level info when profile data is available
   useEffect(() => {
-    if (isAuthenticated && convex) {
-      const service = new DatabaseHealthService(convex);
-      setHealthService(service);
-      loadProfileData(service);
-    }
-  }, [isAuthenticated, convex]);
-
-  const loadProfileData = async (service: DatabaseHealthService) => {
-    try {
-      setIsLoading(true);
-
-      const profileData = await service.getUserProfile();
-      const progressData = await service.getCurrentWeekProgress();
-      const levelData = await service.getUserLevelInfo();
-
-      setProfile(profileData);
-      setWeekProgress(progressData);
-      setLevelInfo(levelData);
-
-      if (profileData) {
-        setNewWeeklyGoal((profileData.weeklyGoal / 1000).toString()); // Convert to km for display
-      }
-    } catch (error) {
-      console.error('Error loading profile:', error);
-      Alert.alert('Error', 'Failed to load profile data');
-    } finally {
+    if (profile) {
       setIsLoading(false);
+
+      // Calculate level info from profile
+      const userLevelInfo = LevelingService.calculateLevelInfo(profile.totalDistance);
+      setLevelInfo(userLevelInfo);
+
+      // Set initial goal value for editing
+      if (!newWeeklyGoal) {
+        setNewWeeklyGoal((profile.weeklyGoal / 1000).toString());
+      }
     }
-  };
+  }, [profile]);
 
   const handleSaveWeeklyGoal = async () => {
-    if (!healthService) return;
-
     const goalInMeters = parseFloat(newWeeklyGoal) * 1000; // Convert km to meters
 
     if (isNaN(goalInMeters) || goalInMeters <= 0) {
@@ -67,8 +52,9 @@ export default function ProfileScreen() {
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await healthService.updateWeeklyGoal(goalInMeters);
-      await loadProfileData(healthService);
+
+      await updateWeeklyGoal({ weeklyGoal: goalInMeters });
+
       setIsEditingGoal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Weekly goal updated!');
@@ -147,7 +133,7 @@ export default function ProfileScreen() {
           }}
           activeOpacity={0.7}
         >
-          <FontAwesome5 name="cog" size={20} color="#333" />
+          <FontAwesome5 name="cog" size={20} color={Theme.colors.text.primary} />
         </TouchableOpacity>
       </View>
 
@@ -271,6 +257,10 @@ export default function ProfileScreen() {
                 <Text style={styles.statLabel}>Total Calories</Text>
               </View>
               <View style={styles.statBox}>
+                <Text style={styles.statValue}>🪙 {profile.coins ?? 0}</Text>
+                <Text style={styles.statLabel}>Coins Earned</Text>
+              </View>
+              <View style={styles.statBox}>
                 <Text style={styles.statValue}>{formatDistance(profile.weeklyGoal)}</Text>
                 <Text style={styles.statLabel}>Weekly Goal</Text>
               </View>
@@ -367,17 +357,17 @@ export default function ProfileScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
+    backgroundColor: Theme.colors.background.primary,
   },
   contentScrollView: {
     flex: 1,
-    paddingHorizontal: 20,
+    paddingHorizontal: Theme.spacing.xl,
     paddingTop: 0, // Content starts right below the header
   },
   header: {
     paddingTop: 60, // Safe area / top spacing
-    paddingHorizontal: 20,
-    backgroundColor: '#f5f5f5', // Match container background
+    paddingHorizontal: Theme.spacing.xl,
+    backgroundColor: Theme.colors.background.primary, // Match container background
     zIndex: 1, // Ensure header stays on top
     flexDirection: 'row',
     justifyContent: 'center',
@@ -386,8 +376,8 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#111827',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
     marginBottom: 30,
   },
   loadingContainer: {
@@ -397,30 +387,22 @@ const styles = StyleSheet.create({
     paddingVertical: 100,
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: Theme.spacing.lg,
     fontSize: 16,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
   },
   section: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xl,
   },
   sectionTitle: {
     fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#374151',
-    marginBottom: 16,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.lg,
   },
   statsGrid: {
     flexDirection: 'row',
@@ -430,21 +412,21 @@ const styles = StyleSheet.create({
   statBox: {
     width: '48%',
     alignItems: 'center',
-    marginBottom: 16,
-    padding: 12,
-    backgroundColor: '#f8f9fa',
-    borderRadius: 12,
+    marginBottom: Theme.spacing.lg,
+    padding: Theme.spacing.md,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.medium,
   },
   statValue: {
     fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#333',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
   statLabel: {
     fontSize: 12,
-    color: '#666',
+    color: Theme.colors.text.tertiary,
     marginTop: 4,
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    fontFamily: Theme.fonts.medium,
     textAlign: 'center',
   },
   progressContainer: {
@@ -452,32 +434,32 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
-    marginBottom: 12,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.md,
   },
   progressBar: {
     width: '100%',
     height: 8,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 4,
-    marginBottom: 8,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.xs,
+    marginBottom: Theme.spacing.sm,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#10b981',
-    borderRadius: 4,
+    backgroundColor: Theme.colors.status.success,
+    borderRadius: Theme.borderRadius.xs,
   },
   progressPercentage: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#10b981',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.status.success,
     marginBottom: 4,
   },
   workoutCount: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
   },
   goalDisplayContainer: {
     flexDirection: 'row',
@@ -486,31 +468,33 @@ const styles = StyleSheet.create({
   },
   goalValue: {
     fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
   },
   editGoalButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    backgroundColor: Theme.colors.accent.primary,
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.small,
   },
   editGoalButtonText: {
-    color: '#fff',
+    color: Theme.colors.text.primary,
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    fontFamily: Theme.fonts.medium,
   },
   editGoalContainer: {
     alignItems: 'stretch',
   },
   goalInput: {
     borderWidth: 1,
-    borderColor: '#d1d5db',
-    borderRadius: 8,
-    padding: 12,
+    borderColor: Theme.colors.border.secondary,
+    borderRadius: Theme.borderRadius.small,
+    padding: Theme.spacing.md,
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    marginBottom: 12,
+    fontFamily: Theme.fonts.regular,
+    marginBottom: Theme.spacing.md,
+    backgroundColor: Theme.colors.background.tertiary,
+    color: Theme.colors.text.primary,
   },
   goalButtons: {
     flexDirection: 'row',
@@ -518,52 +502,44 @@ const styles = StyleSheet.create({
   },
   goalButton: {
     flex: 1,
-    paddingVertical: 12,
-    borderRadius: 8,
+    paddingVertical: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.small,
     alignItems: 'center',
     marginHorizontal: 4,
   },
   cancelButton: {
-    backgroundColor: '#f3f4f6',
+    backgroundColor: Theme.colors.background.tertiary,
     borderWidth: 1,
-    borderColor: '#d1d5db',
+    borderColor: Theme.colors.border.secondary,
   },
   cancelButtonText: {
-    color: '#374151',
+    color: Theme.colors.text.primary,
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    fontFamily: Theme.fonts.medium,
   },
   saveButton: {
-    backgroundColor: '#007AFF',
+    backgroundColor: Theme.colors.accent.primary,
   },
   saveButtonText: {
-    color: '#fff',
+    color: Theme.colors.text.primary,
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    fontFamily: Theme.fonts.medium,
   },
   syncInfo: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
   },
   levelSection: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 20,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 2,
-    },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
-    elevation: 3,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xl,
   },
   currentLevelHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Theme.spacing.lg,
   },
   currentLevelInfo: {
     flexDirection: 'row',
@@ -571,39 +547,39 @@ const styles = StyleSheet.create({
   },
   currentLevelEmoji: {
     fontSize: 24,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#333',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
   currentLevelTextContainer: {
-    marginLeft: 16,
+    marginLeft: Theme.spacing.lg,
   },
   currentLevelTitle: {
     fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
   },
   currentLevelNumber: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
   },
   currentLevelDistance: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
   },
   nextLevelInfo: {
-    marginLeft: 16,
+    marginLeft: Theme.spacing.lg,
   },
   nextLevelText: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
   },
   expandHint: {
     fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
   },
   simpleProgressContainer: {
     alignItems: 'center',
@@ -611,28 +587,28 @@ const styles = StyleSheet.create({
   simpleProgressBar: {
     width: '100%',
     height: 8,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 4,
-    marginBottom: 8,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.xs,
+    marginBottom: Theme.spacing.sm,
   },
   simpleProgressFill: {
     height: '100%',
-    backgroundColor: '#10b981',
-    borderRadius: 4,
+    backgroundColor: Theme.colors.status.success,
+    borderRadius: Theme.borderRadius.xs,
   },
   simpleProgressText: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#333',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.primary,
   },
   progressionContainer: {
-    marginBottom: 20,
+    marginBottom: Theme.spacing.xl,
   },
   progressionTitle: {
     fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#374151',
-    marginBottom: 16,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.lg,
   },
   levelTrackScroll: {
     flexDirection: 'row',
@@ -651,57 +627,57 @@ const styles = StyleSheet.create({
     right: -24,
     width: 24,
     height: 2,
-    backgroundColor: '#e5e7eb',
+    backgroundColor: Theme.colors.background.tertiary,
     top: 16,
   },
   connectionLineCompleted: {
-    backgroundColor: '#10b981',
+    backgroundColor: Theme.colors.status.success,
   },
   levelCircle: {
     width: 32,
     height: 32,
-    borderRadius: 16,
-    backgroundColor: '#e5e7eb',
+    borderRadius: Theme.borderRadius.large,
+    backgroundColor: Theme.colors.background.tertiary,
     justifyContent: 'center',
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: Theme.spacing.sm,
   },
   levelCircleCurrent: {
-    backgroundColor: '#10b981',
+    backgroundColor: Theme.colors.status.success,
   },
   levelCircleCompleted: {
-    backgroundColor: '#10b981',
+    backgroundColor: Theme.colors.status.success,
   },
   levelCircleText: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#333',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.primary,
   },
   levelCircleTextCurrent: {
-    color: '#fff',
+    color: Theme.colors.text.primary,
   },
   levelCircleTextCompleted: {
-    color: '#fff',
+    color: Theme.colors.text.primary,
   },
   currentLevelProgressContainer: {
     alignItems: 'center',
-    marginBottom: 8,
+    marginBottom: Theme.spacing.sm,
   },
   currentLevelProgress: {
     width: 80,
     height: 4,
-    backgroundColor: '#e5e7eb',
-    borderRadius: 2,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.xs,
   },
   currentLevelProgressFill: {
     height: '100%',
-    backgroundColor: '#10b981',
-    borderRadius: 2,
+    backgroundColor: Theme.colors.status.success,
+    borderRadius: Theme.borderRadius.xs,
   },
   progressPercentageText: {
     fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#10b981',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.status.success,
     marginTop: 4,
   },
   levelNodeInfo: {
@@ -713,20 +689,20 @@ const styles = StyleSheet.create({
   },
   levelNodeTitle: {
     fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
     textAlign: 'center',
     marginBottom: 2,
   },
   levelNodeDistance: {
     fontSize: 11,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
     textAlign: 'center',
   },
   settingsButton: {
     position: 'absolute',
-    right: 20,
+    right: Theme.spacing.xl,
     top: 70,
   },
 }); 

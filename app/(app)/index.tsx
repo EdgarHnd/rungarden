@@ -1,10 +1,14 @@
 import DayCard from '@/components/DayCard';
+import RunCelebrationModal from '@/components/RunCelebrationModal';
 import WeekView from '@/components/WeekView';
+import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
-import DatabaseHealthService, { DatabaseActivity, SyncResult } from '@/services/DatabaseHealthService';
+import ChallengeService from '@/services/ChallengeService';
+import { DatabaseActivity } from '@/services/DatabaseHealthService';
+import HealthService from '@/services/HealthService';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
-import { useConvex, useConvexAuth, useQuery } from "convex/react";
+import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React, { useEffect, useRef, useState } from 'react';
@@ -18,6 +22,18 @@ interface Activity {
   duration: string;
   intensity: 'Easy' | 'Medium' | 'Hard';
   emoji: string;
+}
+
+interface SyncResult {
+  created: number;
+  updated: number;
+  skipped: number;
+  distanceGained?: number;
+  coinsGained?: number;
+  leveledUp?: boolean;
+  newLevel?: number;
+  oldLevel?: number;
+  newRuns?: DatabaseActivity[];
 }
 
 // 7-day training plan - alternating running and rest days
@@ -80,78 +96,6 @@ const weeklyPlan: Activity[] = [
   }
 ];
 
-interface ChallengeItem {
-  challenge: string;
-  reward: string;
-}
-
-interface ChallengeCategory {
-  title: string;
-  items: ChallengeItem[];
-}
-
-const challengeCategories: ChallengeCategory[] = [
-  {
-    title: 'Time-based Challenges',
-    items: [
-      { challenge: 'Early Bird (Run before 7 AM)', reward: 'Rooster hat' },
-      { challenge: 'Lunch Break Runner (Run at noon)', reward: 'Lunchbox accessory' },
-      { challenge: 'Midnight Runner (Complete run exactly at midnight)', reward: 'Moon outfit' },
-    ],
-  },
-  {
-    title: 'Weather & Environment',
-    items: [
-      { challenge: 'Hot Weather Hero (Run above 30°C)', reward: 'Sunhat' },
-      { challenge: 'Snow Runner (Run in snow)', reward: 'Winter coat' },
-      { challenge: 'Wind Warrior (Run in windy conditions)', reward: 'Kite accessory' },
-      { challenge: 'Storm Chaser (Run during storm)', reward: 'Lightning cape' },
-    ],
-  },
-  {
-    title: 'Location & Exploration',
-    items: [
-      { challenge: 'Park Explorer (Run in 3 different parks)', reward: 'Leafy headband' },
-      { challenge: 'Urban Adventurer (Run in a downtown area)', reward: 'City skyline T-shirt' },
-      { challenge: 'Beach Runner (Run along the beach)', reward: 'Surfboard accessory' },
-    ],
-  },
-  {
-    title: 'Consistency & Habit Formation',
-    items: [
-      { challenge: 'Weekly Warrior (Complete daily runs for one week)', reward: 'Warrior helmet' },
-      { challenge: 'Monthly Master (Complete running goals 4 weeks in a row)', reward: 'Golden running shoes' },
-      { challenge: 'Quarterly Champion (Achieve 90-day streak)', reward: 'Crown accessory' },
-    ],
-  },
-  {
-    title: 'Distance & Cumulative Achievements',
-    items: [
-      { challenge: '20 km cumulative', reward: 'Neon socks' },
-      { challenge: '50 km cumulative', reward: 'Camouflage shorts' },
-      { challenge: '200 km cumulative', reward: 'Wings accessory' },
-      { challenge: '500 km cumulative', reward: 'Koala superhero costume' },
-    ],
-  },
-  {
-    title: 'Intensity & Speed',
-    items: [
-      { challenge: 'Personal Best Breaker (Beat your personal best)', reward: 'Stopwatch necklace' },
-      { challenge: 'Speed Runner (Run 1 km under 6 minutes)', reward: 'Flash lightning shoes' },
-      { challenge: 'Interval Master (Complete 5 interval runs)', reward: 'Race bib accessory' },
-    ],
-  },
-  {
-    title: 'Special Events & Holiday-Themed',
-    items: [
-      { challenge: 'Birthday Run', reward: 'Birthday cake hat' },
-      { challenge: 'Halloween Run', reward: 'Pumpkin costume' },
-      { challenge: 'Christmas Eve Run', reward: 'Reindeer antlers' },
-      { challenge: 'Valentine’s Run', reward: 'Heart-shaped sunglasses' },
-    ],
-  },
-];
-
 // Constants for scrolling background
 const SCROLLING_BG_LOOP_WIDTH = 2000; // The width of one segment of the looping background
 const SCROLLING_BG_ANIMATION_DURATION = 8000; // Duration for one loop
@@ -177,11 +121,11 @@ interface WeekData {
 
 export default function HomeScreen() {
   const { isAuthenticated } = useConvexAuth();
-  const convex = useConvex();
 
-  // Convex queries
+  // Convex queries and mutations
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const activities = useQuery(api.activities.getUserActivities, { days: 21, limit: 100 });
+  const syncActivities = useMutation(api.activities.syncActivitiesFromHealthKit);
 
   const [dayData, setDayData] = useState<DayData[]>([]);
   const [weeks, setWeeks] = useState<WeekData[]>([]);
@@ -189,19 +133,37 @@ export default function HomeScreen() {
   const [currentWeekIndex, setCurrentWeekIndex] = useState(1); // Start with current week (index 1 of 3 weeks)
   const scrollX = useRef(new Animated.Value(0)).current;
   const [riveUrl, setRiveUrl] = useState("https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e");
-  const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
   const [isBgAnimationRunning, setIsBgAnimationRunning] = useState(false);
   const bgAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
 
   // Leveling state
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [showLevelUpModal, setShowLevelUpModal] = useState(false);
-  const [levelUpInfo, setLevelUpInfo] = useState<{ oldLevel: number; newLevel: number; distanceGained: number } | null>(null);
-  const [showChallengesModal, setShowChallengesModal] = useState(false);
+  const [levelUpInfo, setLevelUpInfo] = useState<{ oldLevel: number; newLevel: number; distanceGained: number; coinsGained?: number } | null>(null);
+
+  // Run celebration state
+  const [showRunCelebrationModal, setShowRunCelebrationModal] = useState(false);
+  const [runCelebrationData, setRunCelebrationData] = useState<{
+    runData: DatabaseActivity | null;
+    rewards: {
+      distanceGained: number;
+      coinsGained: number;
+      leveledUp?: boolean;
+      newLevel?: number;
+      oldLevel?: number;
+      challengesUnlocked?: string[];
+    };
+  } | null>(null);
+
+  // Debug modal state
+  const [showDebugModal, setShowDebugModal] = useState(false);
+  const [tapCount, setTapCount] = useState(0);
+  const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Derived values from queries
   const weeklyGoal = profile?.weeklyGoal ? profile.weeklyGoal / 1000 : 20; // Convert to km, default 20
   const weekStartDay = profile?.weekStartDay ?? 1; // Default to Monday
+  const userCoins = profile?.coins ?? 0; // User's current coin balance
 
   const RIVE_URLS = [
     "https://fast-dragon-309.convex.cloud/api/storage/04bf0340-7d79-4865-8dd6-2966b4befaff",
@@ -241,6 +203,23 @@ export default function HomeScreen() {
       bgAnimation.start();
       setIsBgAnimationRunning(true);
     }
+  };
+
+  // Handle triple tap on title for debug modal
+  const handleTitlePress = () => {
+    setTapCount(prev => prev + 1);
+
+    if (tapTimeoutRef.current) {
+      clearTimeout(tapTimeoutRef.current);
+    }
+
+    tapTimeoutRef.current = setTimeout(() => {
+      if (tapCount >= 2) { // 3rd tap (0, 1, 2)
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setShowDebugModal(true);
+      }
+      setTapCount(0);
+    }, 500); // Reset after 500ms
   };
 
   // Helper function to get date string in local timezone (YYYY-MM-DD)
@@ -356,36 +335,108 @@ export default function HomeScreen() {
   useEffect(() => {
     console.log('HomeScreen mounted');
 
-    if (isAuthenticated && convex) {
-      const service = new DatabaseHealthService(convex);
-      setHealthService(service);
+    if (isAuthenticated) {
+      // Background animation is stopped by default - user can start it with the button
     }
-
-    // Background animation is stopped by default - user can start it with the button
 
     return () => {
       if (bgAnimationRef.current) {
         bgAnimationRef.current.stop();
       }
     };
-  }, [isAuthenticated, convex]);
+  }, [isAuthenticated]);
 
   const handleRefresh = async () => {
-    if (!healthService) return;
-
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      // Force sync and check for level ups
-      const syncResult: SyncResult = await healthService.forceSyncFromHealthKit(21);
 
-      if (syncResult.leveledUp && syncResult.newLevel && syncResult.oldLevel && syncResult.distanceGained) {
+      // Check if HealthKit sync is enabled
+      if (!profile?.healthKitSyncEnabled) {
+        // Just refresh the UI without syncing
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+        Alert.alert(
+          'HealthKit Sync Disabled',
+          'HealthKit sync is disabled. Enable it in Settings to sync your workouts.',
+          [
+            { text: 'OK', style: 'default' },
+            {
+              text: 'Settings',
+              onPress: () => router.push('/settings'),
+              style: 'default'
+            }
+          ]
+        );
+        return;
+      }
+
+      // Get HealthKit data first
+      const healthKitActivities = await HealthService.getRunningActivities(21);
+
+      if (healthKitActivities.length === 0) {
+        // No new activities to sync
+        return;
+      }
+
+      // Transform to database format
+      const activitiesForDb = healthKitActivities.map((activity) => ({
+        healthKitUuid: activity.uuid,
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        duration: activity.duration,
+        distance: activity.distance,
+        calories: activity.calories,
+        averageHeartRate: activity.averageHeartRate,
+        workoutName: activity.workoutName,
+      }));
+
+      // Sync to Convex
+      const syncResult = await syncActivities({ activities: activitiesForDb });
+
+      // Check if new runs were created and show celebration modal
+      if (syncResult.created > 0 && syncResult.distanceGained && syncResult.distanceGained > 0) {
+        // Get the most recent run from the sync result
+        const recentRun = syncResult.newRuns?.[0]; // Get the first new run
+
+        if (recentRun) {
+          // Detect challenges for the new run
+          const isFirstRun = (profile?.totalWorkouts || 0) === 0;
+          const unlockedChallenges = ChallengeService.checkChallengesForRun(recentRun, {
+            totalRuns: profile?.totalWorkouts || 0,
+            totalDistance: profile?.totalDistance || 0,
+            isFirstRun: isFirstRun
+          });
+
+          // Set up celebration data
+          setRunCelebrationData({
+            runData: recentRun,
+            rewards: {
+              distanceGained: syncResult.distanceGained,
+              coinsGained: syncResult.coinsGained || 0,
+              leveledUp: syncResult.leveledUp,
+              newLevel: syncResult.newLevel,
+              oldLevel: syncResult.oldLevel,
+              challengesUnlocked: unlockedChallenges.map(c => c.name),
+            }
+          });
+
+          // Show celebration modal instead of or before level up modal
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          setShowRunCelebrationModal(true);
+        }
+      } else if (syncResult.leveledUp && syncResult.newLevel && syncResult.oldLevel && syncResult.distanceGained) {
+        // Only show level up modal if no new runs to celebrate
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         setLevelUpInfo({
           oldLevel: syncResult.oldLevel,
           newLevel: syncResult.newLevel,
-          distanceGained: syncResult.distanceGained
+          distanceGained: syncResult.distanceGained,
+          coinsGained: syncResult.coinsGained || 0,
         });
         setShowLevelUpModal(true);
+      } else if (syncResult.coinsGained && syncResult.coinsGained > 0) {
+        // Show brief notification for coins gained even without level up
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Could add a separate coins notification here in the future
       }
 
       // Data will automatically refresh via Convex queries
@@ -478,59 +529,40 @@ export default function HomeScreen() {
             source={require('@/assets/images/bg/bgstadium.jpg')}
             style={styles.scrollingBackgroundImage}
           />
+          {/* <View style={styles.solidBackground} /> */}
         </Animated.View>
 
         <View style={styles.headerContainer}>
           <View style={styles.leftHeaderSection}>
-            <Text style={styles.title}>Koko</Text>
+            <TouchableOpacity onPress={handleTitlePress}>
+              <Text style={styles.title}>Koko</Text>
+            </TouchableOpacity>
             <View style={styles.flashIconsContainer}>
-              <Ionicons name="flash" size={20} color="yellow" />
-              <Ionicons name="flash-outline" size={20} color="white" />
-              <Ionicons name="flash-outline" size={20} color="white" />
-              <Ionicons name="flash-outline" size={20} color="white" />
-            </View>
-            <View style={styles.buttonContainer}>
-              <TouchableOpacity onPress={toggleRiveUrl} style={styles.toggleButton}>
-                <Text style={styles.toggleButtonText}>👀</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={toggleBgAnimation} style={styles.toggleButton}>
-                <Text style={styles.toggleButtonText}>{isBgAnimationRunning ? '⏸️' : '▶️'}</Text>
-              </TouchableOpacity>
-              <TouchableOpacity onPress={() => setShowChallengesModal(true)} style={styles.toggleButton}>
-                <Text style={styles.toggleButtonText}>🏅</Text>
-              </TouchableOpacity>
+              <Ionicons name="flash" size={20} color={Theme.colors.accent.primary} />
+              <Ionicons name="flash" size={20} color={Theme.colors.accent.primary} />
+              <Ionicons name="flash-outline" size={20} color={Theme.colors.text.primary} />
+              <Ionicons name="flash-outline" size={20} color={Theme.colors.text.primary} />
             </View>
           </View>
-
-          {levelInfo && (
-            <TouchableOpacity style={styles.levelProgressContainer} onPress={handleProfilePress}>
-              <View style={styles.levelSection}>
-                <Text style={styles.levelText}>Lv.{levelInfo.level}</Text>
-              </View>
-              <View style={styles.progressSection}>
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressFill,
-                      { width: `${levelInfo.progressToNextLevel * 100}%` }
-                    ]}
-                  />
-                </View>
-                <Text style={styles.progressDetailText}>
-                  {`${(levelInfo.totalDistance / 1000).toFixed(1)}km / ${(levelInfo.distanceForNextLevel / 1000).toFixed(1)}km`}
-                </Text>
-              </View>
+          <View style={styles.rightHeaderSection}>
+            <TouchableOpacity onPress={() => router.push('/challenges')}>
+              <Text style={styles.challengesIcon}>🏅</Text>
             </TouchableOpacity>
-          )}
+          </View>
+          {/* <View style={styles.rightHeaderSection}>
+            <Text style={styles.coinIcon}>🥥</Text>
+            <Text style={styles.coinText}>{userCoins}</Text>
+          </View> */}
         </View>
 
-        <View style={styles.animationContainer}>
+        <View style={styles.animationContainer} onTouchEnd={() => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)}>
           <Rive
             url={riveUrl}
             style={styles.animation}
             autoplay={true}
           />
         </View>
+        {/* Challenges Button */}
 
         <ScrollView
           style={styles.mainScrollView}
@@ -539,15 +571,20 @@ export default function HomeScreen() {
           contentContainerStyle={styles.scrollContentContainer}
         >
           {/* Spacer to push week view below animation initially */}
-          <View style={styles.scrollSpacer} />
+          <View style={styles.scrollSpacer}>
+            {/* <View style={styles.challengesButtonContainer}>
+              <TouchableOpacity onPress={() => router.push('/challenges')}>
+                <Text style={styles.challengesIcon}>🏅</Text>
+              </TouchableOpacity>
+            </View> */}
+          </View>
 
           {/* Week View Component */}
           <WeekView
             dayData={dayData}
             currentDayIndex={currentDayIndex}
             onDaySelect={handleDaySelect}
-            weeklyProgress={weeks[currentWeekIndex]?.weeklyProgress || 0}
-            weeklyGoal={weeklyGoal}
+            levelInfo={levelInfo}
             currentWeekIndex={currentWeekIndex}
             weeks={weeks}
             onWeekChange={handleWeekChange}
@@ -591,6 +628,11 @@ export default function HomeScreen() {
                     <Text style={styles.levelUpXP}>
                       +{LevelingService.formatDistance(levelUpInfo.distanceGained)} distance gained!
                     </Text>
+                    {levelUpInfo.coinsGained && levelUpInfo.coinsGained > 0 && (
+                      <Text style={styles.levelUpCoins}>
+                        +{levelUpInfo.coinsGained} coins earned! 🪙
+                      </Text>
+                    )}
                   </View>
                   <Text style={styles.levelUpEmoji}>
                     {LevelingService.getLevelEmoji(levelUpInfo.newLevel)}
@@ -610,38 +652,109 @@ export default function HomeScreen() {
           </View>
         </Modal>
 
-        {/* Challenges Modal */}
+        {/* Run Celebration Modal */}
+        <RunCelebrationModal
+          visible={showRunCelebrationModal}
+          runData={runCelebrationData?.runData || null}
+          rewards={runCelebrationData?.rewards || {
+            distanceGained: 0,
+            coinsGained: 0,
+            challengesUnlocked: []
+          }}
+          onClose={() => {
+            setShowRunCelebrationModal(false);
+            setRunCelebrationData(null);
+
+            // Show level up modal after run celebration if user leveled up
+            if (runCelebrationData?.rewards.leveledUp &&
+              runCelebrationData?.rewards.newLevel &&
+              runCelebrationData?.rewards.oldLevel) {
+              setLevelUpInfo({
+                oldLevel: runCelebrationData.rewards.oldLevel,
+                newLevel: runCelebrationData.rewards.newLevel,
+                distanceGained: runCelebrationData.rewards.distanceGained,
+                coinsGained: runCelebrationData.rewards.coinsGained || 0,
+              });
+              setShowLevelUpModal(true);
+            }
+          }}
+        />
+
+        {/* Debug Modal */}
         <Modal
-          visible={showChallengesModal}
+          visible={showDebugModal}
           transparent={true}
-          animationType="fade"
-          onRequestClose={() => setShowChallengesModal(false)}
+          animationType="slide"
+          onRequestClose={() => setShowDebugModal(false)}
         >
           <View style={styles.modalOverlay}>
-            <View style={styles.challengesModal}>
-              <Text style={styles.challengesTitle}>Challenges</Text>
-              <ScrollView style={styles.challengesScroll}>
-                {challengeCategories.map((category) => (
-                  <View key={category.title} style={styles.challengeCategory}>
-                    <Text style={styles.challengeCategoryTitle}>{category.title}</Text>
-                    {category.items.map((item) => (
-                      <TouchableOpacity
-                        key={item.challenge}
-                        style={styles.challengeItem}
-                        onPress={() => Alert.alert(item.challenge, `Reward: ${item.reward}`)}
-                      >
-                        <Text style={styles.challengeText}>{item.challenge}</Text>
-                        <View style={styles.rewardPlaceholder} />
-                      </TouchableOpacity>
-                    ))}
-                  </View>
-                ))}
-              </ScrollView>
+            <View style={styles.debugModal}>
+              <Text style={styles.debugTitle}>🛠️ Debug Options</Text>
+
               <TouchableOpacity
-                style={styles.levelUpButton}
-                onPress={() => setShowChallengesModal(false)}
+                style={styles.debugButton}
+                onPress={() => {
+                  toggleRiveUrl();
+                }}
               >
-                <Text style={styles.levelUpButtonText}>Close</Text>
+                <Text style={styles.debugButtonText}>👀 Change Animation</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={() => {
+                  toggleBgAnimation();
+                }}
+              >
+                <Text style={styles.debugButtonText}>
+                  {isBgAnimationRunning ? '⏸️ Stop Background' : '▶️ Start Background'}
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={() => {
+                  // Trigger run celebration with last activity
+                  const lastActivity = activities?.[0];
+                  if (lastActivity) {
+                    // Mock some rewards data for testing
+                    const mockRewards = {
+                      distanceGained: lastActivity.distance,
+                      coinsGained: Math.floor(lastActivity.distance / 1000),
+                      leveledUp: Math.random() > 0.7, // 30% chance of level up for demo
+                      newLevel: (profile?.level || 1) + 1,
+                      oldLevel: profile?.level || 1,
+                      challengesUnlocked: ChallengeService.checkChallengesForRun(lastActivity, {
+                        totalRuns: profile?.totalWorkouts || 0,
+                        totalDistance: profile?.totalDistance || 0,
+                        isFirstRun: false
+                      }).map(c => c.name),
+                    };
+
+                    setRunCelebrationData({
+                      runData: lastActivity,
+                      rewards: mockRewards
+                    });
+
+                    setShowDebugModal(false);
+                    setShowRunCelebrationModal(true);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  } else {
+                    Alert.alert('No Activities', 'No activities found to celebrate!');
+                  }
+                }}
+              >
+                <Text style={styles.debugButtonText}>🎉 Test Run Celebration</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.debugButton, styles.debugCloseButton]}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowDebugModal(false);
+                }}
+              >
+                <Text style={styles.debugCloseButtonText}>Close</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -662,6 +775,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  solidBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100%',
+    width: '100%',
+    backgroundColor: Theme.colors.background.tertiary
+  },
   scrollingBackgroundContainer: {
     position: 'absolute',
     top: -200,
@@ -674,13 +795,13 @@ const styles = StyleSheet.create({
   scrollingBackgroundImage: {
     width: SCROLLING_BG_LOOP_WIDTH,
     height: '100%',
-    resizeMode: 'cover', // Ensures the image covers the segment, maintaining aspect ratio
+    resizeMode: 'cover',
   },
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 20,
+    paddingHorizontal: Theme.spacing.xl,
     paddingTop: 60,
     zIndex: 1,
     backgroundColor: 'transparent',
@@ -691,11 +812,32 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#fff',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
   flashIconsContainer: {
     flexDirection: 'row',
+  },
+  rightHeaderSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  coinIcon: {
+    fontSize: 20,
+    marginRight: 4,
+  },
+  challengesButtonContainer: {
+    position: 'absolute',
+    bottom: 10,
+    left: Theme.spacing.xl,
+  },
+  challengesIcon: {
+    fontSize: 40,
+  },
+  coinText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
   levelProgressContainer: {
     alignItems: 'flex-end',
@@ -706,17 +848,17 @@ const styles = StyleSheet.create({
   },
   levelText: {
     fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#fff',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textShadowColor: Theme.colors.transparent.black50,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   levelTitle: {
     fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: 'rgba(255, 255, 255, 0.9)',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
+    textShadowColor: Theme.colors.transparent.black50,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
@@ -724,31 +866,31 @@ const styles = StyleSheet.create({
     alignItems: 'flex-end',
   },
   progressBar: {
-    backgroundColor: 'rgba(255, 255, 255, 1)',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.small,
     height: 10,
     width: 120,
     marginBottom: 2,
   },
   progressFill: {
-    backgroundColor: '#10B981',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.special.level,
+    borderRadius: Theme.borderRadius.small,
     height: '100%',
   },
   progressText: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: 'rgba(255, 255, 255, 0.9)',
-    textShadowColor: 'rgba(0, 0, 0, 0.3)',
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.secondary,
+    textShadowColor: Theme.colors.transparent.black50,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,
   },
   progressDetailText: {
     fontSize: 10,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: 'rgba(255, 255, 255, 0.8)',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
     marginTop: 2,
-    textShadowColor: 'rgba(0, 0, 0, 0.2)',
+    textShadowColor: Theme.colors.transparent.black30,
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 1,
   },
@@ -758,7 +900,7 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    zIndex: 5,
+    zIndex: 2,
   },
   animationContainer: {
     height: 300,
@@ -772,141 +914,134 @@ const styles = StyleSheet.create({
     width: 300,
     height: 300,
     textAlign: 'center',
-    margin: 20,
+    margin: Theme.spacing.xl,
   },
   selectedDayCardContainer: {
-    backgroundColor: 'white',
+    backgroundColor: Theme.colors.background.primary,
     minHeight: 400,
   },
   error: {
-    color: 'red',
+    color: Theme.colors.status.error,
     fontSize: 16,
     textAlign: 'center',
-    margin: 20,
+    margin: Theme.spacing.xl,
   },
   loading: {
     fontSize: 16,
     textAlign: 'center',
-    margin: 20,
-  },
-  toggleButton: {
-    marginHorizontal: 4,
-  },
-  toggleButtonText: {
-    color: '#fff',
-    fontFamily: 'SF-Pro-Rounded-Bold',
-  },
-  buttonContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    margin: Theme.spacing.xl,
+    color: Theme.colors.text.tertiary,
   },
   modalOverlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.7)',
+    backgroundColor: Theme.colors.background.overlay,
     justifyContent: 'center',
     alignItems: 'center',
   },
   levelUpModal: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 32,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.xl,
+    padding: Theme.spacing.xxxl,
     alignItems: 'center',
     marginHorizontal: 40,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 12,
-    elevation: 8,
+    ...Theme.shadows.large,
+    borderWidth: 1,
+    borderColor: Theme.colors.border.primary,
   },
   levelUpTitle: {
     fontSize: 24,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#333',
-    marginBottom: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.lg,
     textAlign: 'center',
   },
   levelUpSubtitle: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#666',
-    marginBottom: 20,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.tertiary,
+    marginBottom: Theme.spacing.xl,
     textAlign: 'center',
   },
   levelUpDetails: {
     alignItems: 'center',
-    marginBottom: 20,
+    marginBottom: Theme.spacing.xl,
   },
   levelUpLevel: {
     fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#007AFF',
-    marginBottom: 8,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+    marginBottom: Theme.spacing.sm,
   },
   levelUpXP: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#10B981',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.status.success,
   },
   levelUpEmoji: {
     fontSize: 48,
-    marginBottom: 24,
+    marginBottom: Theme.spacing.xxl,
   },
   levelUpButton: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 12,
+    backgroundColor: Theme.colors.accent.primary,
+    paddingHorizontal: Theme.spacing.xxxl,
+    paddingVertical: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.medium,
   },
   levelUpButtonText: {
-    color: '#fff',
+    color: Theme.colors.text.primary,
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
+    fontFamily: Theme.fonts.semibold,
   },
-  challengesModal: {
-    backgroundColor: '#fff',
-    borderRadius: 20,
-    padding: 20,
-    maxHeight: '80%',
-    width: '80%',
-  },
-  challengesTitle: {
-    fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    textAlign: 'center',
-    marginBottom: 12,
-  },
-  challengesScroll: {
-    marginBottom: 20,
-  },
-  challengeCategory: {
-    marginBottom: 16,
-  },
-  challengeCategoryTitle: {
+  levelUpCoins: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    marginBottom: 8,
-  },
-  challengeItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginBottom: 6,
-  },
-  challengeText: {
-    fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    flex: 1,
-    marginRight: 8,
-  },
-  rewardPlaceholder: {
-    width: 24,
-    height: 24,
-    backgroundColor: '#000',
-    borderRadius: 4,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.special.coin,
   },
   scrollContentContainer: {
   },
   scrollSpacer: {
-    height: 300, // Height to position week view below animation
+    height: 300,
+  },
+  debugModal: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.xl,
+    padding: Theme.spacing.xxl,
+    alignItems: 'center',
+    marginHorizontal: 40,
+    ...Theme.shadows.large,
+    minWidth: 280,
+    borderWidth: 1,
+    borderColor: Theme.colors.border.primary,
+  },
+  debugTitle: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.xl,
+    textAlign: 'center',
+  },
+  debugButton: {
+    backgroundColor: Theme.colors.accent.primary,
+    paddingHorizontal: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.medium,
+    marginBottom: Theme.spacing.md,
+    minWidth: 200,
+  },
+  debugButtonText: {
+    color: Theme.colors.text.primary,
+    fontSize: 16,
+    fontFamily: Theme.fonts.semibold,
+    textAlign: 'center',
+  },
+  debugCloseButton: {
+    backgroundColor: Theme.colors.text.muted,
+    marginTop: Theme.spacing.sm,
+  },
+  debugCloseButtonText: {
+    color: Theme.colors.text.primary,
+    fontSize: 16,
+    fontFamily: Theme.fonts.semibold,
+    textAlign: 'center',
   },
 });

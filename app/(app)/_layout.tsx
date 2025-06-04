@@ -1,5 +1,5 @@
+import Theme from '@/constants/theme';
 import { FontAwesome5 } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
@@ -30,7 +30,7 @@ export default function AppLayout() {
         tabBarStyle: {
           position: 'absolute',
           bottom: 0,
-          backgroundColor: 'rgba(255, 255, 255, 1)',
+          backgroundColor: Theme.colors.background.primary,
           height: 80,
           paddingBottom: 0,
           borderTopWidth: 0,
@@ -38,20 +38,11 @@ export default function AppLayout() {
           shadowOpacity: 0,
         },
         tabBarBackground: () => (
-          <BlurView
-            intensity={80}
-            tint="light"
-            style={{
-              position: 'absolute',
-              top: 0,
-              left: 0,
-              bottom: 0,
-              right: 0,
-            }}
+          <View
+
           >
-            {/* Very soft, subtle white blur fade */}
             <LinearGradient
-              colors={['rgba(255, 255, 255, 0)', 'rgba(255, 255, 255, 1)']}
+              colors={[Theme.colors.background.primary + '00', Theme.colors.background.primary]}
               locations={[0, 1]}
               start={{ x: 0, y: 0 }}
               end={{ x: 0, y: 1 }}
@@ -63,14 +54,14 @@ export default function AppLayout() {
                 height: 100,
               }}
             />
-          </BlurView>
+          </View>
         ),
         tabBarShowLabel: false,
-        tabBarActiveTintColor: '#000',
+        tabBarActiveTintColor: Theme.colors.accent.primary,
         tabBarIconStyle: {
           marginTop: 10,
         },
-        tabBarInactiveTintColor: '#8E8E93',
+        tabBarInactiveTintColor: Theme.colors.text.muted,
       }}
     >
       <Tabs.Screen
@@ -86,7 +77,7 @@ export default function AppLayout() {
         name="activities"
         options={({ navigation }) => ({
           tabBarIcon: ({ color, size }) => (
-            <FontAwesome5 name="running" size={size} color={color} />
+            <FontAwesome5 name="calendar-alt" size={size} color={color} />
           ),
           tabBarButton: createTabBarButton(() => navigation.navigate('activities')),
         })}
@@ -98,12 +89,12 @@ export default function AppLayout() {
             <View style={{
               width: 70,
               height: 70,
-              backgroundColor: '#000',
-              borderRadius: 100,
+              backgroundColor: Theme.colors.accent.primary,
+              borderRadius: Theme.borderRadius.full,
               justifyContent: 'center',
               alignItems: 'center',
             }}>
-              <FontAwesome5 name="circle" size={40} color="#fff" />
+              <FontAwesome5 name="circle" size={40} color={Theme.colors.text.primary} />
             </View>
           ),
           tabBarButton: createTabBarButton(() =>

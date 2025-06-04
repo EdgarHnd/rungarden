@@ -1,3 +1,4 @@
+import Theme from '@/constants/theme';
 import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -141,77 +142,71 @@ export default function SuggestedActivityCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginVertical: 8,
+    backgroundColor: Theme.colors.background.primary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    marginVertical: Theme.spacing.sm,
     width: Dimensions.get('window').width - 40,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    borderWidth: 1,
+    borderColor: Theme.colors.accent.light,
   },
   header: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Theme.spacing.lg,
   },
   emoji: {
     fontSize: 32,
-    marginRight: 12,
+    marginRight: Theme.spacing.md,
   },
   headerText: {
     flex: 1,
   },
   title: {
     fontSize: 22,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#111827',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
     marginBottom: 2,
   },
   subtitle: {
     fontSize: 14,
-    color: '#9CA3AF',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
   },
   intensityBadge: {
-    paddingHorizontal: 12,
+    paddingHorizontal: Theme.spacing.md,
     paddingVertical: 4,
-    borderRadius: 12,
+    borderRadius: Theme.borderRadius.medium,
   },
   intensityText: {
     fontSize: 12,
-    color: 'white',
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
   },
   description: {
     fontSize: 16,
-    color: '#6B7280',
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: Theme.colors.text.secondary,
+    fontFamily: Theme.fonts.regular,
     lineHeight: 22,
-    marginBottom: 20,
+    marginBottom: Theme.spacing.xl,
   },
   detailsRow: {
     flexDirection: 'row',
     gap: 24,
-    marginBottom: 20,
+    marginBottom: Theme.spacing.xl,
   },
   detail: {
     flex: 1,
   },
   detailLabel: {
     fontSize: 14,
-    color: '#9CA3AF',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
     marginBottom: 4,
   },
   detailValue: {
     fontSize: 16,
-    color: '#111827',
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
   },
 }); 

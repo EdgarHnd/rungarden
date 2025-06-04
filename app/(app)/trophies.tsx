@@ -1,4 +1,6 @@
 import Leaderboard from '@/components/Leaderboard';
+import Theme from '@/constants/theme';
+import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
 
@@ -11,45 +13,46 @@ export default function TrophiesScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <LinearGradient
+      colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.primary]}
+      style={styles.container}
+    >
       <View style={styles.header}>
         <Text style={styles.title}>🏆 Leaderboard</Text>
-        <Text style={styles.subtitle}>Compete with other runners</Text>
+        <Text style={styles.subtitle}>See how you stack up with other runners</Text>
       </View>
 
       <View style={styles.content}>
         <Leaderboard onError={handleError} />
       </View>
-    </View>
+    </LinearGradient>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f5f5f5',
   },
   header: {
-    padding: 20,
+    padding: Theme.spacing.xl,
     paddingTop: 60,
-    backgroundColor: '#fff',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e9ecef',
+    alignItems: 'center',
   },
   title: {
-    fontSize: 24,
-    fontWeight: '700',
-    color: '#333',
+    fontSize: 28,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
     textAlign: 'center',
+    marginBottom: Theme.spacing.sm,
   },
   subtitle: {
     fontSize: 16,
-    color: '#666',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
     textAlign: 'center',
-    marginTop: 8,
   },
   content: {
     flex: 1,
-    padding: 20,
+    padding: Theme.spacing.xl,
   },
 }); 

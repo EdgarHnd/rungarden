@@ -26,6 +26,14 @@ function AuthenticatedApp() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(app)" />
       <Stack.Screen
+        name="challenges"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          animation: 'slide_from_bottom',
+        }}
+      />
+      <Stack.Screen
         name="activity-detail"
         options={{
           presentation: 'card',

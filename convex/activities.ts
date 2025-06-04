@@ -20,6 +20,11 @@ function getDistanceForLevel(level: number): number {
   return Math.floor(Math.pow(level - 1, 2) * 2500); // 2500 meters = 2.5km
 }
 
+// Calculate coins from total distance (1 coin per km)
+function calculateCoinsFromDistance(totalDistance: number): number {
+  return Math.floor(totalDistance / 1000); // 1 coin per kilometer
+}
+
 export const getUserActivitiesForYear = query({
   args: {
     year: v.number(),
@@ -119,6 +124,8 @@ export const syncActivitiesFromHealthKit = mutation({
       leveledUp: false,
       newLevel: 1,
       oldLevel: 1,
+      coinsGained: 0,
+      newRuns: [] as any[], // Track newly created activities
     };
 
     // Get current profile for level tracking
@@ -166,15 +173,22 @@ export const syncActivitiesFromHealthKit = mutation({
         }
       } else {
         // Create new activity and track distance
-        const newActivity = await ctx.db.insert("activities", {
+        const newActivityId = await ctx.db.insert("activities", {
           userId,
           ...activity,
           pace,
           syncedAt: now,
           createdAt: now,
         });
+        
+        // Get the full activity record to include in results
+        const newActivityRecord = await ctx.db.get(newActivityId);
+        if (newActivityRecord) {
+          syncResults.newRuns.push(newActivityRecord);
+        }
+        
         syncResults.created++;
-        console.log(`[syncActivitiesFromHealthKit] Created new activity: ${activity.healthKitUuid}, ID: ${newActivity}`);
+        console.log(`[syncActivitiesFromHealthKit] Created new activity: ${activity.healthKitUuid}, ID: ${newActivityId}`);
 
         // Track distance for new activity
         totalDistanceGained += activity.distance;
@@ -184,19 +198,26 @@ export const syncActivitiesFromHealthKit = mutation({
     // Update user profile totals after sync
     await updateUserProfileTotals(ctx, userId);
     
-    // Update level if any new distance was gained
+    // Update level and coins if any new distance was gained
     if (totalDistanceGained > 0 && currentProfile) {
       const oldTotalDistance = currentProfile.totalDistance || 0;
       const newTotalDistance = oldTotalDistance + totalDistanceGained;
       const oldLevel = currentProfile.level || 1;
       const newLevel = calculateLevelFromDistance(newTotalDistance);
       
+      // Calculate coins gained from new distance
+      const oldCoins = currentProfile.coins || 0;
+      const newTotalCoins = calculateCoinsFromDistance(newTotalDistance);
+      const coinsGained = newTotalCoins - oldCoins;
+      
       await ctx.db.patch(currentProfile._id, {
         level: newLevel,
+        coins: newTotalCoins,
         updatedAt: now,
       });
 
       syncResults.distanceGained = totalDistanceGained;
+      syncResults.coinsGained = coinsGained;
       syncResults.leveledUp = newLevel > oldLevel;
       syncResults.newLevel = newLevel;
       syncResults.oldLevel = oldLevel;
@@ -298,6 +319,9 @@ async function updateUserProfileTotals(ctx: any, userId: any) {
   
   // Calculate level from total distance
   const level = calculateLevelFromDistance(totalDistance);
+  
+  // Calculate coins from total distance
+  const coins = calculateCoinsFromDistance(totalDistance);
 
   const existingProfile = await ctx.db
     .query("userProfiles")
@@ -312,6 +336,7 @@ async function updateUserProfileTotals(ctx: any, userId: any) {
       totalWorkouts,
       totalCalories,
       level,
+      coins,
       updatedAt: now,
     });
   } else {
@@ -322,6 +347,7 @@ async function updateUserProfileTotals(ctx: any, userId: any) {
       totalWorkouts,
       totalCalories,
       level,
+      coins,
       createdAt: now,
       updatedAt: now,
     });

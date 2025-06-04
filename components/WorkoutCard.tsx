@@ -1,3 +1,4 @@
+import Theme from '@/constants/theme';
 import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -57,37 +58,29 @@ export default function WorkoutCard({
 
 const styles = StyleSheet.create({
   workoutCard: {
-    backgroundColor: 'white',
-    borderRadius: 16,
-    padding: 20,
-    marginVertical: 8,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    marginVertical: Theme.spacing.sm,
     width: Dimensions.get('window').width - 40,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 4,
-    },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
   },
   workoutTitle: {
     fontSize: 20,
-    color: '#9CA3AF',
-    marginBottom: 8,
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    marginBottom: Theme.spacing.sm,
+    fontFamily: Theme.fonts.medium,
   },
   distance: {
     fontSize: 50,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#111827',
-    marginBottom: 8,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.sm,
     letterSpacing: -2,
   },
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'flex-start',
-    marginBottom: 12,
+    marginBottom: Theme.spacing.md,
     gap: 24,
   },
   stat: {
@@ -95,7 +88,7 @@ const styles = StyleSheet.create({
   },
   statValue: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#6B7280',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
   },
 }); 

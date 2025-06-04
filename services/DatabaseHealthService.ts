@@ -1,8 +1,6 @@
 import { ConvexReactClient } from "convex/react";
 import { api } from '../convex/_generated/api';
-import { Id } from '../convex/_generated/dataModel';
-import HealthService, { HealthStats, RunningActivity } from './HealthService';
-import LevelingService, { LevelInfo } from './LevelingService';
+import HealthService, { RunningActivity } from './HealthService';
 
 export interface DatabaseActivity {
   _id: string;
@@ -29,7 +27,14 @@ export interface UserProfile {
   totalCalories: number;
   lastSyncDate?: string;
   level: number;
+  coins?: number; // Coins earned from running (1 coin per km)
   weekStartDay?: number; // 0 = Sunday, 1 = Monday
+  // Sync preferences
+  healthKitSyncEnabled?: boolean; // Whether HealthKit sync is enabled
+  stravaSyncEnabled?: boolean; // Whether Strava sync is enabled
+  autoSyncEnabled?: boolean; // Whether automatic syncing is enabled
+  lastHealthKitSync?: string; // Last HealthKit sync timestamp
+  lastStravaSync?: string; // Last Strava sync timestamp
   createdAt: string;
   updatedAt: string;
 }
@@ -40,6 +45,7 @@ export interface SyncResult {
   skipped: number;
   lastSyncDate: string;
   distanceGained?: number;
+  coinsGained?: number; // Coins gained from new activities
   leveledUp?: boolean;
   newLevel?: number;
   oldLevel?: number;
@@ -73,51 +79,6 @@ class DatabaseHealthService {
       return activities as DatabaseActivity[];
     } catch (error) {
       console.error('Error fetching activities from database:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get user profile
-   */
-  async getUserProfile(): Promise<UserProfile | null> {
-    try {
-      const profile = await this.convexClient.query(api.userProfile.getOrCreateProfile);
-      return profile as UserProfile;
-    } catch (error) {
-      console.error('Error fetching user profile:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get user's current level information
-   */
-  async getUserLevelInfo(): Promise<LevelInfo> {
-    try {
-      const profile = await this.getUserProfile();
-      if (!profile) {
-        // Return default level info for new users
-        return LevelingService.calculateLevelInfo(0);
-      }
-
-      return LevelingService.calculateLevelInfo(profile.totalDistance);
-    } catch (error) {
-      console.error('Error fetching user level info:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Update weekly goal
-   */
-  async updateWeeklyGoal(weeklyGoal: number): Promise<void> {
-    try {
-      await this.convexClient.mutation(api.userProfile.updateWeeklyGoal, {
-        weeklyGoal,
-      });
-    } catch (error) {
-      console.error('Error updating weekly goal:', error);
       throw error;
     }
   }
@@ -171,112 +132,11 @@ class DatabaseHealthService {
   }
 
   /**
-   * Get activities with automatic sync if needed
-   */
-  async getActivitiesWithAutoSync(days: number = 30): Promise<DatabaseActivity[]> {
-    try {
-      const profile = await this.getUserProfile();
-      const now = new Date();
-      const lastSync = profile?.lastSyncDate ? new Date(profile.lastSyncDate) : null;
-      
-      // Auto-sync if:
-      // 1. Never synced before
-      // 2. Last sync was more than 1 hour ago
-      const shouldSync = !lastSync || 
-        (now.getTime() - lastSync.getTime()) > (60 * 60 * 1000); // 1 hour
-
-      if (shouldSync) {
-        console.log('[DatabaseHealthService] Auto-syncing activities...');
-        await this.syncActivitiesFromHealthKit(days);
-      }
-
-      // Return cached data from database
-      return this.getActivitiesFromDatabase(days);
-    } catch (error) {
-      console.error('Error getting activities with auto-sync:', error);
-      
-      // Fallback to database data if sync fails
-      try {
-        return await this.getActivitiesFromDatabase(days);
-      } catch (dbError) {
-        console.error('Database fallback also failed:', dbError);
-        throw error;
-      }
-    }
-  }
-
-  /**
-   * Get activity statistics from database
-   */
-  async getActivityStats(days: number = 30): Promise<HealthStats> {
-    try {
-      const stats = await this.convexClient.query(api.activities.getActivityStats, {
-        days,
-      });
-      
-      return {
-        totalDistance: stats.totalDistance,
-        totalWorkouts: stats.totalWorkouts,
-        averagePace: stats.averagePace,
-        totalCalories: stats.totalCalories,
-      };
-    } catch (error) {
-      console.error('Error fetching activity stats:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get current week's progress
-   */
-  async getCurrentWeekProgress() {
-    try {
-      return await this.convexClient.query(api.userProfile.getCurrentWeekProgress);
-    } catch (error) {
-      console.error('Error fetching week progress:', error);
-      throw error;
-    }
-  }
-
-  /**
    * Force sync - useful for manual refresh
    */
   async forceSyncFromHealthKit(days: number = 30): Promise<SyncResult> {
     console.log('[DatabaseHealthService] Force syncing from HealthKit...');
     return this.syncActivitiesFromHealthKit(days);
-  }
-
-  /**
-   * Delete an activity
-   */
-  async deleteActivity(activityId: Id<"activities">): Promise<void> {
-    try {
-      await this.convexClient.mutation(api.activities.deleteActivity, {
-        activityId,
-      });
-    } catch (error) {
-      console.error('Error deleting activity:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Check if sync is needed based on time elapsed
-   */
-  async isSyncNeeded(): Promise<boolean> {
-    try {
-      const profile = await this.getUserProfile();
-      if (!profile?.lastSyncDate) return true;
-
-      const lastSync = new Date(profile.lastSyncDate);
-      const now = new Date();
-      const hoursSinceSync = (now.getTime() - lastSync.getTime()) / (1000 * 60 * 60);
-      
-      return hoursSinceSync >= 1; // Sync if more than 1 hour
-    } catch (error) {
-      console.error('Error checking sync status:', error);
-      return true; // Default to sync needed if error
-    }
   }
 
   /**
@@ -293,6 +153,118 @@ class DatabaseHealthService {
       averageHeartRate: activity.averageHeartRate,
       workoutName: activity.workoutName,
     }));
+  }
+
+  /**
+   * Get user profile from database
+   */
+  async getUserProfile(): Promise<UserProfile> {
+    try {
+      const profile = await this.convexClient.query(api.userProfile.getOrCreateProfile);
+      return profile as UserProfile;
+    } catch (error) {
+      console.error('Error fetching user profile:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Check if HealthKit sync is enabled for the user
+   */
+  async isHealthKitSyncEnabled(): Promise<boolean> {
+    try {
+      const profile = await this.getUserProfile();
+      return profile.healthKitSyncEnabled ?? false;
+    } catch (error) {
+      console.error('Error checking HealthKit sync status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Check if auto sync is enabled for the user
+   */
+  async isAutoSyncEnabled(): Promise<boolean> {
+    try {
+      const profile = await this.getUserProfile();
+      return profile.autoSyncEnabled ?? false;
+    } catch (error) {
+      console.error('Error checking auto sync status:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Enable or disable HealthKit sync
+   */
+  async setHealthKitSyncEnabled(enabled: boolean): Promise<void> {
+    try {
+      await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
+        healthKitSyncEnabled: enabled,
+        lastHealthKitSync: enabled ? undefined : null, // Clear sync timestamp when disabling
+      });
+      console.log(`[DatabaseHealthService] HealthKit sync ${enabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      console.error('Error updating HealthKit sync preference:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Enable or disable auto sync
+   */
+  async setAutoSyncEnabled(enabled: boolean): Promise<void> {
+    try {
+      await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
+        autoSyncEnabled: enabled,
+      });
+      console.log(`[DatabaseHealthService] Auto sync ${enabled ? 'enabled' : 'disabled'}`);
+    } catch (error) {
+      console.error('Error updating auto sync preference:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync activities only if HealthKit sync is enabled
+   */
+  async syncActivitiesIfEnabled(days: number = 30): Promise<SyncResult | null> {
+    const isEnabled = await this.isHealthKitSyncEnabled();
+    if (!isEnabled) {
+      console.log('[DatabaseHealthService] HealthKit sync is disabled, skipping sync');
+      return null;
+    }
+    
+    return this.syncActivitiesFromHealthKit(days);
+  }
+
+  /**
+   * Get activities with optional auto-sync (only if enabled)
+   */
+  async getActivitiesWithOptionalSync(days: number = 30): Promise<DatabaseActivity[]> {
+    // Always get activities from database first
+    const activities = await this.getActivitiesFromDatabase(days, 100);
+
+    // Only auto-sync if both HealthKit sync and auto sync are enabled
+    const isHealthKitEnabled = await this.isHealthKitSyncEnabled();
+    const isAutoSyncEnabled = await this.isAutoSyncEnabled();
+
+    if (isHealthKitEnabled && isAutoSyncEnabled) {
+      try {
+        // Perform background sync
+        const syncResult = await this.syncActivitiesFromHealthKit(days);
+        console.log('[DatabaseHealthService] Auto-sync completed:', syncResult);
+        
+        // Return fresh data after sync
+        return this.getActivitiesFromDatabase(days, 100);
+      } catch (error) {
+        console.error('[DatabaseHealthService] Auto-sync failed:', error);
+        // Return cached data on sync failure
+        return activities;
+      }
+    }
+
+    return activities;
   }
 }
 

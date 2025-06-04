@@ -1,3 +1,4 @@
+import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { Doc } from '@/convex/_generated/dataModel';
 import DatabaseHealthService, { DatabaseActivity, SyncResult, UserProfile } from '@/services/DatabaseHealthService';
@@ -45,13 +46,24 @@ export default function RunsScreen() {
     try {
       // Try to load data from database first
       await loadHealthData(service, false); // Load from cache first
+
+      // Check if user has HealthKit sync enabled
+      const isHealthKitEnabled = await service.isHealthKitSyncEnabled();
+
+      if (!isHealthKitEnabled) {
+        setHasPermissions(false);
+        setError('HealthKit sync is disabled. Enable it in Settings to sync your workouts.');
+        setIsLoading(false);
+        return;
+      }
+
       setHasPermissions(true);
 
-      // Then try to sync in background if needed
+      // Then try to sync in background if needed and auto-sync is enabled
       if (Platform.OS === 'ios') {
-        const syncNeeded = await service.isSyncNeeded();
-        if (syncNeeded) {
-          console.log('Background sync needed, attempting...');
+        const isAutoSyncEnabled = await service.isAutoSyncEnabled();
+        if (isAutoSyncEnabled) {
+          console.log('Auto-sync enabled, attempting background sync...');
           await syncInBackground(service);
         }
       }
@@ -131,8 +143,8 @@ export default function RunsScreen() {
         setLastSyncResult(syncResult);
         activitiesData = await service.getActivitiesFromDatabase(30, 50);
       } else {
-        // Use auto-sync (will sync if needed)
-        activitiesData = await service.getActivitiesWithAutoSync(30);
+        // Use optional sync (will sync if enabled)
+        activitiesData = await service.getActivitiesWithOptionalSync(30);
       }
 
       // Sort activities by date in descending order (most recent first)
@@ -236,13 +248,27 @@ export default function RunsScreen() {
           <Text style={styles.headerTitle}>Activities</Text>
         </View>
         <View style={styles.permissionContainer}>
-          <Text style={styles.title}>Health Access Required</Text>
+          <Text style={styles.title}>HealthKit Sync Required</Text>
           <Text style={styles.description}>
-            To track your running activities, Koko needs access to your health data.
+            To view your running activities, enable HealthKit sync in Settings.
           </Text>
-          <TouchableOpacity style={styles.button} onPress={requestPermissions}>
-            <Text style={styles.buttonText}>Grant Health Access</Text>
+          <TouchableOpacity
+            style={styles.button}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/settings');
+            }}
+          >
+            <Text style={styles.buttonText}>Open Settings</Text>
           </TouchableOpacity>
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={[styles.button, styles.secondaryButton]}
+              onPress={requestPermissions}
+            >
+              <Text style={[styles.buttonText, styles.secondaryButtonText]}>Request Permissions</Text>
+            </TouchableOpacity>
+          )}
         </View>
       </View>
     );
@@ -377,17 +403,17 @@ export default function RunsScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#f8f9fa',
+    backgroundColor: Theme.colors.background.primary,
   },
   header: {
     paddingTop: 60,
-    paddingBottom: 20,
-    paddingHorizontal: 20,
+    paddingBottom: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xl,
   },
   headerTitle: {
     fontSize: 32,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   headerSubtitleContainer: {
@@ -396,14 +422,14 @@ const styles = StyleSheet.create({
   },
   headerSubtitle: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#000',
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.primary,
   },
   syncStatus: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666',
-    marginLeft: 8,
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
+    marginLeft: Theme.spacing.sm,
   },
   content: {
     flex: 1,
@@ -412,91 +438,100 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: Theme.spacing.xl,
   },
   loadingText: {
-    marginTop: 16,
+    marginTop: Theme.spacing.lg,
     fontSize: 16,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
   },
   permissionContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: Theme.spacing.xl,
   },
   errorContainer: {
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: Theme.spacing.xl,
   },
   title: {
     fontSize: 24,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    marginBottom: 16,
-    color: '#333',
+    fontFamily: Theme.fonts.bold,
+    marginBottom: Theme.spacing.lg,
+    color: Theme.colors.text.primary,
     textAlign: 'center',
   },
   description: {
     fontSize: 16,
-    color: '#666',
+    color: Theme.colors.text.tertiary,
     textAlign: 'center',
-    marginBottom: 32,
+    marginBottom: Theme.spacing.xxxl,
     lineHeight: 24,
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    fontFamily: Theme.fonts.regular,
   },
   button: {
-    backgroundColor: '#007AFF',
-    paddingHorizontal: 32,
-    paddingVertical: 16,
-    borderRadius: 12,
+    backgroundColor: Theme.colors.accent.primary,
+    paddingHorizontal: Theme.spacing.xxxl,
+    paddingVertical: Theme.spacing.lg,
+    borderRadius: Theme.borderRadius.medium,
     minWidth: 200,
   },
   buttonText: {
-    color: '#fff',
+    color: Theme.colors.text.primary,
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
+    fontFamily: Theme.fonts.semibold,
+    textAlign: 'center',
+  },
+  secondaryButton: {
+    backgroundColor: Theme.colors.text.muted,
+    paddingHorizontal: Theme.spacing.xxxl,
+    paddingVertical: Theme.spacing.lg,
+    borderRadius: Theme.borderRadius.medium,
+    minWidth: 200,
+    marginTop: Theme.spacing.lg,
+  },
+  secondaryButtonText: {
+    color: Theme.colors.text.primary,
+    fontSize: 16,
+    fontFamily: Theme.fonts.semibold,
     textAlign: 'center',
   },
   statsContainer: {
     flexDirection: 'row',
     justifyContent: 'space-around',
-    padding: 16,
-    backgroundColor: '#ffffff',
-    marginVertical: 16,
-    marginHorizontal: 16,
-    borderRadius: 20,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    padding: Theme.spacing.lg,
+    backgroundColor: Theme.colors.background.secondary,
+    marginVertical: Theme.spacing.lg,
+    marginHorizontal: Theme.spacing.lg,
+    borderRadius: Theme.borderRadius.xl,
   },
   statBox: {
     alignItems: 'center',
   },
   statValue: {
     fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#333',
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
   statLabel: {
     fontSize: 12,
-    color: '#666',
+    color: Theme.colors.text.tertiary,
     marginTop: 4,
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    fontFamily: Theme.fonts.medium,
   },
   activitiesContainer: {
-    padding: 16,
-    paddingBottom: 32,
+    padding: Theme.spacing.lg,
+    paddingBottom: Theme.spacing.xxxl,
   },
   sectionTitle: {
     fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    marginBottom: 16,
-    color: '#333',
+    fontFamily: Theme.fonts.bold,
+    marginBottom: Theme.spacing.lg,
+    color: Theme.colors.text.primary,
   },
   emptyState: {
     alignItems: 'center',
@@ -504,55 +539,50 @@ const styles = StyleSheet.create({
   },
   emptyStateIcon: {
     fontSize: 64,
-    marginBottom: 16,
+    marginBottom: Theme.spacing.lg,
   },
   emptyStateTitle: {
     fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#333',
-    marginBottom: 8,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.sm,
   },
   emptyStateSubtitle: {
     fontSize: 16,
-    color: '#666',
+    color: Theme.colors.text.tertiary,
     textAlign: 'center',
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    fontFamily: Theme.fonts.regular,
   },
   activityCard: {
-    backgroundColor: '#ffffff',
-    borderRadius: 16,
-    padding: 20,
-    marginBottom: 12,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 4,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    marginBottom: Theme.spacing.md,
   },
   activityHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Theme.spacing.lg,
   },
   activityTitleContainer: {
     flex: 1,
   },
   activityType: {
     fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   activityDate: {
     fontSize: 14,
-    color: '#666',
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.regular,
   },
   chevron: {
     fontSize: 24,
-    color: '#007AFF',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+    color: Theme.colors.accent.primary,
+    fontFamily: Theme.fonts.medium,
   },
   activityStats: {
     flexDirection: 'row',
@@ -564,20 +594,20 @@ const styles = StyleSheet.create({
   },
   activityValue: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#333',
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
   },
   activityLabel: {
     fontSize: 12,
-    color: '#666',
+    color: Theme.colors.text.tertiary,
     marginTop: 4,
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    fontFamily: Theme.fonts.regular,
   },
   error: {
-    color: '#ff3b30',
+    color: Theme.colors.status.error,
     textAlign: 'center',
     marginBottom: 24,
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Regular',
+    fontFamily: Theme.fonts.regular,
   },
 }); 

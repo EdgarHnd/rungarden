@@ -20,6 +20,11 @@ function getDistanceForLevel(level: number): number {
   return Math.floor(Math.pow(level - 1, 2) * 2500); // 2500 meters = 2.5km
 }
 
+// Calculate coins from total distance (1 coin per km)
+function calculateCoinsFromDistance(totalDistance: number): number {
+  return Math.floor(totalDistance / 1000); // 1 coin per kilometer
+}
+
 // Get or create user profile
 export const getOrCreateProfile = query({
   args: {},
@@ -47,7 +52,14 @@ export const getOrCreateProfile = query({
       totalCalories: 0,
       lastSyncDate: null,
       level: 1,
+      coins: 0, // Start with 0 coins
       weekStartDay: 1, // Default to Monday
+      // Sync preferences - all disabled by default
+      healthKitSyncEnabled: false,
+      stravaSyncEnabled: false,
+      autoSyncEnabled: false,
+      lastHealthKitSync: undefined,
+      lastStravaSync: undefined,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
@@ -63,6 +75,7 @@ export const updateProfile = mutation({
     totalCalories: v.optional(v.number()),
     lastSyncDate: v.optional(v.string()),
     level: v.optional(v.number()),
+    coins: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -77,12 +90,25 @@ export const updateProfile = mutation({
 
     const now = new Date().toISOString();
 
+    // Calculate coins from total distance if not provided but totalDistance is
+    let calculatedCoins = args.coins;
+    if (calculatedCoins === undefined && args.totalDistance !== undefined) {
+      calculatedCoins = calculateCoinsFromDistance(args.totalDistance);
+    }
+
     if (existingProfile) {
       // Update existing profile
-      await ctx.db.patch(existingProfile._id, {
+      const updateData: any = {
         ...args,
         updatedAt: now,
-      });
+      };
+      
+      // Include calculated coins if we calculated them
+      if (calculatedCoins !== undefined) {
+        updateData.coins = calculatedCoins;
+      }
+
+      await ctx.db.patch(existingProfile._id, updateData);
       return existingProfile._id;
     } else {
       // Create new profile
@@ -94,6 +120,7 @@ export const updateProfile = mutation({
         totalCalories: args.totalCalories ?? 0,
         lastSyncDate: args.lastSyncDate,
         level: args.level ?? 1,
+        coins: calculatedCoins ?? 0,
         createdAt: now,
         updatedAt: now,
       });
@@ -131,11 +158,73 @@ export const updateWeeklyGoal = mutation({
             totalWorkouts: 0,
             totalCalories: 0,
             level: 1,
+            coins: 0, // Start with 0 coins
             createdAt: new Date().toISOString(),
             updatedAt: new Date().toISOString(),
           });
         }
       });
+  },
+});
+
+// Update sync preferences
+export const updateSyncPreferences = mutation({
+  args: {
+    healthKitSyncEnabled: v.optional(v.boolean()),
+    stravaSyncEnabled: v.optional(v.boolean()),
+    autoSyncEnabled: v.optional(v.boolean()),
+    lastHealthKitSync: v.optional(v.union(v.string(), v.null())),
+    lastStravaSync: v.optional(v.union(v.string(), v.null())),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const existingProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    const now = new Date().toISOString();
+
+    if (existingProfile) {
+      // Update existing profile
+      const updateData: any = {
+        ...args,
+        updatedAt: now,
+      };
+
+      // Handle null values properly for optional string fields
+      if (args.lastHealthKitSync === null) {
+        updateData.lastHealthKitSync = undefined;
+      }
+      if (args.lastStravaSync === null) {
+        updateData.lastStravaSync = undefined;
+      }
+
+      await ctx.db.patch(existingProfile._id, updateData);
+      return existingProfile._id;
+    } else {
+      // Create new profile with sync preferences
+      return await ctx.db.insert("userProfiles", {
+        userId,
+        weeklyGoal: 10000, // Default 10km
+        totalDistance: 0,
+        totalWorkouts: 0,
+        totalCalories: 0,
+        level: 1,
+        coins: 0,
+        healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
+        stravaSyncEnabled: args.stravaSyncEnabled ?? false,
+        autoSyncEnabled: args.autoSyncEnabled ?? false,
+        lastHealthKitSync: args.lastHealthKitSync === null ? undefined : args.lastHealthKitSync,
+        lastStravaSync: args.lastStravaSync === null ? undefined : args.lastStravaSync,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
   },
 });
 
@@ -204,5 +293,64 @@ export const getCurrentWeekProgress = query({
       workoutCount: weekActivities.length,
       totalCalories,
     };
+  },
+});
+
+// Spend coins mutation (for shop functionality)
+export const spendCoins = mutation({
+  args: {
+    amount: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    if (args.amount <= 0) {
+      throw new Error("Amount must be positive");
+    }
+
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (!profile) {
+      throw new Error("Profile not found");
+    }
+
+    const currentCoins = profile.coins ?? 0;
+    if (currentCoins < args.amount) {
+      throw new Error("Insufficient coins");
+    }
+
+    await ctx.db.patch(profile._id, {
+      coins: currentCoins - args.amount,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return {
+      success: true,
+      remainingCoins: currentCoins - args.amount,
+    };
+  },
+});
+
+// Get user's current coin balance
+export const getUserCoins = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    return profile?.coins ?? 0;
   },
 }); 

@@ -15,8 +15,15 @@ const schema = defineSchema({
     lastSyncDate: v.optional(v.string()), // ISO string for last HealthKit sync
     // Gamification fields
     level: v.number(), // Current level based on total distance
+    coins: v.optional(v.number()), // Coins earned from running (1 coin per km)
     // Week preferences
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))), // 0 = Sunday, 1 = Monday, defaults to 1 (Monday)
+    // Sync preferences
+    healthKitSyncEnabled: v.optional(v.boolean()), // Whether HealthKit sync is enabled (defaults to false)
+    stravaSyncEnabled: v.optional(v.boolean()), // Whether Strava sync is enabled (defaults to false)
+    autoSyncEnabled: v.optional(v.boolean()), // Whether automatic syncing is enabled (defaults to false)
+    lastHealthKitSync: v.optional(v.string()), // Last HealthKit sync timestamp
+    lastStravaSync: v.optional(v.string()), // Last Strava sync timestamp
     createdAt: v.string(),
     updatedAt: v.string(),
   })

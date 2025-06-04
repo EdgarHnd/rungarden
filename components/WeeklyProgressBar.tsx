@@ -1,58 +1,58 @@
+import Theme from '@/constants/theme';
 import React from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 
 interface WeeklyProgressBarProps {
-  weeklyProgress: number;
-  weeklyGoal: string;
+  currentDistance: number;
+  targetDistance: number;
 }
 
-export default function WeeklyProgressBar({ weeklyProgress, weeklyGoal }: WeeklyProgressBarProps) {
-  const progressPercentage = (weeklyProgress / parseFloat(weeklyGoal)) * 100;
+export default function WeeklyProgressBar({ currentDistance, targetDistance }: WeeklyProgressBarProps) {
+  const progressPercentage = Math.min((currentDistance / targetDistance) * 100, 100);
 
   return (
-    <View style={styles.progressContainer}>
-      <View style={styles.progressHeader}>
-        <Text style={styles.progressLabel}>Weekly Goal</Text>
-        <Text style={styles.progressText}>{weeklyProgress} / {weeklyGoal} km</Text>
+    <View style={styles.container}>
+      <View style={styles.labelContainer}>
+        <Text style={styles.label}>Weekly Goal</Text>
+        <Text style={styles.progress}>
+          {currentDistance.toFixed(1)}km / {targetDistance}km
+        </Text>
       </View>
       <View style={styles.progressBar}>
-        <View style={[styles.progressFill, { width: `${Math.min(progressPercentage, 100)}%` }]} />
+        <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
       </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  progressContainer: {
-    backgroundColor: '#F3F4F6',
-    borderRadius: 16,
-    padding: 20,
+  container: {
+    marginVertical: Theme.spacing.sm,
   },
-  progressHeader: {
+  labelContainer: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: 16,
+    marginBottom: Theme.spacing.xs,
   },
-  progressLabel: {
-    fontSize: 16,
-    color: '#9CA3AF',
-    fontFamily: 'SF-Pro-Rounded-Medium',
+  label: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
   },
-  progressText: {
-    fontSize: 16,
-    color: '#111827',
-    fontFamily: 'SF-Pro-Rounded-Bold',
+  progress: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
   },
   progressBar: {
     height: 8,
-    backgroundColor: '#D1D5DB',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.small,
     overflow: 'hidden',
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#3B82F6',
-    borderRadius: 8,
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: Theme.borderRadius.small,
   },
 }); 

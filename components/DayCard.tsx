@@ -1,5 +1,6 @@
 import SuggestedActivityCard from '@/components/SuggestedActivityCard';
 import WorkoutCard from '@/components/WorkoutCard';
+import Theme from '@/constants/theme';
 import { RunningActivity } from '@/services/HealthService';
 import { router } from 'expo-router';
 import React from 'react';
@@ -83,9 +84,11 @@ const styles = StyleSheet.create({
     width: '100%',
     flexDirection: 'column',
     alignItems: 'center',
-    paddingHorizontal: 20,
+    paddingHorizontal: Theme.spacing.xl,
     paddingTop: 10,
     marginBottom: 100,
+    minHeight: 400,
+    backgroundColor: Theme.colors.background.primary,
   },
   emptyState: {
     flex: 1,
@@ -95,8 +98,8 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: '#9CA3AF',
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    marginBottom: 16,
+    color: Theme.colors.text.muted,
+    fontFamily: Theme.fonts.medium,
+    marginBottom: Theme.spacing.lg,
   },
 }); 
