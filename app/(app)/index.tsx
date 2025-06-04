@@ -80,6 +80,78 @@ const weeklyPlan: Activity[] = [
   }
 ];
 
+interface ChallengeItem {
+  challenge: string;
+  reward: string;
+}
+
+interface ChallengeCategory {
+  title: string;
+  items: ChallengeItem[];
+}
+
+const challengeCategories: ChallengeCategory[] = [
+  {
+    title: 'Time-based Challenges',
+    items: [
+      { challenge: 'Early Bird (Run before 7 AM)', reward: 'Rooster hat' },
+      { challenge: 'Lunch Break Runner (Run at noon)', reward: 'Lunchbox accessory' },
+      { challenge: 'Midnight Runner (Complete run exactly at midnight)', reward: 'Moon outfit' },
+    ],
+  },
+  {
+    title: 'Weather & Environment',
+    items: [
+      { challenge: 'Hot Weather Hero (Run above 30°C)', reward: 'Sunhat' },
+      { challenge: 'Snow Runner (Run in snow)', reward: 'Winter coat' },
+      { challenge: 'Wind Warrior (Run in windy conditions)', reward: 'Kite accessory' },
+      { challenge: 'Storm Chaser (Run during storm)', reward: 'Lightning cape' },
+    ],
+  },
+  {
+    title: 'Location & Exploration',
+    items: [
+      { challenge: 'Park Explorer (Run in 3 different parks)', reward: 'Leafy headband' },
+      { challenge: 'Urban Adventurer (Run in a downtown area)', reward: 'City skyline T-shirt' },
+      { challenge: 'Beach Runner (Run along the beach)', reward: 'Surfboard accessory' },
+    ],
+  },
+  {
+    title: 'Consistency & Habit Formation',
+    items: [
+      { challenge: 'Weekly Warrior (Complete daily runs for one week)', reward: 'Warrior helmet' },
+      { challenge: 'Monthly Master (Complete running goals 4 weeks in a row)', reward: 'Golden running shoes' },
+      { challenge: 'Quarterly Champion (Achieve 90-day streak)', reward: 'Crown accessory' },
+    ],
+  },
+  {
+    title: 'Distance & Cumulative Achievements',
+    items: [
+      { challenge: '20 km cumulative', reward: 'Neon socks' },
+      { challenge: '50 km cumulative', reward: 'Camouflage shorts' },
+      { challenge: '200 km cumulative', reward: 'Wings accessory' },
+      { challenge: '500 km cumulative', reward: 'Koala superhero costume' },
+    ],
+  },
+  {
+    title: 'Intensity & Speed',
+    items: [
+      { challenge: 'Personal Best Breaker (Beat your personal best)', reward: 'Stopwatch necklace' },
+      { challenge: 'Speed Runner (Run 1 km under 6 minutes)', reward: 'Flash lightning shoes' },
+      { challenge: 'Interval Master (Complete 5 interval runs)', reward: 'Race bib accessory' },
+    ],
+  },
+  {
+    title: 'Special Events & Holiday-Themed',
+    items: [
+      { challenge: 'Birthday Run', reward: 'Birthday cake hat' },
+      { challenge: 'Halloween Run', reward: 'Pumpkin costume' },
+      { challenge: 'Christmas Eve Run', reward: 'Reindeer antlers' },
+      { challenge: 'Valentine’s Run', reward: 'Heart-shaped sunglasses' },
+    ],
+  },
+];
+
 // Constants for scrolling background
 const SCROLLING_BG_LOOP_WIDTH = 2000; // The width of one segment of the looping background
 const SCROLLING_BG_ANIMATION_DURATION = 8000; // Duration for one loop
@@ -125,6 +197,7 @@ export default function HomeScreen() {
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
   const [showLevelUpModal, setShowLevelUpModal] = useState(false);
   const [levelUpInfo, setLevelUpInfo] = useState<{ oldLevel: number; newLevel: number; distanceGained: number } | null>(null);
+  const [showChallengesModal, setShowChallengesModal] = useState(false);
 
   // Derived values from queries
   const weeklyGoal = profile?.weeklyGoal ? profile.weeklyGoal / 1000 : 20; // Convert to km, default 20
@@ -423,6 +496,9 @@ export default function HomeScreen() {
               <TouchableOpacity onPress={toggleBgAnimation} style={styles.toggleButton}>
                 <Text style={styles.toggleButtonText}>{isBgAnimationRunning ? '⏸️' : '▶️'}</Text>
               </TouchableOpacity>
+              <TouchableOpacity onPress={() => setShowChallengesModal(true)} style={styles.toggleButton}>
+                <Text style={styles.toggleButtonText}>🏅</Text>
+              </TouchableOpacity>
             </View>
           </View>
 
@@ -529,6 +605,43 @@ export default function HomeScreen() {
                 }}
               >
                 <Text style={styles.levelUpButtonText}>Awesome!</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        </Modal>
+
+        {/* Challenges Modal */}
+        <Modal
+          visible={showChallengesModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowChallengesModal(false)}
+        >
+          <View style={styles.modalOverlay}>
+            <View style={styles.challengesModal}>
+              <Text style={styles.challengesTitle}>Challenges</Text>
+              <ScrollView style={styles.challengesScroll}>
+                {challengeCategories.map((category) => (
+                  <View key={category.title} style={styles.challengeCategory}>
+                    <Text style={styles.challengeCategoryTitle}>{category.title}</Text>
+                    {category.items.map((item) => (
+                      <TouchableOpacity
+                        key={item.challenge}
+                        style={styles.challengeItem}
+                        onPress={() => Alert.alert(item.challenge, `Reward: ${item.reward}`)}
+                      >
+                        <Text style={styles.challengeText}>{item.challenge}</Text>
+                        <View style={styles.rewardPlaceholder} />
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ))}
+              </ScrollView>
+              <TouchableOpacity
+                style={styles.levelUpButton}
+                onPress={() => setShowChallengesModal(false)}
+              >
+                <Text style={styles.levelUpButtonText}>Close</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -748,6 +861,48 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     fontFamily: 'SF-Pro-Rounded-Semibold',
+  },
+  challengesModal: {
+    backgroundColor: '#fff',
+    borderRadius: 20,
+    padding: 20,
+    maxHeight: '80%',
+    width: '80%',
+  },
+  challengesTitle: {
+    fontSize: 20,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  challengesScroll: {
+    marginBottom: 20,
+  },
+  challengeCategory: {
+    marginBottom: 16,
+  },
+  challengeCategoryTitle: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Semibold',
+    marginBottom: 8,
+  },
+  challengeItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 6,
+  },
+  challengeText: {
+    fontSize: 14,
+    fontFamily: 'SF-Pro-Rounded-Regular',
+    flex: 1,
+    marginRight: 8,
+  },
+  rewardPlaceholder: {
+    width: 24,
+    height: 24,
+    backgroundColor: '#000',
+    borderRadius: 4,
   },
   scrollContentContainer: {
   },
