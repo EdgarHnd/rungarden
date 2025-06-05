@@ -163,10 +163,10 @@ export default function ActivitiesScreen() {
         <Text style={styles.headerTitle}>Activities</Text>
         <View style={styles.headerSubtitleContainer}>
           <Text style={styles.headerSubtitle}>Your running history</Text>
-          <View style={styles.dataSourceIndicator}>
+          {/* <View style={styles.dataSourceIndicator}>
             {profile.healthKitSyncEnabled && <Text style={styles.sourceIcon}>❤️</Text>}
             {profile.stravaSyncEnabled && <Text style={styles.sourceIcon}>🟠</Text>}
-          </View>
+          </View> */}
         </View>
       </View>
 
@@ -232,7 +232,7 @@ export default function ActivitiesScreen() {
                   <View style={styles.activityTitleContainer}>
                     <View style={styles.activityTitle}>
                       <Text style={styles.activityType}>{activity.workoutName || 'Running'}</Text>
-                      <Text style={styles.sourceIndicator}>{getActivityIcon(activity)}</Text>
+                      {/* <Text style={styles.sourceIndicator}>{getActivityIcon(activity)}</Text> */}
                     </View>
                     <Text style={styles.activityDate}>{formatDate(activity.startDate)}</Text>
                   </View>
