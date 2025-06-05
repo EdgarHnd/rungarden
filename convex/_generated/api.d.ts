@@ -17,6 +17,7 @@ import type * as activities from "../activities.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
 import type * as leaderboard from "../leaderboard.js";
+import type * as migrations from "../migrations.js";
 import type * as userProfile from "../userProfile.js";
 
 /**
@@ -32,6 +33,7 @@ declare const fullApi: ApiFromModules<{
   auth: typeof auth;
   http: typeof http;
   leaderboard: typeof leaderboard;
+  migrations: typeof migrations;
   userProfile: typeof userProfile;
 }>;
 export declare const api: FilterApi<

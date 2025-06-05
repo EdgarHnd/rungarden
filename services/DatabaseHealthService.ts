@@ -5,7 +5,9 @@ import HealthService, { RunningActivity } from './HealthService';
 export interface DatabaseActivity {
   _id: string;
   userId: string;
-  healthKitUuid: string;
+  source?: 'healthkit' | 'strava';
+  healthKitUuid?: string;
+  stravaId?: number;
   startDate: string;
   endDate: string;
   duration: number;
@@ -144,7 +146,7 @@ class DatabaseHealthService {
    */
   formatActivitiesForLegacyComponents(dbActivities: DatabaseActivity[]): RunningActivity[] {
     return dbActivities.map(activity => ({
-      uuid: activity.healthKitUuid,
+      uuid: activity.healthKitUuid || `strava_${activity.stravaId}` || activity._id,
       startDate: activity.startDate,
       endDate: activity.endDate,
       duration: activity.duration,

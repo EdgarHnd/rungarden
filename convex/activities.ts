@@ -161,7 +161,13 @@ export const syncActivitiesFromHealthKit = mutation({
 
         if (hasChanges) {
           await ctx.db.patch(existingActivity._id, {
-            ...activity,
+            startDate: activity.startDate,
+            endDate: activity.endDate,
+            duration: activity.duration,
+            distance: activity.distance,
+            calories: activity.calories,
+            averageHeartRate: activity.averageHeartRate,
+            workoutName: activity.workoutName,
             pace,
             syncedAt: now,
           });
@@ -175,7 +181,15 @@ export const syncActivitiesFromHealthKit = mutation({
         // Create new activity and track distance
         const newActivityId = await ctx.db.insert("activities", {
           userId,
-          ...activity,
+          source: "healthkit",
+          healthKitUuid: activity.healthKitUuid,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          duration: activity.duration,
+          distance: activity.distance,
+          calories: activity.calories,
+          averageHeartRate: activity.averageHeartRate,
+          workoutName: activity.workoutName,
           pace,
           syncedAt: now,
           createdAt: now,
@@ -195,38 +209,211 @@ export const syncActivitiesFromHealthKit = mutation({
       }
     }
 
-    // Update user profile totals after sync
+    // Update user profile totals after sync (this calculates everything correctly from DB)
     await updateUserProfileTotals(ctx, userId);
     
-    // Update level and coins if any new distance was gained
+    // Get the updated profile to calculate sync results
     if (totalDistanceGained > 0 && currentProfile) {
-      const oldTotalDistance = currentProfile.totalDistance || 0;
-      const newTotalDistance = oldTotalDistance + totalDistanceGained;
-      const oldLevel = currentProfile.level || 1;
-      const newLevel = calculateLevelFromDistance(newTotalDistance);
-      
-      // Calculate coins gained from new distance
-      const oldCoins = currentProfile.coins || 0;
-      const newTotalCoins = calculateCoinsFromDistance(newTotalDistance);
-      const coinsGained = newTotalCoins - oldCoins;
-      
-      await ctx.db.patch(currentProfile._id, {
-        level: newLevel,
-        coins: newTotalCoins,
-        updatedAt: now,
-      });
-
-      syncResults.distanceGained = totalDistanceGained;
-      syncResults.coinsGained = coinsGained;
-      syncResults.leveledUp = newLevel > oldLevel;
-      syncResults.newLevel = newLevel;
-      syncResults.oldLevel = oldLevel;
+      const updatedProfile = await ctx.db
+        .query("userProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .first();
+        
+      if (updatedProfile) {
+        const oldLevel = currentProfile.level || 1;
+        const newLevel = updatedProfile.level;
+        const oldCoins = currentProfile.coins || 0;
+        const newCoins = updatedProfile.coins || 0;
+        
+        syncResults.distanceGained = totalDistanceGained;
+        syncResults.coinsGained = newCoins - oldCoins;
+        syncResults.leveledUp = newLevel > oldLevel;
+        syncResults.newLevel = newLevel;
+        syncResults.oldLevel = oldLevel;
+      }
     }
     
     // Update last sync date
     await updateLastSyncDate(ctx, userId, now);
 
     return syncResults;
+  },
+});
+
+// Sync activities from Strava (bulk insert/update)
+export const syncActivitiesFromStrava = mutation({
+  args: {
+    activities: v.array(v.object({
+      stravaId: v.number(),
+      startDate: v.string(),
+      endDate: v.string(),
+      duration: v.number(),
+      distance: v.number(),
+      calories: v.number(),
+      averageHeartRate: v.optional(v.number()),
+      workoutName: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const now = new Date().toISOString();
+    const syncResults = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      distanceGained: 0,
+      leveledUp: false,
+      newLevel: 1,
+      oldLevel: 1,
+      coinsGained: 0,
+      newRuns: [] as any[], // Track newly created activities
+    };
+
+    // Get current profile for level tracking
+    const currentProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    let totalDistanceGained = 0;
+
+    for (const activity of args.activities) {
+      // Check if activity already exists
+      const existingActivity = await ctx.db
+        .query("activities")
+        .withIndex("by_strava_id", (q) => 
+          q.eq("stravaId", activity.stravaId)
+        )
+        .first();
+
+      // Calculate pace (min/km)
+      const pace = activity.distance > 0 ? 
+        (activity.duration / (activity.distance / 1000)) : undefined;
+
+      console.log(`[syncActivitiesFromStrava] Processing activity: ${activity.workoutName} on ${activity.startDate}, distance: ${activity.distance}m`);
+
+      if (existingActivity) {
+        // Update existing activity if data has changed
+        const hasChanges = 
+          existingActivity.duration !== activity.duration ||
+          existingActivity.distance !== activity.distance ||
+          existingActivity.calories !== activity.calories ||
+          existingActivity.averageHeartRate !== activity.averageHeartRate;
+
+        if (hasChanges) {
+          await ctx.db.patch(existingActivity._id, {
+            startDate: activity.startDate,
+            endDate: activity.endDate,
+            duration: activity.duration,
+            distance: activity.distance,
+            calories: activity.calories,
+            averageHeartRate: activity.averageHeartRate,
+            workoutName: activity.workoutName,
+            pace,
+            syncedAt: now,
+          });
+          syncResults.updated++;
+          console.log(`[syncActivitiesFromStrava] Updated existing activity: ${activity.stravaId}`);
+        } else {
+          syncResults.skipped++;
+          console.log(`[syncActivitiesFromStrava] Skipped unchanged activity: ${activity.stravaId}`);
+        }
+      } else {
+        // Create new activity and track distance
+        const newActivityId = await ctx.db.insert("activities", {
+          userId,
+          source: "strava",
+          stravaId: activity.stravaId,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          duration: activity.duration,
+          distance: activity.distance,
+          calories: activity.calories,
+          averageHeartRate: activity.averageHeartRate,
+          workoutName: activity.workoutName,
+          pace,
+          syncedAt: now,
+          createdAt: now,
+        });
+        
+        // Get the full activity record to include in results
+        const newActivityRecord = await ctx.db.get(newActivityId);
+        if (newActivityRecord) {
+          syncResults.newRuns.push(newActivityRecord);
+        }
+        
+        syncResults.created++;
+        console.log(`[syncActivitiesFromStrava] Created new activity: ${activity.stravaId}, ID: ${newActivityId}`);
+
+        // Track distance for new activity
+        totalDistanceGained += activity.distance;
+      }
+    }
+
+    // Update user profile totals after sync (this calculates everything correctly from DB)
+    await updateUserProfileTotals(ctx, userId);
+    
+    // Get the updated profile to calculate sync results
+    if (totalDistanceGained > 0 && currentProfile) {
+      const updatedProfile = await ctx.db
+        .query("userProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .first();
+        
+      if (updatedProfile) {
+        const oldLevel = currentProfile.level || 1;
+        const newLevel = updatedProfile.level;
+        const oldCoins = currentProfile.coins || 0;
+        const newCoins = updatedProfile.coins || 0;
+        
+        syncResults.distanceGained = totalDistanceGained;
+        syncResults.coinsGained = newCoins - oldCoins;
+        syncResults.leveledUp = newLevel > oldLevel;
+        syncResults.newLevel = newLevel;
+        syncResults.oldLevel = oldLevel;
+      }
+    }
+    
+    // Update last Strava sync date
+    await updateLastStravaSyncDate(ctx, userId, now);
+
+    return syncResults;
+  },
+});
+
+// Get real-time profile statistics calculated from activities
+export const getProfileStats = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const allActivities = await ctx.db
+      .query("activities")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    const totalDistance = allActivities.reduce((sum, a) => sum + a.distance, 0);
+    const totalCalories = allActivities.reduce((sum, a) => sum + a.calories, 0);
+    const totalWorkouts = allActivities.length;
+    
+    // Calculate level and coins from total distance
+    const level = calculateLevelFromDistance(totalDistance);
+    const coins = calculateCoinsFromDistance(totalDistance);
+
+    return {
+      totalDistance,
+      totalWorkouts,
+      totalCalories,
+      level,
+      coins,
+    };
   },
 });
 
@@ -364,6 +551,23 @@ async function updateLastSyncDate(ctx: any, userId: any, syncDate: string) {
   if (existingProfile) {
     await ctx.db.patch(existingProfile._id, {
       lastSyncDate: syncDate,
+      lastHealthKitSync: syncDate,
+      updatedAt: syncDate,
+    });
+  }
+}
+
+// Helper function to update last Strava sync date
+async function updateLastStravaSyncDate(ctx: any, userId: any, syncDate: string) {
+  const existingProfile = await ctx.db
+    .query("userProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+
+  if (existingProfile) {
+    await ctx.db.patch(existingProfile._id, {
+      lastSyncDate: syncDate,
+      lastStravaSync: syncDate,
       updatedAt: syncDate,
     });
   }

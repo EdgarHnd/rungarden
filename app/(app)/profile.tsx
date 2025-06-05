@@ -17,6 +17,7 @@ export default function ProfileScreen() {
 
   // Convex queries and mutations
   const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const profileStats = useQuery(api.activities.getProfileStats); // Real-time stats from activities
   const weekProgress = useQuery(api.userProfile.getCurrentWeekProgress);
   const updateWeeklyGoal = useMutation(api.userProfile.updateWeeklyGoal);
 
@@ -45,11 +46,11 @@ export default function ProfileScreen() {
 
   // Update loading state and level info when profile data is available
   useEffect(() => {
-    if (profile) {
+    if (profile && profileStats) {
       setIsLoading(false);
 
-      // Calculate level info from profile
-      const userLevelInfo = LevelingService.calculateLevelInfo(profile.totalDistance);
+      // Calculate level info from real-time stats (not cached profile)
+      const userLevelInfo = LevelingService.calculateLevelInfo(profileStats.totalDistance);
       setLevelInfo(userLevelInfo);
 
       // Set initial goal value for editing
@@ -57,7 +58,7 @@ export default function ProfileScreen() {
         setNewWeeklyGoal((profile.weeklyGoal / 1000).toString());
       }
     }
-  }, [profile]);
+  }, [profile, profileStats]);
 
   const handleSaveWeeklyGoal = async () => {
     const goalInMeters = parseFloat(newWeeklyGoal) * 1000;
@@ -105,7 +106,7 @@ export default function ProfileScreen() {
     return Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
   };
 
-  if (isLoading) {
+  if (isLoading || !profileStats) {
     return (
       <View style={styles.container}>
         <View style={styles.loadingContainer}>
@@ -204,7 +205,7 @@ export default function ProfileScreen() {
               <View style={styles.duolingoStatCard}>
                 <Text style={styles.duolingoStatIcon}>🛣️</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{Math.round((profile?.totalDistance || 0) / 100)}</Text>
+                  <Text style={styles.duolingoStatNumber}>{Math.round(profileStats.totalDistance / 1000)}</Text>
                   <Text style={styles.duolingoStatLabel}>Total Km</Text>
                 </View>
               </View>
@@ -222,7 +223,7 @@ export default function ProfileScreen() {
               <View style={styles.duolingoStatCard}>
                 <Text style={styles.duolingoStatIcon}>🏃‍♂️</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{profile?.totalWorkouts || 0}</Text>
+                  <Text style={styles.duolingoStatNumber}>{profileStats.totalWorkouts}</Text>
                   <Text style={styles.duolingoStatLabel}>Activities</Text>
                 </View>
               </View>
@@ -230,7 +231,7 @@ export default function ProfileScreen() {
               <View style={styles.duolingoStatCard}>
                 <Text style={styles.duolingoStatIcon}>🔥</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{profile?.totalCalories || 0}</Text>
+                  <Text style={styles.duolingoStatNumber}>{profileStats.totalCalories}</Text>
                   <Text style={styles.duolingoStatLabel}>Calories</Text>
                 </View>
               </View>

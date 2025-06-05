@@ -4,7 +4,7 @@ import WeekView from '@/components/WeekView';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import ChallengeService from '@/services/ChallengeService';
-import { DatabaseActivity } from '@/services/DatabaseHealthService';
+import { DatabaseActivity } from '@/services/DatabaseStravaService';
 import HealthService from '@/services/HealthService';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
@@ -107,7 +107,7 @@ const getSuggestedActivityForDay = (date: Date): Activity => {
 
 interface DayData {
   date: string;
-  activities: DatabaseActivity[];
+  activities: any[]; // Use any[] to avoid type conflicts between different DatabaseActivity interfaces
   suggestedActivity: Activity;
   weekIndex: number;
 }
@@ -252,7 +252,7 @@ export default function HomeScreen() {
   };
 
   // Generate weeks data starting from user's preferred week start day
-  const generateWeeksData = (loadedActivities: DatabaseActivity[]) => {
+  const generateWeeksData = (loadedActivities: any[]) => {
     const today = new Date();
     const thisWeekStart = getWeekStart(today, weekStartDay);
 
@@ -275,7 +275,7 @@ export default function HomeScreen() {
         const dateString = getLocalDateString(date);
 
         // Filter activities for this day using timezone-robust comparison
-        const dayActivities = loadedActivities.filter((activity: DatabaseActivity) => {
+        const dayActivities = loadedActivities.filter((activity: any) => {
           const activityDate = new Date(activity.startDate);
           const activityDateString = getLocalDateString(activityDate);
           return activityDateString === dateString;
@@ -328,7 +328,7 @@ export default function HomeScreen() {
       setLevelInfo(userLevelInfo);
 
       // Generate weeks data from activities
-      generateWeeksData(activities as DatabaseActivity[]);
+      generateWeeksData(activities as any[]);
     }
   }, [profile, activities, weekStartDay]);
 
@@ -488,9 +488,9 @@ export default function HomeScreen() {
   };
 
   // Convert database activities to legacy format for DayCard
-  const formatActivitiesForDayCard = (activities: DatabaseActivity[]) => {
-    return activities.map(activity => ({
-      uuid: activity.healthKitUuid,
+  const formatActivitiesForDayCard = (activities: any[]) => {
+    return activities.map((activity: any) => ({
+      uuid: activity.healthKitUuid || `strava_${activity.stravaId}` || activity._id,
       startDate: activity.startDate,
       endDate: activity.endDate,
       duration: activity.duration,

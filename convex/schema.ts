@@ -29,11 +29,10 @@ const schema = defineSchema({
   })
     .index("by_user", ["userId"]),
 
-  // Activities synced from HealthKit
+  // Activities synced from HealthKit and Strava
   activities: defineTable({
     userId: v.id("users"),
-    // HealthKit data
-    healthKitUuid: v.string(), // Original HealthKit UUID
+    // Common data
     startDate: v.string(), // ISO string
     endDate: v.string(), // ISO string
     duration: v.number(), // in minutes
@@ -41,15 +40,23 @@ const schema = defineSchema({
     calories: v.number(),
     averageHeartRate: v.optional(v.number()),
     workoutName: v.optional(v.string()),
+    // Data source tracking
+    source: v.optional(v.union(v.literal("healthkit"), v.literal("strava"))), // Where this activity came from (defaults to healthkit for existing records)
+    // HealthKit data
+    healthKitUuid: v.optional(v.string()), // Original HealthKit UUID
+    // Strava data
+    stravaId: v.optional(v.number()), // Original Strava activity ID
     // Sync metadata
-    syncedAt: v.string(), // When this was synced from HealthKit
+    syncedAt: v.string(), // When this was synced
     // Additional computed fields
     pace: v.optional(v.number()), // min/km
     createdAt: v.string(),
   })
     .index("by_user", ["userId"])
     .index("by_user_and_date", ["userId", "startDate"])
-    .index("by_healthkit_uuid", ["healthKitUuid"]),
+    .index("by_healthkit_uuid", ["healthKitUuid"])
+    .index("by_strava_id", ["stravaId"])
+    .index("by_source", ["source"]),
 
   // Weekly goals and progress tracking
   weeklyProgress: defineTable({

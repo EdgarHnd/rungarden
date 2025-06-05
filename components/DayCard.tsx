@@ -50,9 +50,9 @@ export default function DayCard({
 
   return (
     <View style={styles.dayCard}>
-      {activities.map((activity) => (
+      {activities.map((activity, index) => (
         <WorkoutCard
-          key={activity.uuid}
+          key={activity.uuid || `activity-${index}-${activity.startDate}`}
           title={activity.workoutName || "Running"}
           distance={formatDistance(activity.distance)}
           duration={`${activity.duration}`}
