@@ -402,7 +402,7 @@ const styles = StyleSheet.create({
   loadingText: {
     marginTop: 16,
     fontSize: 16,
-    color: '#9CA3AF',
+    color: Theme.colors.text.tertiary,
     fontFamily: Theme.fonts.medium,
   },
 
@@ -440,12 +440,12 @@ const styles = StyleSheet.create({
   userName: {
     fontSize: 24,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   userMeta: {
     fontSize: 14,
-    color: '#9CA3AF',
+    color: Theme.colors.text.tertiary,
     fontFamily: Theme.fonts.medium,
     marginBottom: 24,
   },
@@ -461,21 +461,21 @@ const styles = StyleSheet.create({
   statNumber: {
     fontSize: 20,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
   },
   statLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: Theme.colors.text.secondary,
     fontFamily: Theme.fonts.medium,
     marginTop: 2,
   },
   statDivider: {
     width: 1,
     height: 24,
-    backgroundColor: '#374151',
+    backgroundColor: Theme.colors.background.tertiary,
   },
   addFriendsButton: {
-    backgroundColor: '#1CB0F6',
+    backgroundColor: Theme.colors.accent.primary,
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: 32,
@@ -487,13 +487,13 @@ const styles = StyleSheet.create({
     marginRight: 8,
   },
   addFriendsText: {
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
     letterSpacing: 0.5,
   },
   completeProfileSection: {
-    backgroundColor: '#374151',
+    backgroundColor: Theme.colors.background.secondary,
     marginHorizontal: 20,
     borderRadius: 16,
     padding: 20,
@@ -510,7 +510,7 @@ const styles = StyleSheet.create({
   completeProfileTitle: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   completeProfileSteps: {
@@ -529,13 +529,13 @@ const styles = StyleSheet.create({
     fontSize: 40,
   },
   completeProfileButton: {
-    backgroundColor: '#1CB0F6',
+    backgroundColor: Theme.colors.accent.primary,
     paddingVertical: 14,
     borderRadius: 12,
     alignItems: 'center',
   },
   completeProfileButtonText: {
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
     letterSpacing: 0.5,
@@ -546,7 +546,7 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 20,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 16,
   },
   mainStatsRow: {
@@ -570,12 +570,12 @@ const styles = StyleSheet.create({
   mainStatNumber: {
     fontSize: 24,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   mainStatLabel: {
     fontSize: 12,
-    color: '#9CA3AF',
+    color: Theme.colors.text.secondary,
     fontFamily: Theme.fonts.medium,
   },
   friendStreaksSection: {
@@ -593,9 +593,9 @@ const styles = StyleSheet.create({
     width: 60,
     height: 60,
     borderRadius: 30,
-    backgroundColor: '#374151',
+    backgroundColor: Theme.colors.background.secondary,
     borderWidth: 2,
-    borderColor: '#4B5563',
+    borderColor: Theme.colors.background.tertiary,
     borderStyle: 'dashed',
     justifyContent: 'center',
     alignItems: 'center',
@@ -611,7 +611,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   viewAllText: {
-    color: '#1CB0F6',
+    color: Theme.colors.accent.primary,
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
   },
@@ -628,7 +628,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#EC4899',
+    backgroundColor: Theme.colors.special.level,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -636,7 +636,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#374151',
+    backgroundColor: Theme.colors.background.secondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -649,13 +649,13 @@ const styles = StyleSheet.create({
     left: 0,
     right: 0,
     bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    backgroundColor: Theme.colors.background.primary,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 20,
   },
   goalModalContent: {
-    backgroundColor: '#374151',
+    backgroundColor: Theme.colors.background.secondary,
     borderRadius: 16,
     padding: 24,
     width: '100%',
@@ -664,16 +664,16 @@ const styles = StyleSheet.create({
   goalModalTitle: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     textAlign: 'center',
     marginBottom: 20,
   },
   goalInput: {
-    backgroundColor: '#1F2937',
+    backgroundColor: Theme.colors.background.secondary,
     borderRadius: 12,
     padding: 16,
     fontSize: 16,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     fontFamily: Theme.fonts.regular,
     marginBottom: 20,
     textAlign: 'center',
@@ -690,18 +690,18 @@ const styles = StyleSheet.create({
     marginHorizontal: 8,
   },
   cancelButton: {
-    backgroundColor: '#1F2937',
+    backgroundColor: Theme.colors.background.secondary,
   },
   cancelButtonText: {
-    color: '#9CA3AF',
+    color: Theme.colors.text.primary,
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
   },
   saveButton: {
-    backgroundColor: '#58CC02',
+    backgroundColor: Theme.colors.accent.primary,
   },
   saveButtonText: {
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
   },
@@ -714,10 +714,12 @@ const styles = StyleSheet.create({
     marginBottom: 32,
   },
   currentLevelCard: {
-    backgroundColor: '#374151',
     borderRadius: 16,
     padding: 20,
     marginBottom: 20,
+    borderWidth: 2,
+    borderColor: Theme.colors.background.tertiary,
+    backgroundColor: Theme.colors.background.secondary,
   },
   levelHeader: {
     flexDirection: 'row',
@@ -734,13 +736,13 @@ const styles = StyleSheet.create({
   currentLevelTitle: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   currentLevelNumber: {
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
-    color: '#9CA3AF',
+    color: Theme.colors.text.secondary,
   },
   progressContainer: {
     alignItems: 'center',
@@ -748,19 +750,19 @@ const styles = StyleSheet.create({
   progressBar: {
     width: '100%',
     height: 8,
-    backgroundColor: '#1F2937',
+    backgroundColor: Theme.colors.background.primary,
     borderRadius: 4,
     marginBottom: 8,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: '#58CC02',
+    backgroundColor: Theme.colors.special.level,
     borderRadius: 4,
   },
   progressText: {
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
-    color: '#9CA3AF',
+    color: Theme.colors.text.tertiary,
   },
   upcomingLevelsContainer: {
     marginTop: 8,
@@ -768,7 +770,7 @@ const styles = StyleSheet.create({
   upcomingLevelsTitle: {
     fontSize: 16,
     fontFamily: Theme.fonts.semibold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 12,
   },
   upcomingLevelsRow: {
@@ -776,7 +778,7 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
   },
   upcomingLevelCard: {
-    backgroundColor: '#1F2937',
+    backgroundColor: Theme.colors.background.secondary,
     borderRadius: 12,
     padding: 12,
     alignItems: 'center',
@@ -790,13 +792,13 @@ const styles = StyleSheet.create({
   upcomingLevelNumber: {
     fontSize: 12,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   upcomingLevelTitle: {
     fontSize: 10,
     fontFamily: Theme.fonts.medium,
-    color: '#9CA3AF',
+    color: Theme.colors.text.secondary,
     textAlign: 'center',
     marginBottom: 4,
     minHeight: 32, // Ensure consistent height
@@ -804,7 +806,7 @@ const styles = StyleSheet.create({
   upcomingLevelDistance: {
     fontSize: 10,
     fontFamily: Theme.fonts.regular,
-    color: '#6B7280',
+    color: Theme.colors.text.tertiary,
     textAlign: 'center',
   },
   // Challenge Styles
@@ -812,7 +814,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: '#374151',
+    backgroundColor: Theme.colors.background.secondary,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -829,7 +831,7 @@ const styles = StyleSheet.create({
     marginBottom: 12,
   },
   duolingoStatCard: {
-    backgroundColor: '#374151',
+    backgroundColor: Theme.colors.background.secondary,
     borderRadius: 16,
     padding: 16,
     flexDirection: 'row',
@@ -847,12 +849,12 @@ const styles = StyleSheet.create({
   duolingoStatNumber: {
     fontSize: 24,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
     marginBottom: 2,
   },
   duolingoStatLabel: {
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
-    color: '#9CA3AF',
+    color: Theme.colors.text.secondary,
   },
 }); 
