@@ -538,10 +538,10 @@ export default function HomeScreen() {
               <Text style={styles.title}>Koko</Text>
             </TouchableOpacity>
             <View style={styles.flashIconsContainer}>
-              <Ionicons name="flash" size={20} color={Theme.colors.accent.primary} />
-              <Ionicons name="flash" size={20} color={Theme.colors.accent.primary} />
-              <Ionicons name="flash-outline" size={20} color={Theme.colors.text.primary} />
-              <Ionicons name="flash-outline" size={20} color={Theme.colors.text.primary} />
+              <Ionicons name="flash" size={24} color={Theme.colors.accent.primary} />
+              <Ionicons name="flash" size={24} color={Theme.colors.accent.primary} />
+              <Ionicons name="flash-outline" size={24} color={Theme.colors.text.primary} />
+              <Ionicons name="flash-outline" size={24} color={Theme.colors.text.primary} />
             </View>
           </View>
           <View style={styles.rightHeaderSection}>
@@ -774,6 +774,7 @@ export default function HomeScreen() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Theme.colors.background.primary,
   },
   solidBackground: {
     position: 'absolute',
@@ -808,7 +809,7 @@ const styles = StyleSheet.create({
   },
   leftHeaderSection: {
     flexDirection: 'column',
-    alignItems: 'center',
+    alignItems: 'flex-start',
   },
   title: {
     fontSize: 32,

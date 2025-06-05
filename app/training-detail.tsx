@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import Rive from 'rive-react-native';
 
 interface Activity {
   type: 'run' | 'rest';
@@ -25,6 +26,7 @@ export default function TrainingDetailScreen() {
   const params = useLocalSearchParams();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [scaleAnim] = useState(new Animated.Value(0));
+  const [riveUrl] = useState("https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a");
 
   useEffect(() => {
     if (params.activity) {
@@ -152,28 +154,32 @@ export default function TrainingDetailScreen() {
         }} style={styles.backButton}>
           <Ionicons name="chevron-back-outline" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Today's Workout</Text>
+        <Text style={styles.headerTitle}>{activity.type.toUpperCase()} WORKOUT</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
-          <View style={[styles.levelBadge, { backgroundColor: getIntensityColor(activity.intensity) }]}>
-            <Text style={styles.levelEmoji}>{intensityInfo.emoji}</Text>
-            <Text style={styles.levelText}>{intensityInfo.level}</Text>
-          </View>
-          <Text style={styles.heroTitle}>{activity.title}</Text>
-          <Text style={styles.heroSubtitle}>{intensityInfo.subtitle}</Text>
           <View style={styles.workoutTypeContainer}>
-            <Text style={styles.workoutEmoji}>{activity.emoji}</Text>
-            <Text style={styles.workoutType}>{activity.type.toUpperCase()} WORKOUT</Text>
+            <View style={styles.animationContainer}>
+              <Rive
+                url={riveUrl}
+                style={styles.animation}
+                autoplay={true}
+              />
+            </View>
+            <Text style={styles.workoutType}>{activity.title}</Text>
+            <View style={[styles.levelBadge, { backgroundColor: getIntensityColor(activity.intensity) }]}>
+              <Text style={styles.levelEmoji}>{intensityInfo.emoji}</Text>
+              <Text style={styles.levelText}>{intensityInfo.level}</Text>
+            </View>
           </View>
         </Animated.View>
 
         {/* Workout Details */}
         <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>📊 Workout Details</Text>
+          <Text style={styles.sectionTitle}>Workout Details</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
               <View style={[styles.statIcon, { backgroundColor: Theme.colors.special.level }]}>
@@ -203,7 +209,7 @@ export default function TrainingDetailScreen() {
 
         {/* Workout Description */}
         <View style={styles.descriptionSection}>
-          <Text style={styles.sectionTitle}>💡 About This Workout</Text>
+          <Text style={styles.sectionTitle}>About This Workout</Text>
           <View style={styles.descriptionCard}>
             <Text style={styles.descriptionText}>{getWorkoutDescription(activity)}</Text>
             <View style={styles.originalDescription}>
@@ -215,7 +221,7 @@ export default function TrainingDetailScreen() {
 
         {/* Expected Progress */}
         <View style={styles.rewardsSection}>
-          <Text style={styles.sectionTitle}>🎯 Expected Progress</Text>
+          <Text style={styles.sectionTitle}>Expected Progress</Text>
           <View style={styles.rewardsGrid}>
             <View style={styles.rewardCard}>
               <Text style={styles.rewardEmoji}>⭐</Text>
@@ -242,7 +248,7 @@ export default function TrainingDetailScreen() {
 
         {/* Training Impact */}
         <View style={styles.impactSection}>
-          <Text style={styles.sectionTitle}>📈 Training Impact</Text>
+          <Text style={styles.sectionTitle}>Training Impact</Text>
           <View style={styles.impactCard}>
             <View style={styles.impactHeader}>
               <Text style={styles.impactTitle}>Fitness Benefits</Text>
@@ -297,7 +303,7 @@ export default function TrainingDetailScreen() {
 
         {/* Helpful Tips */}
         <View style={styles.tipsSection}>
-          <Text style={styles.sectionTitle}>💪 Helpful Tips</Text>
+          <Text style={styles.sectionTitle}>Helpful Tips</Text>
           {helpfulTips.map((tip, index) => (
             <View key={index} style={styles.tipCard}>
               <View style={styles.tipIcon}>
@@ -313,7 +319,7 @@ export default function TrainingDetailScreen() {
 
         {/* Weekly Progress */}
         <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>📅 Weekly Progress</Text>
+          <Text style={styles.sectionTitle}>Weekly Progress</Text>
           <View style={styles.progressCard}>
             <View style={styles.progressHeader}>
               <Text style={styles.progressTitle}>This Week's Training</Text>
@@ -389,6 +395,7 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+    textTransform: 'capitalize',
   },
   placeholder: {
     width: 32,
@@ -407,7 +414,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.lg,
     paddingVertical: Theme.spacing.sm,
     borderRadius: Theme.borderRadius.full,
-    marginBottom: Theme.spacing.lg,
   },
   levelEmoji: {
     fontSize: 20,
@@ -435,15 +441,22 @@ const styles = StyleSheet.create({
   workoutTypeContainer: {
     alignItems: 'center',
   },
-  workoutEmoji: {
-    fontSize: 48,
+  animationContainer: {
+    width: 150,
+    height: 150,
     marginBottom: Theme.spacing.sm,
   },
+  animation: {
+    width: '100%',
+    height: '100%',
+  },
   workoutType: {
-    fontSize: 14,
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-    letterSpacing: 2,
+    color: Theme.colors.text.primary,
+    letterSpacing: 1,
+    marginBottom: Theme.spacing.md,
+    textTransform: 'uppercase',
   },
   statsSection: {
     paddingHorizontal: Theme.spacing.xl,

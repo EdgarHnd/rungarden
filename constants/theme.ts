@@ -1,16 +1,9 @@
 export const Theme = {
   colors: {
-    // Background colors
-    // background: {
-    //   primary: '#0F172A',      // Deep navy - main background
-    //   secondary: '#1E293B',    // Slate - secondary background
-    //   tertiary: '#334155',     // Gray - tertiary background
-    //   overlay: 'rgba(0, 0, 0, 0.8)', // Modal overlay
-    // },
     background: {
-      primary: '#121D21',      // Dark teal - main background
-      secondary: '#1D2B30',    // Darker teal - secondary background
-      tertiary: '#2A3B41',     // Gray teal - tertiary background
+      primary: '#1F2937',      // Dark blue-gray - main background
+      secondary: '#2A3441',    // Lighter blue-gray - secondary background
+      tertiary: '#374151',     // Light blue-gray - tertiary background
       overlay: 'rgba(0, 0, 0, 0.8)', // Modal overlay
     },
 
@@ -50,6 +43,7 @@ export const Theme = {
       coin: '#F59E0B',         // Gold for coins
       level: '#10B981',        // Green for level progress
       shadow: '#000000',       // Shadow color
+      heart: '#FF0000',        // Red for heart
     },
 
     // Transparent variations

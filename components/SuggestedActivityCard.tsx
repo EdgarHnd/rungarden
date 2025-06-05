@@ -142,13 +142,11 @@ export default function SuggestedActivityCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Theme.colors.background.primary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     marginVertical: Theme.spacing.sm,
     width: Dimensions.get('window').width - 40,
-    borderWidth: 1,
-    borderColor: Theme.colors.accent.light,
   },
   header: {
     flexDirection: 'row',

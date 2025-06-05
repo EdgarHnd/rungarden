@@ -142,13 +142,6 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
               ]}>
                 {getPeriodTitle(period)}
               </Text>
-              {isLoading && selectedPeriod === period && (
-                <ActivityIndicator
-                  size="small"
-                  color={Theme.colors.text.primary}
-                  style={styles.periodLoadingIndicator}
-                />
-              )}
             </View>
           </TouchableOpacity>
         ))}
@@ -158,7 +151,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
         {/* Current User Rank */}
         {displayData.userRank && displayData.userRank.rank && (
           <View style={styles.userRankContainer}>
-            <Text style={styles.userRankTitle}>📍 Your Ranking</Text>
+            <Text style={styles.userRankTitle}>Your Rank</Text>
             <View style={styles.userRankBox}>
               <View style={styles.userRankHeader}>
                 <Text style={styles.userRankNumber}>#{displayData.userRank.rank}</Text>
@@ -184,7 +177,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
         {/* Leaderboard */}
         <ScrollView style={styles.leaderboardContainer} showsVerticalScrollIndicator={false}>
           <View style={styles.leaderboardHeader}>
-            <Text style={styles.leaderboardTitle}>🏃‍♂️ Top Runners</Text>
+            <Text style={styles.leaderboardTitle}>Top Runners</Text>
             {isLoading && (
               <ActivityIndicator
                 size="small"
@@ -224,10 +217,12 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
                 <View style={styles.entryContent}>
                   <View style={styles.entryHeader}>
                     <Text style={styles.entryName}>{entry.name}</Text>
-                    <View style={styles.levelBadge}>
-                      <Text style={styles.levelEmoji}>{LevelingService.getLevelEmoji(entry.level)}</Text>
-                      <Text style={styles.levelText}>L{entry.level}</Text>
-                    </View>
+                    {entry.level > 0 && (
+                      <View style={styles.levelBadge}>
+                        <Text style={styles.levelEmoji}>{LevelingService.getLevelEmoji(entry.level)}</Text>
+                        <Text style={styles.levelText}>Lv. {entry.level}</Text>
+                      </View>
+                    )}
                   </View>
 
                   <View style={styles.entryStats}>
@@ -239,22 +234,6 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
                       <Text style={styles.entryWorkouts}>{entry.totalWorkouts}</Text>
                       <Text style={styles.entryWorkoutsLabel}>runs</Text>
                     </View>
-                  </View>
-
-                  {/* Progress Level Indicator */}
-                  <View style={styles.progressLevelContainer}>
-                    <View style={styles.progressLevelBar}>
-                      <View style={[
-                        styles.progressLevelFill,
-                        {
-                          width: `${Math.min(100, (entry.level / 50) * 100)}%`,
-                          backgroundColor: entry.rank === 1 ? Theme.colors.special.level : Theme.colors.accent.primary
-                        }
-                      ]} />
-                    </View>
-                    <Text style={styles.progressLevelText}>
-                      {LevelingService.getLevelTitle(entry.level)}
-                    </Text>
                   </View>
                 </View>
               </View>
@@ -288,7 +267,6 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xs,
     marginBottom: Theme.spacing.xl,
-    ...Theme.shadows.small,
   },
   periodButton: {
     flex: 1,
@@ -296,7 +274,6 @@ const styles = StyleSheet.create({
   },
   periodButtonActive: {
     backgroundColor: Theme.colors.accent.primary,
-    ...Theme.shadows.small,
   },
   periodButtonContent: {
     flexDirection: 'row',
@@ -334,9 +311,8 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 3,
     borderColor: Theme.colors.border.primary,
-    ...Theme.shadows.medium,
   },
   userRankHeader: {
     flexDirection: 'row',
@@ -395,7 +371,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: Theme.colors.border.primary,
   },
   emptyStateEmoji: {
@@ -421,15 +397,13 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: Theme.colors.border.primary,
-    ...Theme.shadows.small,
   },
   rank1: {
     borderColor: Theme.colors.special.level,
     backgroundColor: Theme.colors.background.secondary,
     borderWidth: 2,
-    ...Theme.shadows.large,
   },
   rank2: {
     borderColor: Theme.colors.text.muted,

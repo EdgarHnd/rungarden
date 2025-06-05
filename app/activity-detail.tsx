@@ -149,19 +149,19 @@ export default function ActivityDetailScreen() {
         }} style={styles.backButton}>
           <Ionicons name="chevron-back-outline" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Run Complete!</Text>
+        <Text style={styles.headerTitle}>{formatDetailedDate(activity.startDate)}</Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
-          <View style={[styles.rankBadge, { backgroundColor: runRank.color }]}>
+          {/* <View style={[styles.rankBadge, { backgroundColor: runRank.color }]}>
             <Text style={styles.rankEmoji}>{runRank.emoji}</Text>
             <Text style={styles.rankText}>{runRank.rank}</Text>
-          </View>
+          </View> */}
           <Text style={styles.heroTitle}>{runRank.rank} Run!</Text>
-          <Text style={styles.heroSubtitle}>{formatDetailedDate(activity.startDate)}</Text>
+          {/* <Text style={styles.heroSubtitle}>{formatDetailedDate(activity.startDate)}</Text> */}
           <View style={styles.scoreContainer}>
             <Text style={styles.scoreLabel}>RUN SCORE</Text>
             <Text style={styles.scoreValue}>{getRunScore().toLocaleString()}</Text>

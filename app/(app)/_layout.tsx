@@ -107,12 +107,12 @@ export default function AppLayout() {
         })}
       />
       <Tabs.Screen
-        name="trophies"
+        name="leaderboard"
         options={({ navigation }) => ({
           tabBarIcon: ({ color, size }) => (
             <FontAwesome5 name="trophy" size={size} color={color} />
           ),
-          tabBarButton: createTabBarButton(() => navigation.navigate('trophies')),
+          tabBarButton: createTabBarButton(() => navigation.navigate('leaderboard')),
         })}
       />
       <Tabs.Screen

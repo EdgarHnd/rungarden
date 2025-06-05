@@ -1,3 +1,4 @@
+import { Theme } from "@/constants/theme";
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { Authenticated, AuthLoading, ConvexReactClient, Unauthenticated } from "convex/react";
 import { useFonts } from 'expo-font';
@@ -49,14 +50,22 @@ function AuthenticatedApp() {
           animation: 'slide_from_right',
         }}
       />
+      <Stack.Screen
+        name="settings"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          animation: 'slide_from_bottom',
+        }}
+      />
     </Stack>
   );
 }
 
 function LoadingScreen() {
   return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: '#f5f5f5' }}>
-      <ActivityIndicator size="large" color="#000" />
+    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Theme.colors.background.primary }}>
+      <ActivityIndicator size="large" color={Theme.colors.text.primary} />
     </View>
   );
 }

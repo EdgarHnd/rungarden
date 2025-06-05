@@ -2,7 +2,7 @@ import Leaderboard from '@/components/Leaderboard';
 import Theme from '@/constants/theme';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
-import { Alert, StyleSheet, Text, View } from 'react-native';
+import { Alert, SafeAreaView, StyleSheet, View } from 'react-native';
 
 export default function TrophiesScreen() {
   const [error, setError] = useState<string | null>(null);
@@ -17,14 +17,11 @@ export default function TrophiesScreen() {
       colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.primary]}
       style={styles.container}
     >
-      <View style={styles.header}>
-        <Text style={styles.title}>🏆 Leaderboard</Text>
-        <Text style={styles.subtitle}>See how you stack up with other runners</Text>
-      </View>
-
-      <View style={styles.content}>
-        <Leaderboard onError={handleError} />
-      </View>
+      <SafeAreaView style={styles.container}>
+        <View style={styles.content}>
+          <Leaderboard onError={handleError} />
+        </View>
+      </SafeAreaView>
     </LinearGradient>
   );
 }

@@ -2,7 +2,7 @@ import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import DatabaseHealthService from '@/services/DatabaseHealthService';
 import { useAuthActions } from "@convex-dev/auth/react";
-import { FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useConvex, useConvexAuth, useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -159,15 +159,14 @@ export default function SettingsScreen() {
       style={styles.container}
     >
       <View style={styles.header}>
+        <Text style={styles.title}>Settings</Text>
         <TouchableOpacity
-          style={styles.backButton}
+          style={styles.closeButton}
           onPress={handleGoBack}
           activeOpacity={0.7}
         >
-          <FontAwesome5 name="chevron-left" size={20} color={Theme.colors.text.primary} />
+          <Ionicons name="close" size={24} color={Theme.colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Settings</Text>
-        <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
@@ -430,19 +429,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Theme.spacing.xl,
-    paddingTop: 60,
-    paddingBottom: Theme.spacing.xl,
+    paddingTop: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.lg,
   },
-  backButton: {
-    padding: Theme.spacing.sm,
-  },
-  headerTitle: {
+  title: {
     fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-  },
-  placeholder: {
-    width: 32,
   },
   scrollView: {
     flex: 1,
@@ -556,5 +549,8 @@ const styles = StyleSheet.create({
   },
   bottomSpacing: {
     height: 100,
+  },
+  closeButton: {
+    padding: Theme.spacing.sm,
   },
 }); 

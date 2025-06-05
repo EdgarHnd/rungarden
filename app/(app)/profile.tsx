@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import ChallengeService from '@/services/ChallengeService';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -23,7 +24,24 @@ export default function ProfileScreen() {
   const [isEditingGoal, setIsEditingGoal] = useState(false);
   const [newWeeklyGoal, setNewWeeklyGoal] = useState('');
   const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
-  const [showLevelDetails, setShowLevelDetails] = useState(false);
+
+  // Rive animation state
+  const [riveUrl, setRiveUrl] = useState("https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e");
+
+  const RIVE_URLS = [
+    "https://fast-dragon-309.convex.cloud/api/storage/04bf0340-7d79-4865-8dd6-2966b4befaff",
+    "https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a",
+    "https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e"
+  ];
+
+  const toggleRiveUrl = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setRiveUrl(prevUrl => {
+      const currentIndex = RIVE_URLS.indexOf(prevUrl);
+      const nextIndex = (currentIndex + 1) % RIVE_URLS.length;
+      return RIVE_URLS[nextIndex];
+    });
+  };
 
   // Update loading state and level info when profile data is available
   useEffect(() => {
@@ -42,7 +60,7 @@ export default function ProfileScreen() {
   }, [profile]);
 
   const handleSaveWeeklyGoal = async () => {
-    const goalInMeters = parseFloat(newWeeklyGoal) * 1000; // Convert km to meters
+    const goalInMeters = parseFloat(newWeeklyGoal) * 1000;
 
     if (isNaN(goalInMeters) || goalInMeters <= 0) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -52,9 +70,7 @@ export default function ProfileScreen() {
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
       await updateWeeklyGoal({ weeklyGoal: goalInMeters });
-
       setIsEditingGoal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Weekly goal updated!');
@@ -77,43 +93,23 @@ export default function ProfileScreen() {
       : 0;
   };
 
-  // Get next 4 levels for progression display
-  const getUpcomingLevels = () => {
-    if (!levelInfo) return [];
+  const calculateStreak = () => {
+    // For now, return a placeholder. You can implement actual streak logic later
+    return Math.floor(Math.random() * 30) + 1;
+  };
 
-    const levels = [];
-    for (let i = 0; i < 6; i++) { // Show more levels when expanded
-      const level = levelInfo.level + i;
-      const levelRequirements = LevelingService.getLevelRequirements();
-      const levelReq = levelRequirements.find(req => req.level === level);
-
-      if (levelReq) {
-        const isCurrentLevel = level === levelInfo.level;
-        const isCompleted = levelInfo.totalDistance >= levelReq.distance;
-        const progress = isCurrentLevel ? levelInfo.progressToNextLevel : (isCompleted ? 1 : 0);
-
-        levels.push({
-          level,
-          title: levelReq.title,
-          emoji: levelReq.emoji,
-          distance: levelReq.distance,
-          isCurrentLevel,
-          isCompleted,
-          progress
-        });
-      }
-    }
-    return levels;
+  const getCurrentWeek = () => {
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const pastDaysOfYear = (now.getTime() - startOfYear.getTime()) / 86400000;
+    return Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
   };
 
   if (isLoading) {
     return (
       <View style={styles.container}>
-        <View style={styles.header}>
-          <Text style={styles.title}>Profile</Text>
-        </View>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#007AFF" />
+          <ActivityIndicator size="large" color="#58CC02" />
           <Text style={styles.loadingText}>Loading profile...</Text>
         </View>
       </View>
@@ -122,183 +118,236 @@ export default function ProfileScreen() {
 
   return (
     <View style={styles.container}>
-      {/* Header */}
-      <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
-        <TouchableOpacity
-          style={styles.settingsButton}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            router.push('/settings');
-          }}
-          activeOpacity={0.7}
-        >
-          <FontAwesome5 name="cog" size={20} color={Theme.colors.text.primary} />
-        </TouchableOpacity>
-      </View>
-
-      <ScrollView style={styles.contentScrollView}>
-        {/* Level Progression - Simplified */}
-        {levelInfo && (
+      <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+        {/* Character Section with Green Background - Goes to top */}
+        <View style={styles.characterSection}>
+          {/* Settings Button positioned in top right */}
           <TouchableOpacity
-            style={styles.levelSection}
+            style={styles.settingsButton}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              setShowLevelDetails(!showLevelDetails);
+              router.push('/settings');
             }}
             activeOpacity={0.7}
           >
-            <View style={styles.currentLevelHeader}>
-              <View style={styles.currentLevelInfo}>
-                <Text style={styles.currentLevelEmoji}>{LevelingService.getLevelEmoji(levelInfo.level)}</Text>
-                <View style={styles.currentLevelTextContainer}>
-                  <Text style={styles.currentLevelTitle}>{LevelingService.getLevelTitle(levelInfo.level)}</Text>
-                  <Text style={styles.currentLevelNumber}>Level {levelInfo.level}</Text>
-                  <Text style={styles.currentLevelDistance}>{LevelingService.formatDistance(levelInfo.totalDistance)} total</Text>
+            <FontAwesome5 name="cog" size={24} color={Theme.colors.text.primary} />
+          </TouchableOpacity>
+
+          {/* Rive Character */}
+          {/* <TouchableOpacity style={styles.characterContainer} onPress={toggleRiveUrl} activeOpacity={0.8}>
+            <Rive
+              url={riveUrl}
+              style={styles.riveAvatar}
+              autoplay={true}
+            />
+          </TouchableOpacity> */}
+        </View>
+
+        {/* Profile Info Section */}
+        <View style={styles.profileInfoSection}>
+          {/* User Info */}
+          <Text style={styles.userName}>Edgar Hnd</Text>
+          <Text style={styles.userMeta}>@EdgarHnd • Joined December 2024</Text>
+
+          {/* Stats Row */}
+          {/* <View style={styles.statsRow}>
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>{profile?.totalWorkouts || 0}</Text>
+              <Text style={styles.statLabel}>Runs</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>2</Text>
+              <Text style={styles.statLabel}>Following</Text>
+            </View>
+            <View style={styles.statDivider} />
+            <View style={styles.statItem}>
+              <Text style={styles.statNumber}>2</Text>
+              <Text style={styles.statLabel}>Followers</Text>
+            </View>
+          </View> */}
+
+          {/* Add Friends Button */}
+          {/* <TouchableOpacity style={styles.addFriendsButton} activeOpacity={0.8}>
+            <FontAwesome5 name="user-plus" size={16} color="#FFFFFF" style={styles.addFriendsIcon} />
+            <Text style={styles.addFriendsText}>ADD FRIENDS</Text>
+          </TouchableOpacity> */}
+        </View>
+
+        {/* Complete Profile Section - Hidden for now */}
+        {/* <View style={styles.completeProfileSection}>
+          <View style={styles.completeProfileContent}>
+            <View style={styles.completeProfileText}>
+              <Text style={styles.completeProfileTitle}>Finish your profile!</Text>
+              <Text style={styles.completeProfileSteps}>1 STEP LEFT</Text>
+            </View>
+            <View style={styles.mascotContainer}>
+              <Text style={styles.mascot}>🏃‍♂️</Text>
+            </View>
+          </View>
+          <TouchableOpacity
+            style={styles.completeProfileButton}
+            onPress={() => setIsEditingGoal(true)}
+            activeOpacity={0.8}
+          >
+            <Text style={styles.completeProfileButtonText}>COMPLETE PROFILE</Text>
+          </TouchableOpacity>
+        </View> */}
+
+        {/* Overview Section */}
+        <View style={styles.overviewSection}>
+          <Text style={styles.sectionTitle}>Overview</Text>
+
+          {/* Main Stats - Duolingo Style 2x2 Grid */}
+          <View style={styles.duolingoStatsContainer}>
+            <View style={styles.duolingoStatsRow}>
+              <View style={styles.duolingoStatCard}>
+                <Text style={styles.duolingoStatIcon}>🛣️</Text>
+                <View style={styles.duolingoStatText}>
+                  <Text style={styles.duolingoStatNumber}>{Math.round((profile?.totalDistance || 0) / 100)}</Text>
+                  <Text style={styles.duolingoStatLabel}>Total Km</Text>
                 </View>
               </View>
-              <View style={styles.nextLevelInfo}>
-                <Text style={styles.nextLevelText}>{LevelingService.formatDistance(levelInfo.remainingDistanceForNextLevel)} to next level</Text>
-                <Text style={styles.expandHint}>Tap to {showLevelDetails ? 'hide' : 'view'} all levels</Text>
+
+              <View style={styles.duolingoStatCard}>
+                <Text style={styles.duolingoStatIcon}>⚡️</Text>
+                <View style={styles.duolingoStatText}>
+                  <Text style={styles.duolingoStatNumber}>{calculateStreak()}</Text>
+                  <Text style={styles.duolingoStatLabel}>Streak</Text>
+                </View>
               </View>
             </View>
 
-            {/* Simple Progress Bar */}
-            <View style={styles.simpleProgressContainer}>
-              <View style={styles.simpleProgressBar}>
-                <View
-                  style={[
-                    styles.simpleProgressFill,
-                    { width: `${levelInfo.progressToNextLevel * 100}%` }
-                  ]}
-                />
+            <View style={styles.duolingoStatsRow}>
+              <View style={styles.duolingoStatCard}>
+                <Text style={styles.duolingoStatIcon}>🏃‍♂️</Text>
+                <View style={styles.duolingoStatText}>
+                  <Text style={styles.duolingoStatNumber}>{profile?.totalWorkouts || 0}</Text>
+                  <Text style={styles.duolingoStatLabel}>Activities</Text>
+                </View>
               </View>
-              <Text style={styles.simpleProgressText}>
-                {Math.round(levelInfo.progressToNextLevel * 100)}% to Level {levelInfo.level + 1}
-              </Text>
+
+              <View style={styles.duolingoStatCard}>
+                <Text style={styles.duolingoStatIcon}>🔥</Text>
+                <View style={styles.duolingoStatText}>
+                  <Text style={styles.duolingoStatNumber}>{profile?.totalCalories || 0}</Text>
+                  <Text style={styles.duolingoStatLabel}>Calories</Text>
+                </View>
+              </View>
+            </View>
+          </View>
+        </View>
+
+        {/* Level Section */}
+        {levelInfo && (
+          <View style={styles.levelSection}>
+            <Text style={styles.sectionTitle}>Level Progress</Text>
+            {/* Current Level Display */}
+            <View style={styles.currentLevelCard}>
+              <View style={styles.levelHeader}>
+                <Text style={styles.currentLevelEmoji}>{LevelingService.getLevelEmoji(levelInfo.level)}</Text>
+                <View style={styles.levelTextInfo}>
+                  <Text style={styles.currentLevelTitle}>{LevelingService.getLevelTitle(levelInfo.level)}</Text>
+                  <Text style={styles.currentLevelNumber}>Level {levelInfo.level}</Text>
+                </View>
+              </View>
+
+              {/* Progress Bar */}
+              <View style={styles.progressContainer}>
+                <View style={styles.progressBar}>
+                  <View
+                    style={[
+                      styles.progressFill,
+                      { width: `${levelInfo.progressToNextLevel * 100}%` }
+                    ]}
+                  />
+                </View>
+                <Text style={styles.progressText}>
+                  {Math.round(levelInfo.progressToNextLevel * 100)}% to Level {levelInfo.level + 1}
+                </Text>
+              </View>
             </View>
 
-            {/* Detailed Level Progression - Expandable */}
-            {showLevelDetails && (
-              <View style={styles.progressionContainer}>
-                <Text style={styles.progressionTitle}>All Levels</Text>
-                <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.levelTrackScroll}>
-                  <View style={styles.levelTrack}>
-                    {getUpcomingLevels().map((levelData, index) => (
-                      <View key={levelData.level} style={styles.levelNode}>
-                        {/* Level Circle */}
-                        <View style={[
-                          styles.levelCircle,
-                          levelData.isCurrentLevel && styles.levelCircleCurrent,
-                          levelData.isCompleted && styles.levelCircleCompleted
-                        ]}>
-                          <Text style={[
-                            styles.levelCircleText,
-                            levelData.isCurrentLevel && styles.levelCircleTextCurrent,
-                            levelData.isCompleted && styles.levelCircleTextCompleted
-                          ]}>
-                            {levelData.level}
-                          </Text>
-                        </View>
+            {/* Upcoming Levels */}
+            <View style={styles.upcomingLevelsContainer}>
+              <Text style={styles.upcomingLevelsTitle}>Upcoming Levels</Text>
+              <View style={styles.upcomingLevelsRow}>
+                {[1, 2, 3].map((offset) => {
+                  const nextLevel = levelInfo.level + offset;
+                  const levelRequirements = LevelingService.getLevelRequirements();
+                  const levelReq = levelRequirements.find(req => req.level === nextLevel);
 
-                        {/* Progress Fill for Current Level */}
-                        {levelData.isCurrentLevel && (
-                          <View style={styles.currentLevelProgressContainer}>
-                            <View style={styles.currentLevelProgress}>
-                              <View style={[
-                                styles.currentLevelProgressFill,
-                                { width: `${levelData.progress * 100}%` }
-                              ]} />
-                            </View>
-                            <Text style={styles.progressPercentageText}>
-                              {Math.round(levelData.progress * 100)}%
-                            </Text>
-                          </View>
-                        )}
+                  if (!levelReq) return null;
 
-                        {/* Level Info */}
-                        <View style={styles.levelNodeInfo}>
-                          <Text style={styles.levelNodeEmoji}>{levelData.emoji}</Text>
-                          <Text style={styles.levelNodeTitle} numberOfLines={2}>{levelData.title}</Text>
-                          <Text style={styles.levelNodeDistance}>{LevelingService.formatDistance(levelData.distance)}</Text>
-                        </View>
-
-                        {/* Connection Line to Next Level */}
-                        {index < getUpcomingLevels().length - 1 && (
-                          <View style={[
-                            styles.connectionLine,
-                            levelData.isCompleted && styles.connectionLineCompleted
-                          ]} />
-                        )}
-                      </View>
-                    ))}
-                  </View>
-                </ScrollView>
-              </View>
-            )}
-          </TouchableOpacity>
-        )}
-
-        {/* User Statistics */}
-        {profile && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Your Statistics</Text>
-            <View style={styles.statsGrid}>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{formatDistance(profile.totalDistance)}</Text>
-                <Text style={styles.statLabel}>Total Distance</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{profile.totalWorkouts}</Text>
-                <Text style={styles.statLabel}>Total Workouts</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{profile.totalCalories}</Text>
-                <Text style={styles.statLabel}>Total Calories</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>🪙 {profile.coins ?? 0}</Text>
-                <Text style={styles.statLabel}>Coins Earned</Text>
-              </View>
-              <View style={styles.statBox}>
-                <Text style={styles.statValue}>{formatDistance(profile.weeklyGoal)}</Text>
-                <Text style={styles.statLabel}>Weekly Goal</Text>
+                  return (
+                    <View key={nextLevel} style={styles.upcomingLevelCard}>
+                      <Text style={styles.upcomingLevelEmoji}>{levelReq.emoji}</Text>
+                      <Text style={styles.upcomingLevelNumber}>Level {nextLevel}</Text>
+                      <Text style={styles.upcomingLevelTitle} numberOfLines={2}>{levelReq.title}</Text>
+                      <Text style={styles.upcomingLevelDistance}>{LevelingService.formatDistance(levelReq.distance)}</Text>
+                    </View>
+                  );
+                })}
               </View>
             </View>
           </View>
         )}
 
-        {/* Weekly Progress */}
-        {weekProgress && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>This Week's Progress</Text>
-            <View style={styles.progressContainer}>
-              <Text style={styles.progressText}>
-                {formatDistance(weekProgress.actualDistance)} / {formatDistance(weekProgress.goalDistance)}
-              </Text>
-              <View style={styles.progressBar}>
-                <View
-                  style={[
-                    styles.progressFill,
-                    { width: `${Math.min(calculateWeeklyProgress(), 100)}%` }
-                  ]}
-                />
-              </View>
-              <Text style={styles.progressPercentage}>
-                {calculateWeeklyProgress().toFixed(0)}% complete
-              </Text>
-              <Text style={styles.workoutCount}>
-                {weekProgress.workoutCount} workouts this week
-              </Text>
-            </View>
+        {/* Friend Streaks Section */}
+        {/* <View style={styles.friendStreaksSection}>
+          <Text style={styles.sectionTitle}>Friend Streaks</Text>
+          <View style={styles.friendStreaksRow}>
+            {[...Array(5)].map((_, index) => (
+              <TouchableOpacity key={index} style={styles.friendStreakItem} activeOpacity={0.7}>
+                <View style={styles.friendStreakCircle}>
+                  <FontAwesome5 name="plus" size={20} color="#7C8DB0" />
+                </View>
+              </TouchableOpacity>
+            ))}
           </View>
-        )}
+        </View> */}
 
-        {/* Weekly Goal Section */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Weekly Goal</Text>
-          {isEditingGoal ? (
-            <View style={styles.editGoalContainer}>
+        {/* Challenges Section */}
+        <View style={styles.achievementsSection}>
+          <View style={styles.achievementsHeader}>
+            <Text style={styles.sectionTitle}>Challenges</Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/challenges');
+              }}
+            >
+              <Text style={styles.viewAllText}>VIEW ALL</Text>
+            </TouchableOpacity>
+          </View>
+          <View style={styles.achievementsRow}>
+            {ChallengeService.getAllChallenges().slice(0, 3).map((challenge, index) => (
+              <View key={challenge.id} style={styles.achievementBadge}>
+                <TouchableOpacity
+                  style={styles.challengeCard}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    Alert.alert(
+                      challenge.name,
+                      `${challenge.description}\n\nReward: ${challenge.reward}`,
+                      [{ text: 'Got it!', style: 'default' }]
+                    );
+                  }}
+                  activeOpacity={0.8}
+                >
+                  <Text style={styles.challengeEmoji}>{challenge.emoji}</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        </View>
+
+        {/* Weekly Goal Editor */}
+        {isEditingGoal && (
+          <View style={styles.goalModal}>
+            <View style={styles.goalModalContent}>
+              <Text style={styles.goalModalTitle}>Set Weekly Goal</Text>
               <TextInput
                 style={styles.goalInput}
                 value={newWeeklyGoal}
@@ -325,30 +374,11 @@ export default function ProfileScreen() {
                 </TouchableOpacity>
               </View>
             </View>
-          ) : (
-            <View style={styles.goalDisplayContainer}>
-              <Text style={styles.goalValue}>
-                {profile ? formatDistance(profile.weeklyGoal) : '10.0 km'}
-              </Text>
-              <TouchableOpacity
-                style={styles.editGoalButton}
-                onPress={() => setIsEditingGoal(true)}
-              >
-                <Text style={styles.editGoalButtonText}>Edit Goal</Text>
-              </TouchableOpacity>
-            </View>
-          )}
-        </View>
-
-        {/* Sync Information */}
-        {profile?.lastSyncDate && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Data Sync</Text>
-            <Text style={styles.syncInfo}>
-              Last synced: {new Date(profile.lastSyncDate).toLocaleString()}
-            </Text>
           </View>
         )}
+
+        {/* Bottom Spacing */}
+        <View style={styles.bottomSpacer} />
       </ScrollView>
     </View>
   );
@@ -359,27 +389,10 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.colors.background.primary,
   },
-  contentScrollView: {
+  scrollView: {
     flex: 1,
-    paddingHorizontal: Theme.spacing.xl,
-    paddingTop: 0, // Content starts right below the header
   },
-  header: {
-    paddingTop: 60, // Safe area / top spacing
-    paddingHorizontal: Theme.spacing.xl,
-    backgroundColor: Theme.colors.background.primary, // Match container background
-    zIndex: 1, // Ensure header stays on top
-    flexDirection: 'row',
-    justifyContent: 'center',
-    alignItems: 'center',
-    position: 'relative',
-  },
-  title: {
-    fontSize: 32,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 30,
-  },
+
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -387,114 +400,283 @@ const styles = StyleSheet.create({
     paddingVertical: 100,
   },
   loadingText: {
-    marginTop: Theme.spacing.lg,
+    marginTop: 16,
     fontSize: 16,
-    color: Theme.colors.text.tertiary,
+    color: '#9CA3AF',
     fontFamily: Theme.fonts.medium,
   },
-  section: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xl,
+
+  settingsButton: {
+    position: 'absolute',
+    top: 50, // Position below status bar
+    right: 20,
+    padding: 8,
+    zIndex: 10,
   },
-  sectionTitle: {
-    fontSize: 20,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.lg,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    justifyContent: 'space-between',
-  },
-  statBox: {
-    width: '48%',
+  characterSection: {
+    //backgroundColor: Theme.colors.accent.primary, // Green background like Duolingo
     alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
-    padding: Theme.spacing.md,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.medium,
+    paddingTop: 10, // Account for status bar
+    paddingBottom: 40,
+    marginBottom: 20,
+    position: 'relative',
   },
-  statValue: {
+  characterContainer: {
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: 'transparent',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  profileInfoSection: {
+    paddingHorizontal: 20,
+    //marginBottom: 32,
+  },
+  riveAvatar: {
+    width: 180,
+    height: 180,
+  },
+  userName: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  userMeta: {
+    fontSize: 14,
+    color: '#9CA3AF',
+    fontFamily: Theme.fonts.medium,
+    marginBottom: 24,
+  },
+  statsRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+  },
+  statItem: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  statNumber: {
     fontSize: 20,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: '#FFFFFF',
   },
   statLabel: {
     fontSize: 12,
-    color: Theme.colors.text.tertiary,
-    marginTop: 4,
+    color: '#9CA3AF',
     fontFamily: Theme.fonts.medium,
-    textAlign: 'center',
+    marginTop: 2,
   },
-  progressContainer: {
+  statDivider: {
+    width: 1,
+    height: 24,
+    backgroundColor: '#374151',
+  },
+  addFriendsButton: {
+    backgroundColor: '#1CB0F6',
+    flexDirection: 'row',
     alignItems: 'center',
+    paddingHorizontal: 32,
+    paddingVertical: 12,
+    borderRadius: 12,
+    marginBottom: 8,
   },
-  progressText: {
+  addFriendsIcon: {
+    marginRight: 8,
+  },
+  addFriendsText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    letterSpacing: 0.5,
+  },
+  completeProfileSection: {
+    backgroundColor: '#374151',
+    marginHorizontal: 20,
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 24,
+  },
+  completeProfileContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  completeProfileText: {
+    flex: 1,
+  },
+  completeProfileTitle: {
     fontSize: 18,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
-  },
-  progressBar: {
-    width: '100%',
-    height: 8,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.xs,
-    marginBottom: Theme.spacing.sm,
-  },
-  progressFill: {
-    height: '100%',
-    backgroundColor: Theme.colors.status.success,
-    borderRadius: Theme.borderRadius.xs,
-  },
-  progressPercentage: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.status.success,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
     marginBottom: 4,
   },
-  workoutCount: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
+  completeProfileSteps: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: Theme.fonts.medium,
+    letterSpacing: 1,
   },
-  goalDisplayContainer: {
+  mascotContainer: {
+    width: 60,
+    height: 60,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mascot: {
+    fontSize: 40,
+  },
+  completeProfileButton: {
+    backgroundColor: '#1CB0F6',
+    paddingVertical: 14,
+    borderRadius: 12,
+    alignItems: 'center',
+  },
+  completeProfileButtonText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    letterSpacing: 0.5,
+  },
+  overviewSection: {
+    paddingHorizontal: 20,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
+    marginBottom: 16,
+  },
+  mainStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 20,
+  },
+  mainStatCard: {
+    borderRadius: 16,
+    padding: 20,
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 6,
+    borderWidth: 3,
+    borderColor: Theme.colors.background.tertiary,
+  },
+  mainStatIcon: {
+    fontSize: 28,
+    marginBottom: 8,
+  },
+  mainStatNumber: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
+    marginBottom: 4,
+  },
+  mainStatLabel: {
+    fontSize: 12,
+    color: '#9CA3AF',
+    fontFamily: Theme.fonts.medium,
+  },
+  friendStreaksSection: {
+    paddingHorizontal: 20,
+    marginBottom: 32,
+  },
+  friendStreaksRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  friendStreakItem: {
+    alignItems: 'center',
+  },
+  friendStreakCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: '#374151',
+    borderWidth: 2,
+    borderColor: '#4B5563',
+    borderStyle: 'dashed',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  achievementsSection: {
+    paddingHorizontal: 20,
+    marginBottom: 32,
+  },
+  achievementsHeader: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: 16,
   },
-  goalValue: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-  },
-  editGoalButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    paddingHorizontal: Theme.spacing.lg,
-    paddingVertical: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.small,
-  },
-  editGoalButtonText: {
-    color: Theme.colors.text.primary,
+  viewAllText: {
+    color: '#1CB0F6',
     fontSize: 14,
-    fontFamily: Theme.fonts.medium,
+    fontFamily: Theme.fonts.bold,
   },
-  editGoalContainer: {
-    alignItems: 'stretch',
+  achievementsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  achievementBadge: {
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 8,
+  },
+  achievementEarned: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#EC4899',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  achievementLocked: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  achievementIcon: {
+    fontSize: 32,
+  },
+  goalModal: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.8)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+  },
+  goalModalContent: {
+    backgroundColor: '#374151',
+    borderRadius: 16,
+    padding: 24,
+    width: '100%',
+    maxWidth: 300,
+  },
+  goalModalTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
+    textAlign: 'center',
+    marginBottom: 20,
   },
   goalInput: {
-    borderWidth: 1,
-    borderColor: Theme.colors.border.secondary,
-    borderRadius: Theme.borderRadius.small,
-    padding: Theme.spacing.md,
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    padding: 16,
     fontSize: 16,
+    color: '#FFFFFF',
     fontFamily: Theme.fonts.regular,
-    marginBottom: Theme.spacing.md,
-    backgroundColor: Theme.colors.background.tertiary,
-    color: Theme.colors.text.primary,
+    marginBottom: 20,
+    textAlign: 'center',
   },
   goalButtons: {
     flexDirection: 'row',
@@ -502,207 +684,175 @@ const styles = StyleSheet.create({
   },
   goalButton: {
     flex: 1,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.small,
+    paddingVertical: 12,
+    borderRadius: 12,
     alignItems: 'center',
-    marginHorizontal: 4,
+    marginHorizontal: 8,
   },
   cancelButton: {
-    backgroundColor: Theme.colors.background.tertiary,
-    borderWidth: 1,
-    borderColor: Theme.colors.border.secondary,
+    backgroundColor: '#1F2937',
   },
   cancelButtonText: {
-    color: Theme.colors.text.primary,
-    fontSize: 16,
+    color: '#9CA3AF',
+    fontSize: 14,
     fontFamily: Theme.fonts.medium,
   },
   saveButton: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: '#58CC02',
   },
   saveButtonText: {
-    color: Theme.colors.text.primary,
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-  },
-  syncInfo: {
+    color: '#FFFFFF',
     fontSize: 14,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.bold,
   },
+  bottomSpacer: {
+    height: 100,
+  },
+  // Level Section Styles
   levelSection: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xl,
+    paddingHorizontal: 20,
+    marginBottom: 32,
   },
-  currentLevelHeader: {
+  currentLevelCard: {
+    backgroundColor: '#374151',
+    borderRadius: 16,
+    padding: 20,
+    marginBottom: 20,
+  },
+  levelHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
-  },
-  currentLevelInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
+    marginBottom: 16,
   },
   currentLevelEmoji: {
-    fontSize: 24,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    fontSize: 32,
+    marginRight: 16,
   },
-  currentLevelTextContainer: {
-    marginLeft: Theme.spacing.lg,
+  levelTextInfo: {
+    flex: 1,
   },
   currentLevelTitle: {
     fontSize: 18,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
+    marginBottom: 4,
   },
   currentLevelNumber: {
     fontSize: 14,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
+    color: '#9CA3AF',
   },
-  currentLevelDistance: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
-  },
-  nextLevelInfo: {
-    marginLeft: Theme.spacing.lg,
-  },
-  nextLevelText: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
-  },
-  expandHint: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
-  },
-  simpleProgressContainer: {
+  progressContainer: {
     alignItems: 'center',
   },
-  simpleProgressBar: {
+  progressBar: {
     width: '100%',
     height: 8,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.xs,
-    marginBottom: Theme.spacing.sm,
+    backgroundColor: '#1F2937',
+    borderRadius: 4,
+    marginBottom: 8,
   },
-  simpleProgressFill: {
+  progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.status.success,
-    borderRadius: Theme.borderRadius.xs,
+    backgroundColor: '#58CC02',
+    borderRadius: 4,
   },
-  simpleProgressText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.primary,
-  },
-  progressionContainer: {
-    marginBottom: Theme.spacing.xl,
-  },
-  progressionTitle: {
-    fontSize: 20,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.lg,
-  },
-  levelTrackScroll: {
-    flexDirection: 'row',
-  },
-  levelTrack: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  levelNode: {
-    alignItems: 'center',
-    marginRight: 24,
-    width: 100,
-  },
-  connectionLine: {
-    position: 'absolute',
-    right: -24,
-    width: 24,
-    height: 2,
-    backgroundColor: Theme.colors.background.tertiary,
-    top: 16,
-  },
-  connectionLineCompleted: {
-    backgroundColor: Theme.colors.status.success,
-  },
-  levelCircle: {
-    width: 32,
-    height: 32,
-    borderRadius: Theme.borderRadius.large,
-    backgroundColor: Theme.colors.background.tertiary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
-  },
-  levelCircleCurrent: {
-    backgroundColor: Theme.colors.status.success,
-  },
-  levelCircleCompleted: {
-    backgroundColor: Theme.colors.status.success,
-  },
-  levelCircleText: {
+  progressText: {
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.primary,
+    color: '#9CA3AF',
   },
-  levelCircleTextCurrent: {
-    color: Theme.colors.text.primary,
+  upcomingLevelsContainer: {
+    marginTop: 8,
   },
-  levelCircleTextCompleted: {
-    color: Theme.colors.text.primary,
+  upcomingLevelsTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.semibold,
+    color: '#FFFFFF',
+    marginBottom: 12,
   },
-  currentLevelProgressContainer: {
+  upcomingLevelsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+  },
+  upcomingLevelCard: {
+    backgroundColor: '#1F2937',
+    borderRadius: 12,
+    padding: 12,
     alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
+    flex: 1,
+    marginHorizontal: 4,
   },
-  currentLevelProgress: {
-    width: 80,
-    height: 4,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.xs,
+  upcomingLevelEmoji: {
+    fontSize: 24,
+    marginBottom: 8,
   },
-  currentLevelProgressFill: {
-    height: '100%',
-    backgroundColor: Theme.colors.status.success,
-    borderRadius: Theme.borderRadius.xs,
-  },
-  progressPercentageText: {
+  upcomingLevelNumber: {
     fontSize: 12,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.status.success,
-    marginTop: 4,
-  },
-  levelNodeInfo: {
-    alignItems: 'center',
-  },
-  levelNodeEmoji: {
-    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
     marginBottom: 4,
   },
-  levelNodeTitle: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
+  upcomingLevelTitle: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.medium,
+    color: '#9CA3AF',
     textAlign: 'center',
+    marginBottom: 4,
+    minHeight: 32, // Ensure consistent height
+  },
+  upcomingLevelDistance: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.regular,
+    color: '#6B7280',
+    textAlign: 'center',
+  },
+  // Challenge Styles
+  challengeCard: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: '#374151',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  challengeEmoji: {
+    fontSize: 32,
+  },
+  // Duolingo Style Stats
+  duolingoStatsContainer: {
+    marginBottom: 20,
+  },
+  duolingoStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  duolingoStatCard: {
+    backgroundColor: '#374151',
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+    marginHorizontal: 6,
+  },
+  duolingoStatIcon: {
+    fontSize: 24,
+    marginRight: 16,
+  },
+  duolingoStatText: {
+    flex: 1,
+  },
+  duolingoStatNumber: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
     marginBottom: 2,
   },
-  levelNodeDistance: {
-    fontSize: 11,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
-  },
-  settingsButton: {
-    position: 'absolute',
-    right: Theme.spacing.xl,
-    top: 70,
+  duolingoStatLabel: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: '#9CA3AF',
   },
 }); 
