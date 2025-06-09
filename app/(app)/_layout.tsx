@@ -74,12 +74,12 @@ export default function AppLayout() {
         })}
       />
       <Tabs.Screen
-        name="activities"
+        name="training"
         options={({ navigation }) => ({
           tabBarIcon: ({ color, size }) => (
             <FontAwesome5 name="calendar-alt" size={size} color={color} />
           ),
-          tabBarButton: createTabBarButton(() => navigation.navigate('activities')),
+          tabBarButton: createTabBarButton(() => navigation.navigate('training')),
         })}
       />
       <Tabs.Screen

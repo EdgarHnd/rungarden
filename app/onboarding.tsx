@@ -1,6 +1,7 @@
 import Theme from '@/constants/theme';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { makeRedirectUri } from "expo-auth-session";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
@@ -17,6 +18,7 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import DatePicker from 'react-native-date-picker';
 
 const redirectTo = makeRedirectUri();
 const { width: screenWidth } = Dimensions.get('window');
@@ -39,6 +41,7 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [slideAnim] = useState(new Animated.Value(0));
+  const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [data, setData] = useState<OnboardingData>({
     goalDistance: null,
     targetDate: null,
@@ -92,11 +95,38 @@ export default function OnboardingScreen() {
     }
   };
 
+  const saveOnboardingDataToStorage = async () => {
+    if (!data.goalDistance || !data.targetDate || !data.currentAbility ||
+      !data.longestDistance || data.hasTreadmill === null ||
+      data.preferTimeOverDistance === null) {
+      console.error('Missing required onboarding data');
+      return;
+    }
+
+    try {
+      const onboardingData = {
+        goalDistance: data.goalDistance,
+        goalDate: data.targetDate.toISOString(),
+        currentAbility: data.currentAbility,
+        longestDistance: data.longestDistance,
+        daysPerWeek: data.daysPerWeek,
+        preferredDays: data.preferredDays,
+        hasTreadmill: data.hasTreadmill,
+        preferTimeOverDistance: data.preferTimeOverDistance,
+      };
+
+      await AsyncStorage.setItem('pendingOnboardingData', JSON.stringify(onboardingData));
+      console.log('Onboarding data saved to storage');
+    } catch (error) {
+      console.error('Failed to save onboarding data to storage:', error);
+    }
+  };
+
   const handleAnonymousSignIn = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      // Here you would save the onboarding data to your backend
-      console.log('Onboarding data:', data);
+      // Save onboarding data to storage first
+      await saveOnboardingDataToStorage();
       await signIn("anonymous");
       router.replace('/(app)');
     } catch (error) {
@@ -109,7 +139,8 @@ export default function OnboardingScreen() {
   const handleGoogleSignIn = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('Onboarding data:', data);
+      // Save onboarding data to storage first
+      await saveOnboardingDataToStorage();
       const { redirect } = await signIn("google", { redirectTo });
 
       if (Platform.OS === "web") {
@@ -134,7 +165,8 @@ export default function OnboardingScreen() {
   const handleAppleSignIn = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      console.log('Onboarding data:', data);
+      // Save onboarding data to storage first
+      await saveOnboardingDataToStorage();
       await signIn("apple");
       router.replace('/(app)');
     } catch (error) {
@@ -240,29 +272,36 @@ export default function OnboardingScreen() {
 
   const renderGoalDistance = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.optionsContainer}>
+      <View style={styles.goalOptionsContainer}>
         {[
-          { value: 'just-run-more', title: 'Just run more', subtitle: 'Build a consistent habit', emoji: '🌱', fullWidth: true },
-          { value: '5K', title: '5K Run', subtitle: 'Perfect for beginners', emoji: '🏃‍♀️' },
-          { value: '10K', title: '10K Run', subtitle: 'Ready for a challenge', emoji: '🏃‍♂️' },
-          { value: 'half-marathon', title: 'Half Marathon', subtitle: '21.1K - serious goal', emoji: '🏆' },
-          { value: 'marathon', title: 'Marathon', subtitle: '42.2K - ultimate challenge', emoji: '👑' },
+          { value: 'just-run-more', title: 'Just run more', subtitle: 'Build a consistent habit', emoji: '🌱' },
+          { value: '5K', title: 'From 0 to 5K', subtitle: 'Perfect for beginners', emoji: '🏃‍♀️' },
+          { value: '10K', title: 'First 10K', subtitle: 'Ready for a challenge', emoji: '🏃‍♂️' },
+          { value: 'half-marathon', title: 'Half Marathon', subtitle: 'Coming Soon!', emoji: '🏆', disabled: true },
+          { value: 'marathon', title: 'Marathon', subtitle: 'Coming Soon!', emoji: '👑', disabled: true },
         ].map((option) => (
           <TouchableOpacity
             key={option.value}
             style={[
-              styles.optionCard,
-              option.fullWidth && styles.optionCardFullWidth,
-              data.goalDistance === option.value && styles.optionCardSelected
+              styles.goalOption,
+              data.goalDistance === option.value && styles.goalOptionSelected,
+              (option as any).disabled && styles.goalOptionDisabled,
             ]}
             onPress={() => {
+              if ((option as any).disabled) return;
               updateData({ goalDistance: option.value as '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon' });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             }}
+            disabled={(option as any).disabled}
           >
-            <Text style={styles.optionEmoji}>{option.emoji}</Text>
-            <Text style={styles.optionTitle}>{option.title}</Text>
-            <Text style={styles.optionSubtitle}>{option.subtitle}</Text>
+            <Text style={styles.goalEmoji}>{option.emoji}</Text>
+            <View style={styles.goalContent}>
+              <Text style={styles.goalTitle}>{option.title}</Text>
+              <Text style={styles.goalSubtitle}>{option.subtitle}</Text>
+            </View>
+            {data.goalDistance === option.value && (
+              <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent.primary} />
+            )}
           </TouchableOpacity>
         ))}
       </View>
@@ -271,52 +310,97 @@ export default function OnboardingScreen() {
 
   const renderTargetDate = () => {
     const today = new Date();
-    const dates = [];
+    const minDate = new Date(today);
+    minDate.setDate(today.getDate() + 28); // Minimum 4 weeks from now
 
-    // Generate next 12 weeks as options
-    for (let i = 4; i <= 16; i += 2) {
-      const date = new Date(today);
-      date.setDate(date.getDate() + (i * 7));
-      dates.push({
-        weeks: i,
-        date: date,
-        label: `${i} weeks`,
-        dateText: date.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+    const formatSelectedDate = (date: Date | null) => {
+      if (!date) return 'Select your target date';
+      return date.toLocaleDateString('en-US', {
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
       });
-    }
+    };
 
-    const isSameDate = (date1: Date | null, date2: Date) => {
-      if (!date1) return false;
-      return date1.getFullYear() === date2.getFullYear() &&
-        date1.getMonth() === date2.getMonth() &&
-        date1.getDate() === date2.getDate();
+    const calculateWeeksFromNow = (date: Date | null) => {
+      if (!date) return '';
+      const diffTime = date.getTime() - today.getTime();
+      const diffWeeks = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7));
+      return `(${diffWeeks} weeks from now)`;
     };
 
     return (
       <View style={styles.stepContainer}>
-        <ScrollView style={styles.dateOptionsContainer} showsVerticalScrollIndicator={false}>
-          {dates.map((option) => (
-            <TouchableOpacity
-              key={option.weeks}
-              style={[
-                styles.dateOption,
-                isSameDate(data.targetDate, option.date) && styles.dateOptionSelected
-              ]}
-              onPress={() => {
-                updateData({ targetDate: option.date });
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              }}
-            >
-              <View style={styles.dateOptionContent}>
-                <Text style={styles.dateOptionWeeks}>{option.label}</Text>
-                <Text style={styles.dateOptionDate}>{option.dateText}</Text>
+        <View style={styles.calendarContainer}>
+          <TouchableOpacity
+            style={[
+              styles.datePickerButton,
+              data.targetDate && styles.datePickerButtonSelected
+            ]}
+            onPress={() => {
+              setDatePickerOpen(true);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            }}
+          >
+            <View style={styles.datePickerContent}>
+              <Ionicons
+                name="calendar"
+                size={24}
+                color={data.targetDate ? Theme.colors.accent.primary : Theme.colors.text.tertiary}
+              />
+              <View style={styles.datePickerTextContainer}>
+                <Text style={[
+                  styles.datePickerText,
+                  data.targetDate && styles.datePickerTextSelected
+                ]}>
+                  {formatSelectedDate(data.targetDate)}
+                </Text>
+                {data.targetDate && (
+                  <Text style={styles.datePickerSubtext}>
+                    {calculateWeeksFromNow(data.targetDate)}
+                  </Text>
+                )}
               </View>
-              {isSameDate(data.targetDate, option.date) && (
-                <Ionicons name="checkmark-circle" size={24} color={Theme.colors.accent.primary} />
-              )}
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={20}
+              color={Theme.colors.text.tertiary}
+            />
+          </TouchableOpacity>
+
+          {data.targetDate && (
+            <View style={styles.selectedDateInfo}>
+              <View style={styles.selectedDateCard}>
+                <Text style={styles.selectedDateTitle}>Training Duration</Text>
+                <Text style={styles.selectedDateValue}>
+                  {calculateWeeksFromNow(data.targetDate).replace('(', '').replace(')', '')}
+                </Text>
+              </View>
+            </View>
+          )}
+        </View>
+
+        <DatePicker
+          modal
+          open={datePickerOpen}
+          date={data.targetDate || minDate}
+          mode="date"
+          minimumDate={minDate}
+          title="Select your target date"
+          confirmText="Confirm"
+          cancelText="Cancel"
+          theme={Platform.OS === 'ios' ? 'auto' : 'light'}
+          onConfirm={(selectedDate: Date) => {
+            setDatePickerOpen(false);
+            updateData({ targetDate: selectedDate });
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          }}
+          onCancel={() => {
+            setDatePickerOpen(false);
+          }}
+        />
       </View>
     );
   };
@@ -784,6 +868,44 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
   },
+  goalOptionsContainer: {
+    gap: Theme.spacing.md,
+  },
+  goalOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  goalOptionSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  goalOptionDisabled: {
+    opacity: 0.6,
+    backgroundColor: Theme.colors.background.tertiary,
+  },
+  goalEmoji: {
+    fontSize: 24,
+    marginRight: Theme.spacing.md,
+  },
+  goalContent: {
+    flex: 1,
+  },
+  goalTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: 4,
+  },
+  goalSubtitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
   dateOptionsContainer: {
     maxHeight: 500,
   },
@@ -1122,5 +1244,64 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+  },
+  // Calendar Styles
+  calendarContainer: {
+    gap: Theme.spacing.xl,
+  },
+  datePickerButton: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  datePickerButtonSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  datePickerContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  datePickerTextContainer: {
+    flex: 1,
+    marginLeft: Theme.spacing.md,
+  },
+  datePickerText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  datePickerTextSelected: {
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.semibold,
+  },
+  datePickerSubtext: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.accent.primary,
+    marginTop: Theme.spacing.xs,
+  },
+  selectedDateInfo: {
+    marginTop: Theme.spacing.lg,
+  },
+  selectedDateCard: {
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.medium,
+    padding: Theme.spacing.lg,
+    alignItems: 'center',
+  },
+  selectedDateTitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    marginBottom: Theme.spacing.xs,
+  },
+  selectedDateValue: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
   },
 }); 

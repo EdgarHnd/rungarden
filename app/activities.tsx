@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { Ionicons } from '@expo/vector-icons';
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -120,11 +121,11 @@ export default function ActivitiesScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Activities</Text>
+          <Text style={styles.headerTitle}>Past runs</Text>
         </View>
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color={Theme.colors.accent.primary} />
-          <Text style={styles.loadingText}>Loading your activities...</Text>
+          <Text style={styles.loadingText}>Loading your runs...</Text>
         </View>
       </View>
     );
@@ -135,7 +136,7 @@ export default function ActivitiesScreen() {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.headerTitle}>Activities</Text>
+          <Text style={styles.headerTitle}>Past runs</Text>
         </View>
         <View style={styles.permissionContainer}>
           <Text style={styles.title}>Connect a Data Source</Text>
@@ -160,7 +161,12 @@ export default function ActivitiesScreen() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Activities</Text>
+        <View style={styles.headerTop}>
+          <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color={Theme.colors.text.primary} />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Past runs</Text>
+        </View>
         <View style={styles.headerSubtitleContainer}>
           <Text style={styles.headerSubtitle}>Your running history</Text>
           {/* <View style={styles.dataSourceIndicator}>
@@ -208,15 +214,15 @@ export default function ActivitiesScreen() {
         {/* Activities List */}
         <View style={styles.activitiesContainer}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Recent Activities</Text>
+            <Text style={styles.sectionTitle}>Recent Runs</Text>
             <Text style={styles.sectionHint}>Long press to delete</Text>
           </View>
           {activitiesForYear?.length === 0 ? (
             <View style={styles.emptyState}>
               <Text style={styles.emptyStateIcon}>🏃‍♂️</Text>
-              <Text style={styles.emptyStateTitle}>No activities yet</Text>
+              <Text style={styles.emptyStateTitle}>No runs yet</Text>
               <Text style={styles.emptyStateSubtitle}>
-                Start running and sync your activities to see them here. Pull down to refresh or check Settings to sync manually.
+                Start running and sync your runs to see them here. Pull down to refresh or check Settings to sync manually.
               </Text>
             </View>
           ) : (
@@ -271,10 +277,10 @@ export default function ActivitiesScreen() {
         <View style={styles.dataSourceInfo}>
           <Text style={styles.dataSourceText}>
             {profile.healthKitSyncEnabled && profile.stravaSyncEnabled
-              ? 'Showing activities from HealthKit ❤️ and Strava 🟠'
+              ? 'Showing runs from HealthKit ❤️ and Strava 🟠'
               : profile.healthKitSyncEnabled
-                ? 'Showing activities from HealthKit ❤️'
-                : 'Showing activities from Strava 🟠'
+                ? 'Showing runs from HealthKit ❤️'
+                : 'Showing runs from Strava 🟠'
             }
           </Text>
           <TouchableOpacity
@@ -301,11 +307,20 @@ const styles = StyleSheet.create({
     paddingBottom: Theme.spacing.xl,
     paddingHorizontal: Theme.spacing.xl,
   },
+  headerTop: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  backButton: {
+    padding: 4,
+    marginRight: Theme.spacing.md,
+  },
   headerTitle: {
-    fontSize: 32,
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginBottom: 4,
+    flex: 1,
   },
   headerSubtitleContainer: {
     flexDirection: 'row',

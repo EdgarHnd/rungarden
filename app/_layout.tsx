@@ -58,6 +58,14 @@ function AuthenticatedApp() {
           animation: 'slide_from_bottom',
         }}
       />
+      <Stack.Screen
+        name="activities"
+        options={{
+          presentation: 'card',
+          gestureEnabled: true,
+          animation: 'slide_from_right',
+        }}
+      />
     </Stack>
   );
 }

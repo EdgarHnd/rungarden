@@ -1,4 +1,5 @@
 import Theme from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useRef } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -26,7 +27,7 @@ interface DatabaseActivity {
 interface DayData {
   date: string;
   activities: DatabaseActivity[];
-  suggestedActivity: Activity;
+  plannedWorkout: any; // Direct planned workout data from the training plan
   weekIndex: number;
 }
 
@@ -228,6 +229,7 @@ export default function WeekView({
               const isSelected = globalDayIndex === currentDayIndex;
               const hasRun = hasRunActivity(day.activities);
               const isTodayDay = isToday(day.date);
+              const hasPlannedWorkout = day.plannedWorkout && day.plannedWorkout.type !== 'rest';
 
               return (
                 <TouchableOpacity
@@ -273,6 +275,15 @@ export default function WeekView({
                         ]}>
                           ✓
                         </Text>
+                      </View>
+                    )}
+
+                    {hasPlannedWorkout && !hasRun && (
+                      <View style={[
+                        styles.plannedWorkoutIndicator,
+                        isSelected && styles.selectedPlannedWorkoutIndicator
+                      ]}>
+                        <Ionicons name="flash" size={10} color={isSelected ? Theme.colors.accent.primary : Theme.colors.text.primary} />
                       </View>
                     )}
                   </View>
@@ -425,6 +436,28 @@ const styles = StyleSheet.create({
   },
   selectedCheckmarkText: {
     color: Theme.colors.status.success,
+  },
+  plannedWorkoutIndicator: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: Theme.borderRadius.small,
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectedPlannedWorkoutIndicator: {
+    backgroundColor: Theme.colors.text.primary,
+  },
+  plannedWorkoutText: {
+    fontSize: 10,
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
+  },
+  selectedPlannedWorkoutText: {
+    color: Theme.colors.accent.primary,
   },
   activityIndicator: {
     fontSize: 12,

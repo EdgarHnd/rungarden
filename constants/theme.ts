@@ -1,9 +1,9 @@
 export const Theme = {
   colors: {
     background: {
-      primary: '#1F2937',      // Dark blue-gray - main background
-      secondary: '#2A3441',    // Lighter blue-gray - secondary background
-      tertiary: '#374151',     // Light blue-gray - tertiary background
+      primary: '#192B31',      // Dark blue-gray - main background
+      secondary: '#243942',    // Lighter blue-gray - secondary background
+      tertiary: '#2F4852',     // Light blue-gray - tertiary background
       overlay: 'rgba(0, 0, 0, 0.8)', // Modal overlay
     },
 

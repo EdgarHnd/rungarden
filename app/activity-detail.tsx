@@ -1,7 +1,10 @@
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
+import { Id } from '@/convex/_generated/dataModel';
 import { RunningActivity } from '@/services/HealthService';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -14,16 +17,168 @@ import {
   View,
 } from 'react-native';
 
+interface PlannedWorkout {
+  scheduledDate: string;
+  type: string;
+  duration?: string;
+  distance?: number;
+  description: string;
+  target?: string;
+  status: string;
+  workoutId?: string | null;
+  isDefault?: boolean;
+}
+
+// Helper function to extract simple workout name
+const getSimpleWorkoutName = (type: string, description: string): string => {
+  // For C25K workouts, extract the week/day info
+  if (type === 'run-walk') {
+    if (description.includes('Week 1')) return 'C25K Week 1';
+    if (description.includes('Week 2')) return 'C25K Week 2';
+    if (description.includes('Week 3')) return 'C25K Week 3';
+    if (description.includes('Week 4')) return 'C25K Week 4';
+    if (description.includes('Week 5')) return 'C25K Week 5';
+    if (description.includes('Week 6')) return 'C25K Week 6';
+    if (description.includes('Week 7')) return 'C25K Week 7';
+    if (description.includes('Week 8')) return 'C25K Week 8';
+    if (description.includes('Week 9')) return 'C25K Week 9';
+    return 'Run-Walk Training';
+  }
+
+  // For other workout types, use a simple display name
+  const typeNames: Record<string, string> = {
+    'easy': 'Easy Run',
+    'tempo': 'Tempo Run',
+    'intervals': 'Interval Training',
+    'long': 'Long Run',
+    'recovery': 'Recovery Run',
+    'cross-train': 'Cross Training',
+    'rest': 'Rest Day'
+  };
+
+  return typeNames[type] || type.charAt(0).toUpperCase() + type.slice(1) + ' Run';
+};
+
+// Helper function to parse workout phases from description
+interface WorkoutPhase {
+  title: string;
+  description: string;
+  duration?: string;
+}
+
+const getWorkoutPhases = (description: string): WorkoutPhase[] => {
+  const phases: WorkoutPhase[] = [];
+
+  // Default phases for any workout
+  phases.push({
+    title: "Warm-up",
+    description: "5 minutes of brisk walking to prepare your body",
+    duration: "5 min"
+  });
+
+  // Parse the main workout from description
+  if (description.includes('alternate')) {
+    if (description.includes('60 seconds jogging and 90 seconds walking')) {
+      phases.push({
+        title: "Main Workout",
+        description: "Alternate 60 seconds jogging with 90 seconds walking (8 cycles)",
+        duration: "20 min"
+      });
+    } else if (description.includes('90 seconds jogging and 2 minutes walking')) {
+      phases.push({
+        title: "Main Workout",
+        description: "Alternate 90 seconds jogging with 2 minutes walking (6 cycles)",
+        duration: "20 min"
+      });
+    }
+  } else if (description.includes('jog for 20 minutes')) {
+    phases.push({
+      title: "Main Workout",
+      description: "Run continuously for 20 minutes without walking",
+      duration: "20 min"
+    });
+  } else if (description.includes('jog for 25 minutes')) {
+    phases.push({
+      title: "Main Workout",
+      description: "Run continuously for 25 minutes",
+      duration: "25 min"
+    });
+  } else if (description.includes('jog for 30 minutes')) {
+    phases.push({
+      title: "Main Workout",
+      description: "Run continuously for 30 minutes - Congratulations!",
+      duration: "30 min"
+    });
+  } else if (description.includes('two repetitions')) {
+    phases.push({
+      title: "Main Workout",
+      description: "Two repetitions: 90s jog, 90s walk, 3min jog, 3min walk",
+      duration: "18 min"
+    });
+  } else {
+    // Fallback for other workouts
+    phases.push({
+      title: "Main Workout",
+      description: description.replace(/5min warmup walk, then /, ''),
+      duration: "20+ min"
+    });
+  }
+
+  phases.push({
+    title: "Cool-down",
+    description: "5 minutes of slow walking and gentle stretching",
+    duration: "5 min"
+  });
+
+  return phases;
+};
+
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
   const [activity, setActivity] = useState<RunningActivity | null>(null);
+  const [isPlannedWorkout, setIsPlannedWorkout] = useState(false);
+  const [isRestDay, setIsRestDay] = useState(false);
   const [scaleAnim] = useState(new Animated.Value(0));
 
+  // Fetch planned workout if we have an ID
+  const plannedWorkout = useQuery(
+    api.plannedWorkouts.getById,
+    params.plannedWorkoutId ? { id: params.plannedWorkoutId as Id<"plannedWorkouts"> } : "skip"
+  );
+
   useEffect(() => {
-    if (params.activity) {
+    if (params.isPlannedWorkout === 'true') {
+      if (params.isRestDay === 'true') {
+        // Handle rest day
+        setIsRestDay(true);
+        setIsPlannedWorkout(true);
+
+        // Entrance animation
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }).start();
+      } else if (params.plannedWorkoutId) {
+        // Handle actual planned workout - will be fetched by useQuery
+        setIsPlannedWorkout(true);
+        setIsRestDay(false);
+
+        // Entrance animation
+        Animated.spring(scaleAnim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        }).start();
+      }
+    } else if (params.activity) {
       try {
         const activityData = JSON.parse(params.activity as string);
         setActivity(activityData);
+        setIsPlannedWorkout(false);
+        setIsRestDay(false);
 
         // Entrance animation
         Animated.spring(scaleAnim, {
@@ -37,7 +192,7 @@ export default function ActivityDetailScreen() {
         router.back();
       }
     }
-  }, [params.activity]);
+  }, [params.activity, params.plannedWorkoutId, params.isPlannedWorkout, params.isRestDay]);
 
   const formatDistance = (meters: number) => {
     const kilometers = meters / 1000;
@@ -126,10 +281,296 @@ export default function ActivityDetailScreen() {
     return achievements;
   };
 
+  if (!activity && !plannedWorkout && !isRestDay) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loading}>Loading...</Text>
+      </View>
+    );
+  }
+
+  // For planned workouts, we'll render a different UI instead of transforming to activity
+  if (isPlannedWorkout) {
+    // Handle rest days with hardcoded data
+    if (isRestDay) {
+      const restDayWorkout = {
+        scheduledDate: params.scheduledDate as string,
+        type: 'rest',
+        duration: '15-30 min',
+        description: 'Take it easy today! Focus on stretching, foam rolling, or gentle mobility work. Your body needs recovery to get stronger.',
+        target: 'Active recovery - keep it light and relaxing',
+        status: 'scheduled',
+        isDefault: true
+      };
+
+      return (
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <TouchableOpacity onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.back();
+            }} style={styles.backButton}>
+              <Ionicons name="arrow-back" size={24} color="#fff" />
+            </TouchableOpacity>
+            <Text style={styles.headerTitle}>Rest Day</Text>
+            <View style={styles.placeholder} />
+          </View>
+
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* Hero Section for Rest Day */}
+            <View style={styles.heroSection}>
+              <View style={styles.scheduleBadge}>
+                <Ionicons name="heart" size={16} color={Theme.colors.accent.primary} />
+                <Text style={styles.scheduleText}>REST DAY</Text>
+              </View>
+
+              <Text style={styles.heroTitle}>Rest & Recovery</Text>
+
+              <View style={styles.scoreContainer}>
+                <Text style={styles.scoreLabel}>SCHEDULED FOR</Text>
+                <Text style={styles.scoreValue}>
+                  {new Date(restDayWorkout.scheduledDate).toLocaleDateString('en-US', {
+                    weekday: 'long',
+                    month: 'short',
+                    day: 'numeric'
+                  })}
+                </Text>
+              </View>
+            </View>
+
+            {/* Action Buttons */}
+            <View style={styles.powerSection}>
+              <Text style={styles.sectionTitle}>⚡ Recovery Activities</Text>
+              <View style={styles.actionButtonsGrid}>
+                <TouchableOpacity style={styles.actionButtonSmall}>
+                  <Ionicons name="body" size={20} color={Theme.colors.text.primary} />
+                  <Text style={styles.actionButtonText}>Stretch</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionButtonSmall}>
+                  <Ionicons name="fitness" size={20} color={Theme.colors.text.primary} />
+                  <Text style={styles.actionButtonText}>Foam Roll</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionButtonSmall}>
+                  <Ionicons name="walk" size={20} color={Theme.colors.text.primary} />
+                  <Text style={styles.actionButtonText}>Gentle Walk</Text>
+                </TouchableOpacity>
+
+                <TouchableOpacity style={styles.actionButtonSmall}>
+                  <Ionicons name="checkmark" size={20} color={Theme.colors.text.primary} />
+                  <Text style={styles.actionButtonText}>Complete</Text>
+                </TouchableOpacity>
+              </View>
+            </View>
+
+            {/* Workout Structure Section */}
+            <View style={styles.workoutStructureSection}>
+              <Text style={styles.sectionTitle}>🧘‍♀️ Recovery Plan</Text>
+              <View style={styles.workoutStructureCard}>
+                <View style={styles.workoutOverview}>
+                  <Text style={styles.workoutOverviewTitle}>Today's Focus</Text>
+                  <Text style={styles.workoutOverviewDescription}>{restDayWorkout.description}</Text>
+                </View>
+
+                <View style={styles.workoutOverview}>
+                  <Text style={styles.workoutOverviewTitle}>Target</Text>
+                  <Text style={styles.workoutOverviewDescription}>{restDayWorkout.target}</Text>
+                </View>
+
+                <View style={styles.workoutPhases}>
+                  <Text style={styles.phasesSectionTitle}>Recovery Activities</Text>
+                  <View style={styles.phaseItem}>
+                    <View style={styles.phaseNumber}>
+                      <Text style={styles.phaseNumberText}>1</Text>
+                    </View>
+                    <View style={styles.phaseContent}>
+                      <Text style={styles.phaseTitle}>Gentle Stretching</Text>
+                      <Text style={styles.phaseDescription}>Focus on major muscle groups: hamstrings, quads, calves, and hip flexors</Text>
+                      <Text style={styles.phaseDuration}>⏱️ 10-15 min</Text>
+                    </View>
+                  </View>
+                  <View style={styles.phaseItem}>
+                    <View style={styles.phaseNumber}>
+                      <Text style={styles.phaseNumberText}>2</Text>
+                    </View>
+                    <View style={styles.phaseContent}>
+                      <Text style={styles.phaseTitle}>Foam Rolling</Text>
+                      <Text style={styles.phaseDescription}>Light pressure on IT band, quads, and calves to improve circulation</Text>
+                      <Text style={styles.phaseDuration}>⏱️ 5-10 min</Text>
+                    </View>
+                  </View>
+                  <View style={styles.phaseItem}>
+                    <View style={styles.phaseNumber}>
+                      <Text style={styles.phaseNumberText}>3</Text>
+                    </View>
+                    <View style={styles.phaseContent}>
+                      <Text style={styles.phaseTitle}>Hydration & Reflection</Text>
+                      <Text style={styles.phaseDescription}>Drink water and think about your recent training progress</Text>
+                      <Text style={styles.phaseDuration}>⏱️ 5 min</Text>
+                    </View>
+                  </View>
+                </View>
+              </View>
+            </View>
+          </ScrollView>
+        </View>
+      );
+    }
+
+    // Handle actual planned workouts from database
+    if (!plannedWorkout) {
+      return (
+        <View style={styles.container}>
+          <Text style={styles.loading}>Loading workout...</Text>
+        </View>
+      );
+    }
+
+    return (
+      <View style={styles.container}>
+        {/* Header */}
+        <View style={styles.header}>
+          <TouchableOpacity onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.back();
+          }} style={styles.backButton}>
+            <Ionicons name="arrow-back" size={24} color="#fff" />
+          </TouchableOpacity>
+          <Text style={styles.headerTitle}>Planned Workout</Text>
+          <View style={styles.placeholder} />
+        </View>
+
+        <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          {/* Hero Section for Planned Workout */}
+          <View style={styles.heroSection}>
+            <View style={styles.scheduleBadge}>
+              <Ionicons name="calendar" size={16} color={Theme.colors.accent.primary} />
+              <Text style={styles.scheduleText}>PLANNED WORKOUT</Text>
+            </View>
+
+            <Text style={styles.heroTitle}>
+              {getSimpleWorkoutName(plannedWorkout.type, plannedWorkout.description)}
+            </Text>
+
+            <View style={styles.scoreContainer}>
+              <Text style={styles.scoreLabel}>SCHEDULED FOR</Text>
+              <Text style={styles.scoreValue}>
+                {new Date(plannedWorkout.scheduledDate).toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  month: 'short',
+                  day: 'numeric'
+                })}
+              </Text>
+            </View>
+          </View>
+
+          {/* Action Buttons */}
+          <View style={styles.powerSection}>
+            <Text style={styles.sectionTitle}>⚡ Quick Actions</Text>
+            <View style={styles.actionButtonsGrid}>
+              <TouchableOpacity style={styles.actionButtonSmall}>
+                <Ionicons name="play" size={20} color={Theme.colors.text.primary} />
+                <Text style={styles.actionButtonText}>Start</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionButtonSmall}>
+                <Ionicons name="close" size={20} color={Theme.colors.text.primary} />
+                <Text style={styles.actionButtonText}>Skip</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionButtonSmall}>
+                <Ionicons name="calendar" size={20} color={Theme.colors.text.primary} />
+                <Text style={styles.actionButtonText}>Reschedule</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.actionButtonSmall}>
+                <Ionicons name="checkmark" size={20} color={Theme.colors.text.primary} />
+                <Text style={styles.actionButtonText}>Complete</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* Workout Structure Section */}
+          <View style={styles.workoutStructureSection}>
+            <Text style={styles.sectionTitle}>📋 Workout Breakdown</Text>
+            <View style={styles.workoutStructureCard}>
+              <View style={styles.workoutOverview}>
+                <Text style={styles.workoutOverviewTitle}>Today's Plan</Text>
+                <Text style={styles.workoutOverviewDescription}>{plannedWorkout.description}</Text>
+              </View>
+
+              {plannedWorkout.target && (
+                <View style={styles.workoutOverview}>
+                  <Text style={styles.workoutOverviewTitle}>Target</Text>
+                  <Text style={styles.workoutOverviewDescription}>{plannedWorkout.target}</Text>
+                </View>
+              )}
+
+              <View style={styles.workoutPhases}>
+                <Text style={styles.phasesSectionTitle}>Workout Phases</Text>
+                {getWorkoutPhases(plannedWorkout.description).map((phase, index) => (
+                  <View key={index} style={styles.phaseItem}>
+                    <View style={styles.phaseNumber}>
+                      <Text style={styles.phaseNumberText}>{index + 1}</Text>
+                    </View>
+                    <View style={styles.phaseContent}>
+                      <Text style={styles.phaseTitle}>{phase.title}</Text>
+                      <Text style={styles.phaseDescription}>{phase.description}</Text>
+                      {phase.duration && (
+                        <Text style={styles.phaseDuration}>⏱️ {phase.duration}</Text>
+                      )}
+                    </View>
+                  </View>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          {/* Quick Stats */}
+          <View style={styles.statsSection}>
+            <Text style={styles.sectionTitle}>📊 Workout Details</Text>
+            <View style={styles.mainStatsContainer}>
+              {plannedWorkout.duration && (
+                <View style={styles.statCard}>
+                  <View style={styles.statIcon}>
+                    <Ionicons name="time-outline" size={24} color="#10B981" />
+                  </View>
+                  <Text style={styles.statValue}>{plannedWorkout.duration}</Text>
+                  <Text style={styles.statLabel}>Duration</Text>
+                </View>
+              )}
+
+              {plannedWorkout.distance && (
+                <View style={styles.statCard}>
+                  <View style={styles.statIcon}>
+                    <Ionicons name="speedometer-outline" size={24} color="#3B82F6" />
+                  </View>
+                  <Text style={styles.statValue}>{(plannedWorkout.distance / 1000).toFixed(1)} km</Text>
+                  <Text style={styles.statLabel}>Distance</Text>
+                </View>
+              )}
+
+              <View style={styles.statCard}>
+                <View style={styles.statIcon}>
+                  <Ionicons name="fitness-outline" size={24} color="#F59E0B" />
+                </View>
+                <Text style={styles.statValue}>{plannedWorkout.type.replace('-', ' ')}</Text>
+                <Text style={styles.statLabel}>Type</Text>
+              </View>
+            </View>
+          </View>
+        </ScrollView>
+      </View>
+    );
+  }
+
+  // Unified activity view logic
   if (!activity) {
     return (
       <View style={styles.container}>
-        <Text style={styles.loading}>Loading run...</Text>
+        <Text style={styles.loading}>Loading activity...</Text>
       </View>
     );
   }
@@ -147,21 +588,19 @@ export default function ActivityDetailScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           router.back();
         }} style={styles.backButton}>
-          <Ionicons name="chevron-back-outline" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{formatDetailedDate(activity.startDate)}</Text>
+        <Text style={styles.headerTitle}>
+          {formatDetailedDate(activity.startDate)}
+        </Text>
         <View style={styles.placeholder} />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
-          {/* <View style={[styles.rankBadge, { backgroundColor: runRank.color }]}>
-            <Text style={styles.rankEmoji}>{runRank.emoji}</Text>
-            <Text style={styles.rankText}>{runRank.rank}</Text>
-          </View> */}
-          <Text style={styles.heroTitle}>{runRank.rank} Run!</Text>
-          {/* <Text style={styles.heroSubtitle}>{formatDetailedDate(activity.startDate)}</Text> */}
+          <Text style={styles.heroTitle}>{`${runRank.rank} Run!`}</Text>
+
           <View style={styles.scoreContainer}>
             <Text style={styles.scoreLabel}>RUN SCORE</Text>
             <Text style={styles.scoreValue}>{getRunScore().toLocaleString()}</Text>
@@ -254,9 +693,7 @@ export default function ActivityDetailScreen() {
               <Text style={styles.powerScore}>{getRunScore()} pts</Text>
             </View>
             <Text style={styles.powerDescription}>
-              You conquered {formatDistance(activity.distance)}km in {formatDuration(activity.duration)}
-              with an average pace of {formatPace(calculatePace(activity.duration, activity.distance))}/km!
-              {activity.calories && ` Your epic journey burned ${Math.round(activity.calories)} calories and earned you ${coinsEarned} coins!`}
+              You conquered {formatDistance(activity.distance)}km in {formatDuration(activity.duration)} with an average pace of {formatPace(calculatePace(activity.duration, activity.distance))}/km! {activity.calories ? `Your epic journey burned ${Math.round(activity.calories)} calories and earned you ${coinsEarned} coins!` : ''}
             </Text>
 
             {/* Performance Indicators */}
@@ -388,7 +825,7 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.xs,
   },
   scoreValue: {
-    fontSize: 48,
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
@@ -572,5 +1009,242 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     textAlign: 'center',
+  },
+
+  // Planned Workout Styles
+  plannedWorkoutHeader: {
+    backgroundColor: Theme.colors.background.primary,
+  },
+  plannedWorkoutHeaderTitle: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: Theme.spacing.sm,
+  },
+  headerActionButton: {
+    padding: Theme.spacing.sm,
+  },
+  plannedWorkoutHero: {
+    paddingHorizontal: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.xl,
+    alignItems: 'center',
+  },
+  scheduleBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.xs,
+    marginBottom: Theme.spacing.lg,
+  },
+  scheduleText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.accent.primary,
+    letterSpacing: 1,
+  },
+  workoutTitle: {
+    fontSize: 28,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.sm,
+  },
+  workoutSubtitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  workoutMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.lg,
+  },
+  metaItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.xs,
+  },
+  metaText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  actionButtonsSection: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xl,
+  },
+  actionButtonLarge: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.xl,
+    padding: Theme.spacing.lg,
+    alignItems: 'center',
+    marginHorizontal: 4,
+    minHeight: 80,
+    justifyContent: 'center',
+  },
+  actionButtonText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginTop: Theme.spacing.xs,
+  },
+  actionButtonSubtext: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    marginTop: 2,
+  },
+  descriptionSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: 100,
+  },
+  descriptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
+    marginBottom: Theme.spacing.lg,
+  },
+  descriptionTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  surfaceToggle: {
+    flexDirection: 'row',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.full,
+    padding: 4,
+    marginBottom: Theme.spacing.xl,
+  },
+  toggleButton: {
+    flex: 1,
+    paddingVertical: Theme.spacing.md,
+    alignItems: 'center',
+    borderRadius: Theme.borderRadius.full,
+  },
+  toggleButtonActive: {
+    backgroundColor: Theme.colors.text.primary,
+  },
+  toggleButtonText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.tertiary,
+  },
+  toggleButtonActiveText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.background.primary,
+  },
+  workoutStructure: {
+    gap: Theme.spacing.lg,
+    marginBottom: Theme.spacing.xl,
+  },
+  workoutPhase: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.xl,
+    padding: Theme.spacing.lg,
+  },
+  phaseLabel: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.tertiary,
+    marginBottom: Theme.spacing.md,
+    textTransform: 'uppercase',
+  },
+  phaseItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.md,
+    borderBottomWidth: 1,
+    borderBottomColor: Theme.colors.background.tertiary,
+  },
+  phaseNumber: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    width: 32,
+    textAlign: 'center',
+  },
+  phaseContent: {
+    flex: 1,
+  },
+  phaseNumberText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  phaseTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: 2,
+  },
+  phaseDescription: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  phaseDuration: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+
+  // New workout structure styles
+  workoutStructureSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
+  },
+  workoutStructureCard: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+  },
+  workoutOverview: {
+    marginBottom: Theme.spacing.xl,
+  },
+  workoutOverviewTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.sm,
+  },
+  workoutOverviewDescription: {
+    fontSize: 14,
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.regular,
+    lineHeight: 20,
+  },
+  workoutPhases: {
+    marginBottom: Theme.spacing.xl,
+  },
+  phasesSectionTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.lg,
+  },
+  actionButtonsGrid: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    gap: Theme.spacing.md,
+  },
+  actionButtonSmall: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.md,
+    alignItems: 'center',
+    minHeight: 60,
+    justifyContent: 'center',
   },
 }); 

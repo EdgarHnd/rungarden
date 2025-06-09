@@ -3,89 +3,113 @@ import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-interface Activity {
-  type: 'run' | 'rest';
-  title: string;
+interface PlannedWorkout {
+  scheduledDate: string;
+  type: string;
+  duration?: string;
   description: string;
-  duration: string;
-  intensity: 'Easy' | 'Medium' | 'Hard';
-  emoji: string;
+  target?: string;
+  status: string;
+  distance?: number;
+  workoutId?: string | null;
+  isDefault?: boolean;
 }
 
 interface SuggestedActivityCardProps {
-  activity: Activity;
+  plannedWorkout: PlannedWorkout;
   weeklyProgress?: number;
   weeklyGoal?: string;
   onPress?: () => void;
 }
 
-// Simple 7-day training plan - alternating running and rest days
-const weeklyPlan: Activity[] = [
-  {
-    type: 'run',
-    title: 'Easy Run',
-    description: 'Start your week with a comfortable pace run to build base fitness',
-    duration: '30-40 min',
-    intensity: 'Easy',
-    emoji: '🏃‍♂️'
-  },
-  {
-    type: 'rest',
-    title: 'Active Recovery',
-    description: 'Stretching, light walking, and mobility work for recovery',
-    duration: '20-30 min',
-    intensity: 'Easy',
-    emoji: '🧘‍♀️'
-  },
-  {
-    type: 'run',
-    title: 'Interval Training',
-    description: '6x 400m intervals with 90s recovery between each',
-    duration: '35 min',
-    intensity: 'Hard',
-    emoji: '⚡'
-  },
-  {
-    type: 'rest',
-    title: 'Recovery & Stretching',
-    description: 'Full body stretching routine and foam rolling',
-    duration: '25 min',
-    intensity: 'Easy',
-    emoji: '🤸‍♂️'
-  },
-  {
-    type: 'run',
-    title: 'Tempo Run',
-    description: 'Sustained effort at comfortably hard pace',
-    duration: '25 min',
-    intensity: 'Hard',
-    emoji: '🔥'
-  },
-  {
-    type: 'run',
-    title: 'Long Run',
-    description: 'Build endurance with a longer, steady-paced run',
-    duration: '45-60 min',
-    intensity: 'Hard',
-    emoji: '🏃‍♂️'
-  },
-  {
-    type: 'rest',
-    title: 'Rest Day',
-    description: 'Complete rest or gentle yoga for full recovery',
-    duration: 'As needed',
-    intensity: 'Easy',
-    emoji: '😴'
-  }
-];
+// Helper function to get workout emoji based on type
+const getWorkoutEmoji = (type: string, isDefault?: boolean): string => {
+  if (isDefault) return '🧘‍♀️';
 
-export function getTodaysSuggestedActivity(): Activity {
-  const today = new Date().getDay(); // 0 = Sunday, 1 = Monday, etc.
-  return weeklyPlan[today];
-}
+  const emojiMap: Record<string, string> = {
+    'run-walk': '🚶‍♂️🏃‍♂️',
+    'easy': '🏃‍♂️',
+    'tempo': '🔥',
+    'intervals': '⚡',
+    'long': '🏃‍♂️',
+    'recovery': '🧘‍♀️',
+    'cross-train': '🚴‍♂️',
+    'rest': '😴',
+    'race': '🏆'
+  };
+  return emojiMap[type] || '🏃‍♂️';
+};
+
+// Helper function to get workout intensity based on type
+const getWorkoutIntensity = (type: string, isDefault?: boolean): 'Easy' | 'Medium' | 'Hard' => {
+  if (isDefault) return 'Easy';
+
+  const intensityMap: Record<string, 'Easy' | 'Medium' | 'Hard'> = {
+    'run-walk': 'Easy',
+    'easy': 'Easy',
+    'recovery': 'Easy',
+    'rest': 'Easy',
+    'cross-train': 'Easy',
+    'tempo': 'Medium',
+    'long': 'Medium',
+    'intervals': 'Hard',
+    'race': 'Hard'
+  };
+  return intensityMap[type] || 'Medium';
+};
+
+// Helper function to get simple workout title
+const getWorkoutTitle = (plannedWorkout: PlannedWorkout): string => {
+  if (plannedWorkout.isDefault) {
+    return 'Rest & Recovery';
+  }
+
+  const { type, description } = plannedWorkout;
+
+  // For C25K workouts, extract the week info
+  if (type === 'run-walk') {
+    if (description.includes('Week 1')) return 'C25K Week 1';
+    if (description.includes('Week 2')) return 'C25K Week 2';
+    if (description.includes('Week 3')) return 'C25K Week 3';
+    if (description.includes('Week 4')) return 'C25K Week 4';
+    if (description.includes('Week 5')) return 'C25K Week 5';
+    if (description.includes('Week 6')) return 'C25K Week 6';
+    if (description.includes('Week 7')) return 'C25K Week 7';
+    if (description.includes('Week 8')) return 'C25K Week 8';
+    if (description.includes('Week 9')) return 'C25K Week 9';
+    return 'C25K Training';
+  }
+
+  // For other workout types
+  const titleMap: Record<string, string> = {
+    'easy': 'Easy Run',
+    'tempo': 'Tempo Run',
+    'intervals': 'Interval Training',
+    'long': 'Long Run',
+    'recovery': 'Recovery Run',
+    'cross-train': 'Cross Training',
+    'rest': 'Rest Day',
+    'race': 'Race Day'
+  };
+
+  return titleMap[type] || type.charAt(0).toUpperCase() + type.slice(1) + ' Run';
+};
+
+// Helper function to get workout subtitle
+const getWorkoutSubtitle = (plannedWorkout: PlannedWorkout): string => {
+  if (plannedWorkout.isDefault) {
+    return 'Default rest day';
+  }
+
+  if (plannedWorkout.type === 'run-walk') {
+    return 'C25K Program';
+  }
+
+  return 'From your training plan';
+};
 
 export default function SuggestedActivityCard({
-  activity,
+  plannedWorkout,
   weeklyProgress = 5.2,
   weeklyGoal = "20",
   onPress
@@ -106,34 +130,44 @@ export default function SuggestedActivityCard({
     }
   };
 
+  const workoutTitle = getWorkoutTitle(plannedWorkout);
+  const workoutSubtitle = getWorkoutSubtitle(plannedWorkout);
+  const workoutEmoji = getWorkoutEmoji(plannedWorkout.type, plannedWorkout.isDefault);
+  const workoutIntensity = getWorkoutIntensity(plannedWorkout.type, plannedWorkout.isDefault);
+
   return (
     <TouchableOpacity
-      style={styles.card}
+      style={[
+        styles.card,
+        plannedWorkout.isDefault && styles.defaultCard
+      ]}
       onPress={handlePress}
       activeOpacity={onPress ? 0.7 : 1}
       disabled={!onPress}
     >
       <View style={styles.header}>
-        <Text style={styles.emoji}>{activity.emoji}</Text>
+        <Text style={styles.emoji}>{workoutEmoji}</Text>
         <View style={styles.headerText}>
-          <Text style={styles.title}>{activity.title}</Text>
-          <Text style={styles.subtitle}>Suggested for today</Text>
+          <Text style={styles.title}>{workoutTitle}</Text>
+          <Text style={styles.subtitle}>{workoutSubtitle}</Text>
         </View>
-        <View style={[styles.intensityBadge, { backgroundColor: getIntensityColor(activity.intensity) }]}>
-          <Text style={styles.intensityText}>{activity.intensity}</Text>
+        <View style={[styles.intensityBadge, { backgroundColor: getIntensityColor(workoutIntensity) }]}>
+          <Text style={styles.intensityText}>{workoutIntensity}</Text>
         </View>
       </View>
 
-      <Text style={styles.description}>{activity.description}</Text>
+      <Text style={styles.description}>{plannedWorkout.description}</Text>
 
       <View style={styles.detailsRow}>
         <View style={styles.detail}>
           <Text style={styles.detailLabel}>Duration</Text>
-          <Text style={styles.detailValue}>{activity.duration}</Text>
+          <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
         </View>
         <View style={styles.detail}>
           <Text style={styles.detailLabel}>Activity Type</Text>
-          <Text style={styles.detailValue}>{activity.type.charAt(0).toUpperCase() + activity.type.slice(1)}</Text>
+          <Text style={styles.detailValue}>
+            {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+          </Text>
         </View>
       </View>
     </TouchableOpacity>
@@ -191,7 +225,6 @@ const styles = StyleSheet.create({
   detailsRow: {
     flexDirection: 'row',
     gap: 24,
-    marginBottom: Theme.spacing.xl,
   },
   detail: {
     flex: 1,
@@ -207,4 +240,23 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     fontFamily: Theme.fonts.bold,
   },
-}); 
+  defaultCard: {
+    backgroundColor: Theme.colors.background.secondary,
+  },
+  targetContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: Theme.spacing.md,
+  },
+  targetLabel: {
+    fontSize: 14,
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
+    marginRight: Theme.spacing.md,
+  },
+  targetText: {
+    fontSize: 16,
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
+  },
+});

@@ -6,19 +6,10 @@ import { router } from 'expo-router';
 import React from 'react';
 import { StyleSheet, View } from 'react-native';
 
-interface Activity {
-  type: 'run' | 'rest';
-  title: string;
-  description: string;
-  duration: string;
-  intensity: 'Easy' | 'Medium' | 'Hard';
-  emoji: string;
-}
-
 interface DayCardProps {
   date: string;
   activities: RunningActivity[];
-  suggestedActivity: Activity;
+  plannedWorkout: any; // Direct planned workout from training plan
   formatDistance: (meters: number) => string;
   formatPace: (duration: number, distance: number) => string;
 }
@@ -26,7 +17,7 @@ interface DayCardProps {
 export default function DayCard({
   date,
   activities,
-  suggestedActivity,
+  plannedWorkout,
   formatDistance,
   formatPace
 }: DayCardProps) {
@@ -39,13 +30,28 @@ export default function DayCard({
     });
   };
 
-  const handleTrainingPress = (training: Activity) => {
-    router.push({
-      pathname: '/training-detail',
-      params: {
-        activity: JSON.stringify(training)
-      }
-    });
+  const handleTrainingPress = (plannedWorkout: any) => {
+    // Check if it's a default rest day (no _id means it's hardcoded)
+    if (plannedWorkout.isDefault || !plannedWorkout._id) {
+      // For rest days, pass hardcoded data
+      router.push({
+        pathname: '/activity-detail',
+        params: {
+          isPlannedWorkout: 'true',
+          isRestDay: 'true',
+          scheduledDate: date
+        }
+      });
+    } else {
+      // For actual planned workouts, just pass the ID
+      router.push({
+        pathname: '/activity-detail',
+        params: {
+          plannedWorkoutId: plannedWorkout._id,
+          isPlannedWorkout: 'true'
+        }
+      });
+    }
   };
 
   return (
@@ -63,11 +69,13 @@ export default function DayCard({
           onPress={() => handleActivityPress(activity)}
         />
       ))}
-      {/* Suggested Activity */}
-      <SuggestedActivityCard
-        activity={suggestedActivity}
-        onPress={() => handleTrainingPress(suggestedActivity)}
-      />
+      {/* Planned Workout */}
+      {plannedWorkout && (
+        <SuggestedActivityCard
+          plannedWorkout={plannedWorkout}
+          onPress={() => handleTrainingPress(plannedWorkout)}
+        />
+      )}
 
       {/* Empty state for past days with no activities */}
       {/* {activities.length === 0 && new Date(date) < new Date(new Date().toISOString().split('T')[0]) && (
