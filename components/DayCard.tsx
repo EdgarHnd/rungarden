@@ -30,28 +30,43 @@ export default function DayCard({
     });
   };
 
+  const getWorkoutEmoji = (type: string): string => {
+    const emojiMap: Record<string, string> = {
+      'easy': '🏃‍♂️',
+      'long': '🏃‍♂️',
+      'rest': '😴',
+      'race': '🏆',
+    };
+    return emojiMap[type] || '😴';
+  };
+
+  const getWorkoutDisplayName = (type: string): string => {
+    const displayNames: Record<string, string> = {
+      'easy': 'Easy Run',
+      'long': 'Long Run',
+      'rest': 'Rest Day',
+      'race': 'Race Day',
+    };
+    return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
+  };
+
   const handleTrainingPress = (plannedWorkout: any) => {
-    // Check if it's a default rest day (no _id means it's hardcoded)
-    if (plannedWorkout.isDefault || !plannedWorkout._id) {
-      // For rest days, pass hardcoded data
-      router.push({
-        pathname: '/activity-detail',
-        params: {
-          isPlannedWorkout: 'true',
-          isRestDay: 'true',
-          scheduledDate: date
-        }
-      });
-    } else {
-      // For actual planned workouts, just pass the ID
-      router.push({
-        pathname: '/activity-detail',
-        params: {
-          plannedWorkoutId: plannedWorkout._id,
-          isPlannedWorkout: 'true'
-        }
-      });
-    }
+    // Transform planned workout data for training-detail screen
+    const trainingActivity = {
+      type: plannedWorkout.type,
+      title: getWorkoutDisplayName(plannedWorkout.type),
+      description: plannedWorkout.description,
+      duration: plannedWorkout.duration || '30 min',
+      distance: plannedWorkout.distance ? plannedWorkout.distance / 1000 : undefined, // Convert meters to km
+      emoji: getWorkoutEmoji(plannedWorkout.type)
+    };
+
+    router.push({
+      pathname: '/training-detail',
+      params: {
+        activity: JSON.stringify(trainingActivity)
+      }
+    });
   };
 
   return (

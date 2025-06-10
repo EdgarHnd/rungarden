@@ -2,22 +2,27 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
-// Calculate level from total distance
-function calculateLevelFromDistance(totalDistance: number): number {
+// Calculate level from total XP
+function calculateLevelFromXP(totalXP: number): number {
   let level = 1;
   
-  // Progressive distance requirements: level^2 * 2.5km
-  while (getDistanceForLevel(level + 1) <= totalDistance) {
+  // Progressive XP requirements: level^2 * 250 XP
+  while (getXPForLevel(level + 1) <= totalXP) {
     level++;
   }
   
   return level;
 }
 
-// Distance required for each level (cumulative, in meters)
-function getDistanceForLevel(level: number): number {
+// XP required for each level (cumulative)
+function getXPForLevel(level: number): number {
   if (level <= 1) return 0;
-  return Math.floor(Math.pow(level - 1, 2) * 2500); // 2500 meters = 2.5km
+  return Math.floor(Math.pow(level - 1, 2) * 250);
+}
+
+// Convert distance to XP (1km = 100 XP)
+function distanceToXP(distanceMeters: number): number {
+  return Math.floor(distanceMeters * 0.1);
 }
 
 // Calculate coins from total distance (1 coin per km)
@@ -212,6 +217,45 @@ export const syncActivitiesFromHealthKit = mutation({
     // Update user profile totals after sync (this calculates everything correctly from DB)
     await updateUserProfileTotals(ctx, userId);
     
+    // Check for completed planned workouts and update streaks
+    if (syncResults.newRuns.length > 0) {
+      // For each new run, check if it matches a planned workout and update streak
+      for (const newRun of syncResults.newRuns) {
+        const runDate = new Date(newRun.startDate).toISOString().split('T')[0];
+        
+        // Find a planned workout for this date
+        const plannedWorkout = await ctx.db
+          .query("plannedWorkouts")
+          .withIndex("by_user_date", (q) => 
+            q.eq("userId", userId).eq("scheduledDate", runDate)
+          )
+          .first();
+        
+        if (plannedWorkout && plannedWorkout.status === 'scheduled') {
+          // Mark planned workout as completed
+          await ctx.db.patch(plannedWorkout._id, {
+            status: "completed",
+            completedAt: now,
+          });
+          
+          // Update streak for this training day (call helper function)
+          try {
+            const streakUpdateResult = await updateStreakOnCompletion(
+              ctx,
+              userId,
+              runDate,
+              plannedWorkout.type,
+              plannedWorkout._id
+            );
+            
+            console.log(`[syncActivitiesFromHealthKit] Updated streak for ${runDate}:`, streakUpdateResult);
+          } catch (error) {
+            console.error(`[syncActivitiesFromHealthKit] Failed to update streak for ${runDate}:`, error);
+          }
+        }
+      }
+    }
+    
     // Get the updated profile to calculate sync results
     if (totalDistanceGained > 0 && currentProfile) {
       const updatedProfile = await ctx.db
@@ -403,14 +447,16 @@ export const getProfileStats = query({
     const totalCalories = allActivities.reduce((sum, a) => sum + a.calories, 0);
     const totalWorkouts = allActivities.length;
     
-    // Calculate level and coins from total distance
-    const level = calculateLevelFromDistance(totalDistance);
+    // Calculate XP, level and coins from total distance
+    const totalXP = distanceToXP(totalDistance);
+    const level = calculateLevelFromXP(totalXP);
     const coins = calculateCoinsFromDistance(totalDistance);
 
     return {
       totalDistance,
       totalWorkouts,
       totalCalories,
+      totalXP,
       level,
       coins,
     };
@@ -504,8 +550,9 @@ async function updateUserProfileTotals(ctx: any, userId: any) {
   const totalCalories = allActivities.reduce((sum: number, a: any) => sum + a.calories, 0);
   const totalWorkouts = allActivities.length;
   
-  // Calculate level from total distance
-  const level = calculateLevelFromDistance(totalDistance);
+  // Calculate XP and level from total distance
+  const totalXP = distanceToXP(totalDistance);
+  const level = calculateLevelFromXP(totalXP);
   
   // Calculate coins from total distance
   const coins = calculateCoinsFromDistance(totalDistance);
@@ -522,6 +569,7 @@ async function updateUserProfileTotals(ctx: any, userId: any) {
       totalDistance,
       totalWorkouts,
       totalCalories,
+      totalXP,
       level,
       coins,
       updatedAt: now,
@@ -533,6 +581,7 @@ async function updateUserProfileTotals(ctx: any, userId: any) {
       totalDistance,
       totalWorkouts,
       totalCalories,
+      totalXP,
       level,
       coins,
       createdAt: now,
@@ -571,4 +620,112 @@ async function updateLastStravaSyncDate(ctx: any, userId: any, syncDate: string)
       updatedAt: syncDate,
     });
   }
+}
+
+// Helper function to update streak when workout is completed
+async function updateStreakOnCompletion(
+  ctx: any,
+  userId: any,
+  workoutDate: string,
+  workoutType: string,
+  plannedWorkoutId: any
+) {
+  const profile = await ctx.db
+    .query("userProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+
+  if (!profile) {
+    throw new Error("Profile not found");
+  }
+
+  // Only training days count toward streak
+  if (workoutType === 'rest' || workoutType === 'cross-train') {
+    return {
+      streakUpdated: false,
+      currentStreak: profile.currentStreak || 0,
+      streakIncreased: false
+    };
+  }
+
+  const currentStreak = profile.currentStreak || 0;
+  const longestStreak = profile.longestStreak || 0;
+  const lastStreakDate = profile.lastStreakDate;
+
+  // Calculate new streak values
+  let newCurrentStreak = currentStreak;
+  let streakIncreased = false;
+  const today = new Date().toISOString().split('T')[0];
+
+  // Only count workouts completed today or in the past
+  if (workoutDate > today) {
+    return {
+      streakUpdated: false,
+      currentStreak,
+      streakIncreased: false
+    };
+  }
+
+  if (!lastStreakDate) {
+    // First ever training day completed
+    newCurrentStreak = 1;
+    streakIncreased = true;
+  } else {
+    const lastStreakDateTime = new Date(lastStreakDate).getTime();
+    const workoutDateTime = new Date(workoutDate).getTime();
+    const daysBetween = Math.floor((workoutDateTime - lastStreakDateTime) / (1000 * 60 * 60 * 24));
+
+    if (daysBetween <= 3) { // Allow some flexibility for training plans
+      newCurrentStreak = currentStreak + 1;
+      streakIncreased = true;
+    } else {
+      // Gap is too large, reset streak
+      newCurrentStreak = 1;
+      streakIncreased = false;
+    }
+  }
+
+  const newLongestStreak = Math.max(newCurrentStreak, longestStreak);
+
+  // Check for milestone rewards
+  let newStreakFreezes = profile.streakFreezeAvailable || 0;
+  let milestoneMessage: string | undefined;
+
+  const milestones = [7, 14, 30, 60, 100, 365];
+  for (const milestone of milestones) {
+    if (newCurrentStreak >= milestone && currentStreak < milestone) {
+      // Award streak freezes at certain milestones
+      if (milestone === 7) {
+        newStreakFreezes += 1;
+        milestoneMessage = "7 day streak! Earned 1 streak freeze! 🧊";
+      } else if (milestone === 30) {
+        newStreakFreezes += 2;
+        milestoneMessage = "30 day streak! Earned 2 streak freezes! 🧊🧊";
+      } else if (milestone === 100) {
+        newStreakFreezes += 3;
+        milestoneMessage = "100 day streak! Earned 3 streak freezes! 🧊🧊🧊";
+      } else {
+        milestoneMessage = `${milestone} day streak milestone! Amazing! 🏆`;
+      }
+      break;
+    }
+  }
+
+  // Update profile with new streak values
+  await ctx.db.patch(profile._id, {
+    currentStreak: newCurrentStreak,
+    longestStreak: newLongestStreak,
+    lastStreakDate: workoutDate,
+    streakFreezeAvailable: newStreakFreezes,
+    updatedAt: new Date().toISOString(),
+  });
+
+  return {
+    streakUpdated: true,
+    currentStreak: newCurrentStreak,
+    longestStreak: newLongestStreak,
+    streakIncreased,
+    milestoneMessage,
+    streakFreezesEarned: newStreakFreezes - (profile.streakFreezeAvailable || 0)
+  };
 } 

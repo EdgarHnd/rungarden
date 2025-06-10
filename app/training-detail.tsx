@@ -14,11 +14,11 @@ import {
 import Rive from 'rive-react-native';
 
 interface Activity {
-  type: 'run' | 'rest';
+  type: string;
   title: string;
   description: string;
   duration: string;
-  intensity: 'Easy' | 'Medium' | 'Hard';
+  distance?: number;
   emoji: string;
 }
 
@@ -48,86 +48,81 @@ export default function TrainingDetailScreen() {
     }
   }, [params.activity]);
 
-  const getIntensityColor = (intensity: string) => {
-    switch (intensity) {
-      case 'Easy': return Theme.colors.status.success;
-      case 'Medium': return Theme.colors.special.coin;
-      case 'Hard': return Theme.colors.status.error;
-      default: return Theme.colors.text.muted;
-    }
+  const getWorkoutTypeColor = (type: string) => {
+    const colorMap: Record<string, string> = {
+      'easy': '#4CAF50',          // Green
+      'long': '#9C27B0',          // Purple  
+      'rest': '#757575',          // Gray
+      'race': '#FF5722',          // Deep orange
+    };
+    return colorMap[type] || colorMap['rest'];
   };
 
-  const getIntensityInfo = (intensity: string) => {
-    switch (intensity) {
-      case 'Easy': return { level: 'EASY', emoji: '🌿', subtitle: 'Gentle & Relaxed' };
-      case 'Medium': return { level: 'MODERATE', emoji: '⚡', subtitle: 'Balanced Training' };
-      case 'Hard': return { level: 'CHALLENGING', emoji: '🔥', subtitle: 'Push Your Limits' };
-      default: return { level: 'CUSTOM', emoji: '⭐', subtitle: 'Personalized' };
-    }
+  const getWorkoutTypeInfo = (type: string) => {
+    const infoMap: Record<string, { level: string; emoji: string; subtitle: string }> = {
+      'easy': { level: 'EASY RUN', emoji: '🏃‍♂️', subtitle: 'Comfortable Pace' },
+      'long': { level: 'LONG RUN', emoji: '🏃‍♂️', subtitle: 'Endurance Building' },
+      'rest': { level: 'REST DAY', emoji: '😴', subtitle: 'Recovery Time' },
+      'race': { level: 'RACE DAY', emoji: '🏆', subtitle: 'Give Your Best' },
+    };
+    return infoMap[type] || { level: 'WORKOUT', emoji: '⭐', subtitle: 'Training Session' };
   };
 
   const getWorkoutDescription = (activity: Activity) => {
     switch (activity.type) {
-      case 'run':
-        switch (activity.intensity) {
-          case 'Easy':
-            return 'A gentle run focused on building your endurance foundation. Perfect for recovery and steady progress without stress.';
-          case 'Medium':
-            return 'A balanced training session that will challenge you while maintaining good form and building strength progressively.';
-          case 'Hard':
-            return 'An intense workout designed to push your limits and build mental resilience. Take it step by step!';
-          default:
-            return 'A personalized workout tailored to your current fitness level and training goals.';
-        }
+      case 'easy':
+        return 'A comfortable run at conversational pace. This builds your aerobic base and helps with recovery between harder sessions.';
+      case 'long':
+        return 'A longer endurance run to build your stamina. Take it steady and focus on completing the distance rather than speed.';
       case 'rest':
-        return 'A restorative session focused on recovery and flexibility. This will help your body repair and prepare for future workouts.';
+        return 'A complete rest day or light stretching/mobility work. Recovery is just as important as training for your progress.';
+      case 'race':
+        return 'Race day! Time to put your training to the test. Trust your preparation and enjoy the experience.';
       default:
-        return 'A specialized training session designed to help you reach your running goals safely and effectively.';
+        return 'A training session designed to help you progress toward your running goals.';
     }
   };
 
-  const getExpectedRewards = (activity: Activity) => {
-    const baseXP = activity.type === 'run' ? 100 : 50;
-    const intensityMultiplier = activity.intensity === 'Hard' ? 2 : activity.intensity === 'Medium' ? 1.5 : 1;
-    const xp = Math.round(baseXP * intensityMultiplier);
-    const coins = Math.round(xp / 10);
+  const getSimpleRewards = (activity: Activity) => {
+    // Simple reward calculation based on workout type
+    const baseDistance = activity.distance ? Math.round(activity.distance / 1000 * 10) / 10 : 0;
+    const coins = Math.max(1, Math.floor(baseDistance));
 
     return {
-      xp,
-      coins,
-      endurance: activity.type === 'run' ? '+5' : '+2',
-      recovery: activity.type === 'rest' ? '+10' : '+3',
-      strength: activity.intensity === 'Hard' ? '+8' : activity.intensity === 'Medium' ? '+5' : '+2',
+      distance: baseDistance,
+      coins: coins,
+      progress: activity.type === 'rest' ? 'Recovery' : 'Fitness',
     };
   };
 
   const getHelpfulTips = (activity: Activity) => {
     switch (activity.type) {
-      case 'run':
+      case 'easy':
         return [
-          { icon: '🔥', tip: 'Start with a 5-10 minute warm-up to prepare your muscles', category: 'Warm-up' },
-          { icon: '💧', tip: 'Stay hydrated before, during, and after your run', category: 'Hydration' },
-          { icon: '👂', tip: 'Listen to your body and adjust your pace as needed', category: 'Pacing' },
-          { icon: '🧘', tip: 'Finish with gentle stretching to aid recovery', category: 'Cool-down' },
+          { icon: '💬', tip: 'You should be able to hold a conversation while running', category: 'Pacing' },
+          { icon: '🔥', tip: 'Start with a gentle 5-minute warm-up walk', category: 'Warm-up' },
+          { icon: '💧', tip: 'Stay hydrated throughout your run', category: 'Hydration' },
+        ];
+      case 'long':
+        return [
+          { icon: '🐌', tip: 'Start slower than you think you need to', category: 'Pacing' },
+          { icon: '💪', tip: 'Focus on staying strong and steady', category: 'Form' },
+          { icon: '🎯', tip: 'The goal is distance, not speed', category: 'Mindset' },
         ];
       case 'rest':
         return [
-          { icon: '🌬️', tip: 'Focus on deep, slow breathing to relax your muscles', category: 'Breathing' },
-          { icon: '⏰', tip: 'Hold each stretch for 20-30 seconds for best results', category: 'Technique' },
-          { icon: '🎯', tip: 'Stretch to the point of tension, not pain', category: 'Safety' },
-          { icon: '😌', tip: 'Take your time and enjoy this moment of self-care', category: 'Mindset' },
+          { icon: '😴', tip: 'Get plenty of sleep for optimal recovery', category: 'Rest' },
+          { icon: '🧘', tip: 'Try gentle stretching or yoga', category: 'Mobility' },
+          { icon: '💧', tip: 'Stay hydrated and eat nutritious foods', category: 'Nutrition' },
+        ];
+      case 'race':
+        return [
+          { icon: '🎯', tip: 'Trust your training and stick to your plan', category: 'Strategy' },
+          { icon: '😊', tip: 'Smile and enjoy the experience', category: 'Mindset' },
+          { icon: '⚡', tip: 'Save energy for a strong finish', category: 'Pacing' },
         ];
       default:
         return [];
-    }
-  };
-
-  const getDifficultyLevel = (intensity: string) => {
-    switch (intensity) {
-      case 'Easy': return 2;
-      case 'Medium': return 5;
-      case 'Hard': return 8;
-      default: return 1;
     }
   };
 
@@ -139,10 +134,9 @@ export default function TrainingDetailScreen() {
     );
   }
 
-  const intensityInfo = getIntensityInfo(activity.intensity);
-  const expectedRewards = getExpectedRewards(activity);
+  const workoutInfo = getWorkoutTypeInfo(activity.type);
+  const rewards = getSimpleRewards(activity);
   const helpfulTips = getHelpfulTips(activity);
-  const difficultyLevel = getDifficultyLevel(activity.intensity);
 
   return (
     <View style={styles.container}>
@@ -154,7 +148,7 @@ export default function TrainingDetailScreen() {
         }} style={styles.backButton}>
           <Ionicons name="chevron-back-outline" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{activity.type.toUpperCase()} WORKOUT</Text>
+        <Text style={styles.headerTitle}>{workoutInfo.level}</Text>
         <View style={styles.placeholder} />
       </View>
 
@@ -170,9 +164,9 @@ export default function TrainingDetailScreen() {
               />
             </View>
             <Text style={styles.workoutType}>{activity.title}</Text>
-            <View style={[styles.levelBadge, { backgroundColor: getIntensityColor(activity.intensity) }]}>
-              <Text style={styles.levelEmoji}>{intensityInfo.emoji}</Text>
-              <Text style={styles.levelText}>{intensityInfo.level}</Text>
+            <View style={[styles.levelBadge, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
+              <Text style={styles.levelEmoji}>{workoutInfo.emoji}</Text>
+              <Text style={styles.levelText}>{workoutInfo.level}</Text>
             </View>
           </View>
         </Animated.View>
@@ -182,27 +176,29 @@ export default function TrainingDetailScreen() {
           <Text style={styles.sectionTitle}>Workout Details</Text>
           <View style={styles.statsGrid}>
             <View style={styles.statCard}>
-              <View style={[styles.statIcon, { backgroundColor: Theme.colors.special.level }]}>
+              <View style={[styles.statIcon, { backgroundColor: Theme.colors.special.primary.level }]}>
                 <Ionicons name="time-outline" size={24} color="#fff" />
               </View>
               <Text style={styles.statValue}>{activity.duration}</Text>
               <Text style={styles.statLabel}>Duration</Text>
             </View>
 
-            <View style={styles.statCard}>
-              <View style={[styles.statIcon, { backgroundColor: getIntensityColor(activity.intensity) }]}>
-                <Ionicons name="flash-outline" size={24} color="#fff" />
+            {rewards.distance > 0 && (
+              <View style={styles.statCard}>
+                <View style={[styles.statIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
+                  <Ionicons name="location-outline" size={24} color="#fff" />
+                </View>
+                <Text style={styles.statValue}>{rewards.distance}km</Text>
+                <Text style={styles.statLabel}>Distance</Text>
               </View>
-              <Text style={styles.statValue}>{activity.intensity}</Text>
-              <Text style={styles.statLabel}>Intensity</Text>
-            </View>
+            )}
 
             <View style={styles.statCard}>
               <View style={[styles.statIcon, { backgroundColor: Theme.colors.accent.primary }]}>
-                <Ionicons name="analytics-outline" size={24} color="#fff" />
+                <Ionicons name="fitness-outline" size={24} color="#fff" />
               </View>
-              <Text style={styles.statValue}>{difficultyLevel}/10</Text>
-              <Text style={styles.statLabel}>Challenge</Text>
+              <Text style={styles.statValue}>{rewards.progress}</Text>
+              <Text style={styles.statLabel}>Focus</Text>
             </View>
           </View>
         </View>
@@ -213,7 +209,7 @@ export default function TrainingDetailScreen() {
           <View style={styles.descriptionCard}>
             <Text style={styles.descriptionText}>{getWorkoutDescription(activity)}</Text>
             <View style={styles.originalDescription}>
-              <Text style={styles.originalDescriptionLabel}>Training Focus:</Text>
+              <Text style={styles.originalDescriptionLabel}>Training Notes:</Text>
               <Text style={styles.originalDescriptionText}>{activity.description}</Text>
             </View>
           </View>
@@ -221,82 +217,24 @@ export default function TrainingDetailScreen() {
 
         {/* Expected Progress */}
         <View style={styles.rewardsSection}>
-          <Text style={styles.sectionTitle}>Expected Progress</Text>
+          <Text style={styles.sectionTitle}>Progress Tracking</Text>
           <View style={styles.rewardsGrid}>
-            <View style={styles.rewardCard}>
-              <Text style={styles.rewardEmoji}>⭐</Text>
-              <Text style={styles.rewardValue}>+{expectedRewards.xp}</Text>
-              <Text style={styles.rewardLabel}>XP Points</Text>
-            </View>
+            {rewards.distance > 0 && (
+              <View style={styles.rewardCard}>
+                <Text style={styles.rewardEmoji}>📏</Text>
+                <Text style={styles.rewardValue}>{rewards.distance}km</Text>
+                <Text style={styles.rewardLabel}>Distance</Text>
+              </View>
+            )}
             <View style={styles.rewardCard}>
               <Text style={styles.rewardEmoji}>🪙</Text>
-              <Text style={styles.rewardValue}>+{expectedRewards.coins}</Text>
+              <Text style={styles.rewardValue}>+{rewards.coins}</Text>
               <Text style={styles.rewardLabel}>Coins</Text>
             </View>
             <View style={styles.rewardCard}>
               <Text style={styles.rewardEmoji}>💪</Text>
-              <Text style={styles.rewardValue}>{expectedRewards.endurance}</Text>
-              <Text style={styles.rewardLabel}>Endurance</Text>
-            </View>
-            <View style={styles.rewardCard}>
-              <Text style={styles.rewardEmoji}>❤️</Text>
-              <Text style={styles.rewardValue}>{expectedRewards.recovery}</Text>
-              <Text style={styles.rewardLabel}>Recovery</Text>
-            </View>
-          </View>
-        </View>
-
-        {/* Training Impact */}
-        <View style={styles.impactSection}>
-          <Text style={styles.sectionTitle}>Training Impact</Text>
-          <View style={styles.impactCard}>
-            <View style={styles.impactHeader}>
-              <Text style={styles.impactTitle}>Fitness Benefits</Text>
-              <Text style={styles.impactScore}>{expectedRewards.xp} XP</Text>
-            </View>
-
-            <View style={styles.impactIndicators}>
-              <View style={styles.indicator}>
-                <Text style={styles.indicatorLabel}>Endurance</Text>
-                <View style={styles.indicatorBar}>
-                  <View style={[
-                    styles.indicatorFill,
-                    {
-                      width: `${Math.min(100, (difficultyLevel * 10))}%`,
-                      backgroundColor: Theme.colors.status.success
-                    }
-                  ]} />
-                </View>
-                <Text style={styles.indicatorValue}>{expectedRewards.endurance}</Text>
-              </View>
-
-              <View style={styles.indicator}>
-                <Text style={styles.indicatorLabel}>Strength</Text>
-                <View style={styles.indicatorBar}>
-                  <View style={[
-                    styles.indicatorFill,
-                    {
-                      width: `${Math.min(100, (difficultyLevel * 10))}%`,
-                      backgroundColor: Theme.colors.status.error
-                    }
-                  ]} />
-                </View>
-                <Text style={styles.indicatorValue}>{expectedRewards.strength}</Text>
-              </View>
-
-              <View style={styles.indicator}>
-                <Text style={styles.indicatorLabel}>Recovery</Text>
-                <View style={styles.indicatorBar}>
-                  <View style={[
-                    styles.indicatorFill,
-                    {
-                      width: `${Math.min(100, activity.type === 'rest' ? 90 : 30)}%`,
-                      backgroundColor: Theme.colors.special.level
-                    }
-                  ]} />
-                </View>
-                <Text style={styles.indicatorValue}>{expectedRewards.recovery}</Text>
-              </View>
+              <Text style={styles.rewardValue}>+1</Text>
+              <Text style={styles.rewardLabel}>Workout</Text>
             </View>
           </View>
         </View>
@@ -323,51 +261,27 @@ export default function TrainingDetailScreen() {
           <View style={styles.progressCard}>
             <View style={styles.progressHeader}>
               <Text style={styles.progressTitle}>This Week's Training</Text>
-              <Text style={styles.progressLevel}>Day 4/7</Text>
+              <Text style={styles.progressLevel}>Keep Going!</Text>
             </View>
             <Text style={styles.progressDescription}>
-              Complete this workout to keep your weekly training streak going!
+              Every workout brings you closer to your goal. Stay consistent!
             </Text>
-            <View style={styles.progressBarContainer}>
-              <View style={styles.progressBar}>
-                <View style={[styles.progressFill, { width: '60%' }]} />
-              </View>
-              <Text style={styles.progressLabel}>4 of 7 workouts completed</Text>
-            </View>
-
-            {/* Upcoming Workouts */}
-            <View style={styles.upcomingChain}>
-              <Text style={styles.upcomingChainTitle}>Coming Up Next</Text>
-              <View style={styles.upcomingChainItems}>
-                <View style={styles.upcomingChainItem}>
-                  <Text style={styles.upcomingChainEmoji}>🏃‍♂️</Text>
-                  <Text style={styles.upcomingChainText}>Tempo Run</Text>
-                </View>
-                <View style={styles.upcomingChainItem}>
-                  <Text style={styles.upcomingChainEmoji}>🧘‍♀️</Text>
-                  <Text style={styles.upcomingChainText}>Recovery</Text>
-                </View>
-                <View style={styles.upcomingChainItem}>
-                  <Text style={styles.upcomingChainEmoji}>🏆</Text>
-                  <Text style={styles.upcomingChainText}>Long Run</Text>
-                </View>
-              </View>
-            </View>
           </View>
         </View>
 
         {/* Start Workout Button */}
         <View style={styles.actionSection}>
           <TouchableOpacity
-            style={styles.startButton}
+            style={[styles.startButton, { backgroundColor: getWorkoutTypeColor(activity.type) }]}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-              // Could navigate to a timer or tracking screen
               router.back();
             }}
             activeOpacity={0.8}
           >
-            <Text style={styles.startButtonText}>🏃‍♂️ START WORKOUT</Text>
+            <Text style={styles.startButtonText}>
+              {activity.type === 'rest' ? '😴 TAKE REST' : '🏃‍♂️ START WORKOUT'}
+            </Text>
           </TouchableOpacity>
         </View>
       </ScrollView>
@@ -395,7 +309,6 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    textTransform: 'capitalize',
   },
   placeholder: {
     width: 32,
@@ -424,20 +337,6 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
-  heroTitle: {
-    fontSize: 36,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    textAlign: 'center',
-    marginBottom: Theme.spacing.sm,
-  },
-  heroSubtitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
-    marginBottom: Theme.spacing.xl,
-  },
   workoutTypeContainer: {
     alignItems: 'center',
   },
@@ -456,7 +355,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     letterSpacing: 1,
     marginBottom: Theme.spacing.md,
-    textTransform: 'uppercase',
+    textAlign: 'center',
   },
   statsSection: {
     paddingHorizontal: Theme.spacing.xl,
@@ -471,6 +370,7 @@ const styles = StyleSheet.create({
   statsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
+    flexWrap: 'wrap',
   },
   statCard: {
     flex: 1,
@@ -479,6 +379,7 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.lg,
     alignItems: 'center',
     marginHorizontal: 4,
+    minWidth: 100,
   },
   statIcon: {
     width: 48,
@@ -567,62 +468,6 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
   },
-  impactSection: {
-    paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
-  },
-  impactCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-  },
-  impactHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
-  },
-  impactTitle: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-  },
-  impactScore: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-  },
-  impactIndicators: {
-    gap: Theme.spacing.lg,
-  },
-  indicator: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Theme.spacing.md,
-  },
-  indicatorLabel: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    width: 80,
-  },
-  indicatorBar: {
-    flex: 1,
-    height: 8,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.xs,
-  },
-  indicatorFill: {
-    height: '100%',
-    borderRadius: Theme.borderRadius.xs,
-  },
-  indicatorValue: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    width: 30,
-    textAlign: 'right',
-  },
   tipsSection: {
     paddingHorizontal: Theme.spacing.xl,
     marginBottom: Theme.spacing.xxxl,
@@ -694,56 +539,6 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
     fontFamily: Theme.fonts.regular,
     lineHeight: 20,
-    marginBottom: Theme.spacing.lg,
-  },
-  progressBarContainer: {
-    marginBottom: Theme.spacing.xl,
-  },
-  progressBar: {
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.small,
-    height: 8,
-    marginBottom: Theme.spacing.sm,
-  },
-  progressFill: {
-    backgroundColor: Theme.colors.special.level,
-    borderRadius: Theme.borderRadius.small,
-    height: '100%',
-  },
-  progressLabel: {
-    fontSize: 12,
-    color: Theme.colors.text.tertiary,
-    fontFamily: Theme.fonts.medium,
-    textAlign: 'center',
-  },
-  upcomingChain: {
-    borderTopWidth: 1,
-    borderTopColor: Theme.colors.border.primary,
-    paddingTop: Theme.spacing.lg,
-  },
-  upcomingChainTitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
-  },
-  upcomingChainItems: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  upcomingChainItem: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  upcomingChainEmoji: {
-    fontSize: 24,
-    marginBottom: Theme.spacing.xs,
-  },
-  upcomingChainText: {
-    fontSize: 10,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
   },
   actionSection: {
     paddingHorizontal: Theme.spacing.xl,

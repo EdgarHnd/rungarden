@@ -1,4 +1,5 @@
 import Theme from '@/constants/theme';
+import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useRef } from 'react';
@@ -40,9 +41,9 @@ interface WeekData {
 
 interface LevelInfo {
   level: number;
-  totalDistance: number;
-  distanceForNextLevel: number;
-  remainingDistanceForNextLevel: number;
+  totalXP: number;
+  xpForNextLevel: number;
+  remainingXPForNextLevel: number;
   progressToNextLevel: number;
 }
 
@@ -195,7 +196,7 @@ export default function WeekView({
           <View style={styles.progressHeader}>
             <Text style={styles.progressLabel}>Level {levelInfo.level}</Text>
             <Text style={styles.progressText}>
-              {formatDistance(levelInfo.totalDistance, false)} / {formatDistance(levelInfo.distanceForNextLevel, true)}
+              {LevelingService.formatXP(levelInfo.totalXP)} / {LevelingService.formatXP(levelInfo.xpForNextLevel)}
             </Text>
           </View>
           <View style={styles.progressBar}>

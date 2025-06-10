@@ -1,4 +1,4 @@
-export type FeelingType = 'amazing' | 'good' | 'okay' | 'tough' | 'struggled';
+export type FeelingType = 'amazing' | 'good' | 'okay' | 'tough' | 'struggled' | 'dead';
 
 export interface RunFeeling {
   runId: string;
@@ -35,6 +35,7 @@ class RunFeelingService {
       okay: { emoji: '👍', label: 'Okay', color: '#3B82F6' },
       tough: { emoji: '😤', label: 'Tough', color: '#F59E0B' },
       struggled: { emoji: '😅', label: 'Struggled', color: '#EF4444' },
+      dead: { emoji: '💀', label: 'Dead', color: '#EF4444' },
     };
 
     return feelingMap[feeling];

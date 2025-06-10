@@ -30,6 +30,7 @@ export interface SyncResult {
   leveledUp?: boolean;
   newLevel?: number;
   oldLevel?: number;
+  newRuns?: any[]; // Track newly created activities
 }
 
 class DatabaseStravaService {
@@ -155,7 +156,7 @@ class DatabaseStravaService {
   async isSyncEnabled(): Promise<boolean> {
     try {
       const profile = await this.convexClient.query(api.userProfile.getOrCreateProfile);
-      return profile.stravaSyncEnabled ?? false;
+      return profile?.stravaSyncEnabled ?? false;
     } catch (error) {
       console.error('Error checking Strava sync status:', error);
       return false;

@@ -347,7 +347,7 @@ const styles = StyleSheet.create({
   userRankLevel: {
     fontSize: 16,
     fontFamily: Theme.fonts.medium,
-    color: Theme.colors.special.level,
+    color: Theme.colors.special.primary.level,
   },
   leaderboardContainer: {
     flex: 1,
@@ -401,17 +401,17 @@ const styles = StyleSheet.create({
     borderColor: Theme.colors.border.primary,
   },
   rank1: {
-    borderColor: Theme.colors.special.level,
+    borderColor: Theme.colors.special.primary.level,
     backgroundColor: Theme.colors.background.secondary,
     borderWidth: 2,
   },
   rank2: {
-    borderColor: Theme.colors.text.muted,
+    borderColor: Theme.colors.special.primary.coin,
     backgroundColor: Theme.colors.background.secondary,
     borderWidth: 2,
   },
   rank3: {
-    borderColor: Theme.colors.special.coin,
+    borderColor: Theme.colors.special.primary.coin,
     backgroundColor: Theme.colors.background.secondary,
     borderWidth: 2,
   },

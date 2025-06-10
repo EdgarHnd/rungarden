@@ -20,6 +20,7 @@ export default function SettingsScreen() {
   // Convex queries and mutations
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
+  const updateMetricSystem = useMutation(api.userProfile.updateMetricSystem);
 
   const [isLoading, setIsLoading] = useState(true);
   const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
@@ -432,6 +433,18 @@ export default function SettingsScreen() {
     );
   };
 
+  const handleMetricSystemToggle = async (useMetric: boolean) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      await updateMetricSystem({ metricSystem: useMetric ? "metric" : "imperial" });
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Error updating metric system:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'Failed to update metric system preference');
+    }
+  };
+
   const handleGoBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.back();
@@ -480,6 +493,37 @@ export default function SettingsScreen() {
               <FontAwesome5 name="user-edit" size={20} color={Theme.colors.text.primary} />
             </View>
           </TouchableOpacity>
+        </View>
+
+        {/* Preferences Section */}
+        <View style={styles.sectionGroup}>
+          <Text style={styles.sectionTitle}>Preferences</Text>
+
+          {/* Metric System Toggle */}
+          <View style={styles.section}>
+            <View style={styles.sectionContent}>
+              <View style={styles.syncOptionContent}>
+                <View style={styles.syncOptionHeader}>
+                  <FontAwesome5 name="ruler" size={20} color={Theme.colors.accent.primary} />
+                  <Text style={styles.syncOptionTitle}>Use Metric System</Text>
+                </View>
+                <Text style={styles.syncOptionDescription}>
+                  {(profile?.metricSystem ?? "metric") === "metric"
+                    ? "Display distances in kilometers"
+                    : "Display distances in miles"
+                  }
+                </Text>
+              </View>
+              <Switch
+                value={(profile?.metricSystem ?? "metric") === "metric"}
+                onValueChange={handleMetricSystemToggle}
+                trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.status.success }}
+                thumbColor={Theme.colors.text.primary}
+                ios_backgroundColor={Theme.colors.background.tertiary}
+                disabled={isLoading}
+              />
+            </View>
+          </View>
         </View>
 
         {/* Data Sync Section */}

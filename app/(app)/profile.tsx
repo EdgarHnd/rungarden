@@ -1,13 +1,14 @@
+import StreakDisplay from '@/components/StreakDisplay';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import ChallengeService from '@/services/ChallengeService';
-import LevelingService, { LevelInfo } from '@/services/LevelingService';
+import LevelingService from '@/services/LevelingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useState } from 'react';
 import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function ProfileScreen() {
@@ -15,16 +16,35 @@ export default function ProfileScreen() {
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
 
-  // Convex queries and mutations
+  // Convex queries
   const profile = useQuery(api.userProfile.getOrCreateProfile);
-  const profileStats = useQuery(api.activities.getProfileStats); // Real-time stats from activities
+  const profileStats = useQuery(api.activities.getProfileStats);
   const weekProgress = useQuery(api.userProfile.getCurrentWeekProgress);
+  const streakInfo = useQuery(api.userProfile.getStreakInfo);
   const updateWeeklyGoal = useMutation(api.userProfile.updateWeeklyGoal);
 
-  const [isLoading, setIsLoading] = useState(true);
-  const [isEditingGoal, setIsEditingGoal] = useState(false);
-  const [newWeeklyGoal, setNewWeeklyGoal] = useState('');
-  const [levelInfo, setLevelInfo] = useState<LevelInfo | null>(null);
+  // State for goal editing
+  const [showGoalModal, setShowGoalModal] = useState(false);
+  const [newGoal, setNewGoal] = useState('');
+
+  const isLoading = profile === undefined || profileStats === undefined;
+
+  // Get level info if profile exists
+  const levelInfo = profile ? LevelingService.calculateLevelInfo(profile.totalXP || 0) : null;
+
+  const calculateWeeklyProgress = () => {
+    if (!weekProgress) return 0;
+    return weekProgress.goalDistance > 0
+      ? (weekProgress.actualDistance / weekProgress.goalDistance) * 100
+      : 0;
+  };
+
+  const getCurrentWeek = () => {
+    const now = new Date();
+    const startOfYear = new Date(now.getFullYear(), 0, 1);
+    const pastDaysOfYear = (now.getTime() - startOfYear.getTime()) / 86400000;
+    return Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+  };
 
   // Rive animation state
   const [riveUrl, setRiveUrl] = useState("https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e");
@@ -44,41 +64,23 @@ export default function ProfileScreen() {
     });
   };
 
-  // Update loading state and level info when profile data is available
-  useEffect(() => {
-    if (profile && profileStats) {
-      setIsLoading(false);
-
-      // Calculate level info from real-time stats (not cached profile)
-      const userLevelInfo = LevelingService.calculateLevelInfo(profileStats.totalDistance);
-      setLevelInfo(userLevelInfo);
-
-      // Set initial goal value for editing
-      if (!newWeeklyGoal) {
-        setNewWeeklyGoal((profile.weeklyGoal / 1000).toString());
-      }
-    }
-  }, [profile, profileStats]);
-
   const handleSaveWeeklyGoal = async () => {
-    const goalInMeters = parseFloat(newWeeklyGoal) * 1000;
+    const goalInMeters = parseFloat(newGoal) * 1000;
 
     if (isNaN(goalInMeters) || goalInMeters <= 0) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Invalid Goal', 'Please enter a valid weekly goal in kilometers');
+      Alert.alert('Error', 'Please enter a valid goal');
       return;
     }
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await updateWeeklyGoal({ weeklyGoal: goalInMeters });
-      setIsEditingGoal(false);
+      await updateWeeklyGoal({ goal: goalInMeters });
+      setShowGoalModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Weekly goal updated!');
     } catch (error) {
-      console.error('Error updating weekly goal:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Error', 'Failed to update weekly goal');
+      Alert.alert('Error', 'Failed to update goal');
     }
   };
 
@@ -87,23 +89,9 @@ export default function ProfileScreen() {
     return `${kilometers.toFixed(1)} km`;
   };
 
-  const calculateWeeklyProgress = () => {
-    if (!weekProgress) return 0;
-    return weekProgress.goalDistance > 0
-      ? (weekProgress.actualDistance / weekProgress.goalDistance) * 100
-      : 0;
-  };
-
   const calculateStreak = () => {
-    // For now, return a placeholder. You can implement actual streak logic later
-    return Math.floor(Math.random() * 30) + 1;
-  };
-
-  const getCurrentWeek = () => {
-    const now = new Date();
-    const startOfYear = new Date(now.getFullYear(), 0, 1);
-    const pastDaysOfYear = (now.getTime() - startOfYear.getTime()) / 86400000;
-    return Math.ceil((pastDaysOfYear + startOfYear.getDay() + 1) / 7);
+    // Use real streak data from streakInfo
+    return streakInfo?.currentStreak || 0;
   };
 
   if (isLoading || !profileStats) {
@@ -211,7 +199,7 @@ export default function ProfileScreen() {
               </View>
 
               <View style={styles.duolingoStatCard}>
-                <Text style={styles.duolingoStatIcon}>⚡️</Text>
+                <Text style={styles.duolingoStatIcon}>🔥</Text>
                 <View style={styles.duolingoStatText}>
                   <Text style={styles.duolingoStatNumber}>{calculateStreak()}</Text>
                   <Text style={styles.duolingoStatLabel}>Streak</Text>
@@ -224,15 +212,15 @@ export default function ProfileScreen() {
                 <Text style={styles.duolingoStatIcon}>🏃‍♂️</Text>
                 <View style={styles.duolingoStatText}>
                   <Text style={styles.duolingoStatNumber}>{profileStats.totalWorkouts}</Text>
-                  <Text style={styles.duolingoStatLabel}>Activities</Text>
+                  <Text style={styles.duolingoStatLabel}>Runs</Text>
                 </View>
               </View>
 
               <View style={styles.duolingoStatCard}>
-                <Text style={styles.duolingoStatIcon}>🔥</Text>
+                <Text style={styles.duolingoStatIcon}>🍦</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{profileStats.totalCalories}</Text>
-                  <Text style={styles.duolingoStatLabel}>Calories</Text>
+                  <Text style={styles.duolingoStatNumber}>{Math.round(profileStats.totalCalories / 300)}</Text>
+                  <Text style={styles.duolingoStatLabel}>Ice Creams</Text>
                 </View>
               </View>
             </View>
@@ -285,7 +273,7 @@ export default function ProfileScreen() {
                       <Text style={styles.upcomingLevelEmoji}>{levelReq.emoji}</Text>
                       <Text style={styles.upcomingLevelNumber}>Level {nextLevel}</Text>
                       <Text style={styles.upcomingLevelTitle} numberOfLines={2}>{levelReq.title}</Text>
-                      <Text style={styles.upcomingLevelDistance}>{LevelingService.formatDistance(levelReq.distance)}</Text>
+                      <Text style={styles.upcomingLevelDistance}>{LevelingService.formatXP(levelReq.xp)}</Text>
                     </View>
                   );
                 })}
@@ -293,6 +281,15 @@ export default function ProfileScreen() {
             </View>
           </View>
         )}
+
+        {/* Streak Display */}
+        <StreakDisplay
+          streakInfo={streakInfo || null}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            // Could navigate to a detailed streak screen or show info
+          }}
+        />
 
         {/* Friend Streaks Section */}
         {/* <View style={styles.friendStreaksSection}>
@@ -345,14 +342,14 @@ export default function ProfileScreen() {
         </View>
 
         {/* Weekly Goal Editor */}
-        {isEditingGoal && (
+        {showGoalModal && (
           <View style={styles.goalModal}>
             <View style={styles.goalModalContent}>
               <Text style={styles.goalModalTitle}>Set Weekly Goal</Text>
               <TextInput
                 style={styles.goalInput}
-                value={newWeeklyGoal}
-                onChangeText={setNewWeeklyGoal}
+                value={newGoal}
+                onChangeText={setNewGoal}
                 placeholder="Enter goal in km"
                 keyboardType="numeric"
                 autoFocus
@@ -361,8 +358,8 @@ export default function ProfileScreen() {
                 <TouchableOpacity
                   style={[styles.goalButton, styles.cancelButton]}
                   onPress={() => {
-                    setIsEditingGoal(false);
-                    setNewWeeklyGoal(profile ? (profile.weeklyGoal / 1000).toString() : '10');
+                    setShowGoalModal(false);
+                    setNewGoal(profile ? (profile.weeklyGoal / 1000).toString() : '10');
                   }}
                 >
                   <Text style={styles.cancelButtonText}>Cancel</Text>
@@ -629,7 +626,7 @@ const styles = StyleSheet.create({
     width: 80,
     height: 80,
     borderRadius: 40,
-    backgroundColor: Theme.colors.special.level,
+    backgroundColor: Theme.colors.special.secondary.level,
     justifyContent: 'center',
     alignItems: 'center',
   },
@@ -757,7 +754,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.special.level,
+    backgroundColor: Theme.colors.special.primary.level,
     borderRadius: 4,
   },
   progressText: {

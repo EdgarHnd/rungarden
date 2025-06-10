@@ -33,20 +33,9 @@ interface WeekSummary {
 const getWorkoutTypeColor = (type: string): string => {
   const colorMap: Record<string, string> = {
     'easy': '#4CAF50',          // Green
-    'run-walk': '#FF9800',      // Orange - distinct for C25K
-    'tempo': '#FF9800',         // Orange
-    'intervals': '#F44336',     // Red
     'long': '#9C27B0',          // Purple
-    'recovery': '#2196F3',      // Blue
-    'cross-train': '#FF9800',   // Orange
     'rest': '#757575',          // Gray
-    // 10K-specific workouts
-    '10k-threshold': '#E91E63', // Pink - 10K threshold focus
-    '10k-progressive': '#9C27B0', // Purple - progressive tempo
-    '10k-mile-repeats': '#F44336', // Red - mile intervals
-    '10k-1200m-repeats': '#FF5722', // Deep orange - 1200m intervals
-    '10k-fartlek': '#FF9800',   // Orange - fartlek
-    '10k-long-run': '#673AB7'   // Deep purple - 10K long run
+    'race': '#FF5722',          // Deep orange
   };
   return colorMap[type] || colorMap['rest'];
 };
@@ -54,20 +43,9 @@ const getWorkoutTypeColor = (type: string): string => {
 const getWorkoutEmoji = (type: string): string => {
   const emojiMap: Record<string, string> = {
     'easy': '🏃‍♂️',
-    'run-walk': '🚶‍♂️🏃‍♂️', // Walking and running combo for C25K
-    'tempo': '🔥',
-    'intervals': '⚡',
     'long': '🏃‍♂️',
-    'recovery': '🧘‍♀️',
-    'cross-train': '🚴‍♂️',
     'rest': '😴',
-    // 10K-specific workouts
-    '10k-threshold': '🎯',     // Target for threshold training
-    '10k-progressive': '📈',   // Progressive effort
-    '10k-mile-repeats': '🔄',  // Repeating miles
-    '10k-1200m-repeats': '⚡', // Fast intervals
-    '10k-fartlek': '🎪',       // Playful speed work
-    '10k-long-run': '🏃‍♂️'      // Long endurance run
+    'race': '🏆',
   };
   return emojiMap[type] || '😴';
 };
@@ -75,20 +53,9 @@ const getWorkoutEmoji = (type: string): string => {
 const getWorkoutDisplayName = (type: string): string => {
   const displayNames: Record<string, string> = {
     'easy': 'Easy Run',
-    'run-walk': 'Run-Walk',
-    'tempo': 'Tempo Run',
-    'intervals': 'Interval Repeats',
     'long': 'Long Run',
-    'recovery': 'Recovery Run',
-    'cross-train': 'Cross Training',
     'rest': 'Rest Day',
-    // 10K-specific workouts
-    '10k-threshold': 'Threshold Tempo',
-    '10k-progressive': 'Progressive Tempo',
-    '10k-mile-repeats': 'Mile Repeats',
-    '10k-1200m-repeats': '1200m Repeats',
-    '10k-fartlek': 'Fartlek Run',
-    '10k-long-run': 'Long Run'
+    'race': 'Race Day',
   };
   return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
 };
@@ -104,7 +71,7 @@ const getGoalDisplayName = (goal: string): string => {
 
 const getCurrentWeek = (weekSummaries: WeekSummary[]): number => {
   const today = new Date();
-  today.setHours(0, 0, 0, 0); // Normalize today's date
+  today.setHours(0, 0, 0, 0);
 
   for (const week of weekSummaries) {
     const weekWorkouts = week.workouts;
@@ -118,15 +85,14 @@ const getCurrentWeek = (weekSummaries: WeekSummary[]): number => {
     }
   }
 
-  // Fallback if current week is not found (e.g., plan ended)
   const todayString = today.toISOString().split('T')[0];
   for (const week of weekSummaries) {
     for (const workout of week.workouts) {
       const workoutDate = new Date(`${workout.date}T00:00:00`);
       const weekStart = new Date(workoutDate);
-      weekStart.setDate(workoutDate.getDate() - workoutDate.getDay()); // Start of week (Sunday)
+      weekStart.setDate(workoutDate.getDate() - workoutDate.getDay());
       const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6); // End of week
+      weekEnd.setDate(weekStart.getDate() + 6);
 
       if (today >= weekStart && today <= weekEnd) {
         return week.weekNumber;
@@ -134,7 +100,7 @@ const getCurrentWeek = (weekSummaries: WeekSummary[]): number => {
     }
   }
 
-  return 1; // Default to week 1 if not found
+  return 1;
 };
 
 const handleCurrentWeek = (weekSummaries: WeekSummary[], setSelectedWeek: (week: number) => void) => {
@@ -152,22 +118,20 @@ export default function TrainingPlanScreen() {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const trainingPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
-  const plannedWorkouts = useQuery(api.plannedWorkouts.getPlannedWorkouts, { days: 365 }); // Get full plan
+  const plannedWorkouts = useQuery(api.plannedWorkouts.getPlannedWorkouts, { days: 365 });
   const completedWorkouts = useQuery(api.workoutCompletions.getUserCompletions, { days: 365 });
   const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
   const regenerateTrainingPlan = useMutation(api.trainingPlan.regenerateTrainingPlan);
 
   const handleActivitiesPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    router.push('/activities' as any); // Navigate to activities screen
+    router.push('/activities' as any);
   };
 
   const formatDateRange = (start: Date, end: Date) => {
-    // Ensure we're working with new Date objects to avoid mutations
     const startDate = new Date(start);
     const endDate = new Date(end);
 
-    // Format both dates fully
     const startFormatted = startDate.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric'
@@ -190,16 +154,13 @@ export default function TrainingPlanScreen() {
         workout.planWeek === planWeek.week
       );
 
-      // Find the first workout date of the week
       const firstWorkoutDate = weekWorkouts.length > 0
         ? new Date(weekWorkouts[0].scheduledDate)
         : new Date();
 
-      // Calculate the week's start date (Sunday)
       const weekStart = new Date(firstWorkoutDate);
       weekStart.setDate(firstWorkoutDate.getDate() - firstWorkoutDate.getDay());
 
-      // Calculate the week's end date (Saturday)
       const weekEnd = new Date(weekStart);
       weekEnd.setDate(weekStart.getDate() + 6);
 
@@ -213,29 +174,9 @@ export default function TrainingPlanScreen() {
           );
 
           const workoutDate = new Date(`${day.date}T00:00:00`);
-
-          // Handle time-based C25K workouts vs distance-based workouts
-          let distance = 0;
-          let duration = '30m';
-
-          if (day.type === 'run-walk' || (day.duration && !day.distance)) {
-            // Time-based workout (C25K)
-            duration = day.duration || '30m';
-            // Distance is not relevant for C25K, so we leave it as 0
-            distance = 0;
-          } else {
-            // Distance-based workout
-            distance = day.distance ? Math.round(day.distance / 1000 * 10) / 10 : 0;
-
-            // Calculate estimated duration based on distance and workout type
-            const estimateDuration = (distance: number, type: string) => {
-              const paceMinPerKm = type === 'easy' ? 6 : type === 'intervals' ? 4.5 : 5.5;
-              const totalMinutes = (distance / 1000) * paceMinPerKm;
-              return `${Math.round(totalMinutes)}m`;
-            };
-
-            duration = distance > 0 ? estimateDuration(day.distance || 0, day.type) : '30m';
-          }
+          const distance = day.distance ? Math.round(day.distance / 1000 * 10) / 10 : 0;
+          const estimatedMinutes = day.duration ? parseInt(day.duration.replace(/\D/g, '')) : 30;
+          const duration = `${estimatedMinutes}m`;
 
           return {
             day: dayNames[workoutDate.getDay()],
@@ -243,14 +184,14 @@ export default function TrainingPlanScreen() {
             displayDate: workoutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
             type: day.type,
             distance,
-            duration: day.type === 'run-walk' ? duration : `${duration.replace('m', '')}m - ${Math.round(parseInt(duration.replace('m', '')) * 1.2)}m`,
+            duration: duration,
             description: scheduledWorkout?.description || day.description,
             completed: completedWorkouts?.some(c =>
               new Date(c.completedAt).toDateString() === workoutDate.toDateString()
             )
           };
         })
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()); // Sort workouts by date
+        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
 
       const totalWorkouts = workouts.length;
       const totalDistance = workouts.reduce((sum, w) => sum + w.distance, 0);
@@ -278,7 +219,7 @@ export default function TrainingPlanScreen() {
 
     const totalDistance = completedWorkouts.reduce((sum: number, completion: any) =>
       sum + (completion.actualDistance || 0), 0
-    ) / 1000; // Convert to km
+    ) / 1000;
 
     return {
       weeksCompleted: Math.max(0, currentWeek - 1),
@@ -331,12 +272,7 @@ export default function TrainingPlanScreen() {
   const progress = calculateOverallProgress();
   const progressPercent = progress.totalWeeks > 0 ? (progress.weeksCompleted / progress.totalWeeks) * 100 : 0;
 
-  // Determine plan type based on goal
   const planName = `${getGoalDisplayName(trainingProfile.goalDistance)} Plan`;
-
-  // Calculate trial end date (placeholder)
-  const trialEndDate = new Date();
-  trialEndDate.setDate(trialEndDate.getDate() + 60);
 
   const handleWeekPress = (weekNumber: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -366,7 +302,6 @@ export default function TrainingPlanScreen() {
     if (selectedWeekData) {
       return (
         <View style={styles.container}>
-          {/* Week Detail Header */}
           <View style={styles.weekDetailHeader}>
             <TouchableOpacity onPress={handleBackPress} style={styles.backButton}>
               <Ionicons name="arrow-back" size={24} color={Theme.colors.text.primary} />
@@ -377,7 +312,6 @@ export default function TrainingPlanScreen() {
             <View style={styles.headerSpacer} />
           </View>
 
-          {/* Week Navigation */}
           <View style={styles.weekDetailNavigation}>
             <TouchableOpacity
               onPress={() => navigateWeek('prev')}
@@ -398,7 +332,6 @@ export default function TrainingPlanScreen() {
             </TouchableOpacity>
           </View>
 
-          {/* Week Progress Bar */}
           <View style={styles.weekDetailProgress}>
             <View style={styles.weekProgressBar}>
               {Array.from({ length: Math.max(selectedWeekData.totalWorkouts, 3) }, (_, i) => (
@@ -417,7 +350,6 @@ export default function TrainingPlanScreen() {
             </View>
           </View>
 
-          {/* Week Stats */}
           <View style={styles.weekDetailStats}>
             <Text style={styles.weekDetailStatsText}>
               Total Workouts: <Text style={styles.weekDetailStatsValue}>{selectedWeekData.totalWorkouts}</Text>
@@ -427,7 +359,6 @@ export default function TrainingPlanScreen() {
             </Text>
           </View>
 
-          {/* Detailed Workouts List */}
           <ScrollView style={styles.weekDetailContent} showsVerticalScrollIndicator={false}>
             {selectedWeekData.workouts.map((workout, index) => (
               <TouchableOpacity
@@ -435,13 +366,21 @@ export default function TrainingPlanScreen() {
                 style={styles.detailedWorkoutCard}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+                  // Transform workout data for training-detail screen
+                  const trainingActivity = {
+                    type: workout.type,
+                    title: getWorkoutDisplayName(workout.type),
+                    description: workout.description,
+                    duration: workout.duration,
+                    distance: workout.distance,
+                    emoji: getWorkoutEmoji(workout.type)
+                  };
+
                   router.push({
-                    pathname: '/activity-detail',
+                    pathname: '/training-detail',
                     params: {
-                      workout: JSON.stringify(workout),
-                      weekNumber: selectedWeek,
-                      dateRange: selectedWeekData.dateRange,
-                      isPlannedWorkout: 'true'
+                      activity: JSON.stringify(trainingActivity)
                     }
                   });
                 }}
@@ -472,17 +411,11 @@ export default function TrainingPlanScreen() {
                   </View>
 
                   <Text style={styles.detailedWorkoutTitle}>
-                    {workout.type === 'run-walk'
-                      ? `${workout.duration} C25K Workout`
-                      : `${workout.distance}km ${getWorkoutDisplayName(workout.type)}`
-                    }
+                    {`${workout.distance}km ${getWorkoutDisplayName(workout.type)}`}
                   </Text>
 
                   <Text style={styles.detailedWorkoutType}>
-                    {workout.type === 'run-walk'
-                      ? `C25K Program · ${workout.duration}`
-                      : `${getWorkoutDisplayName(workout.type)} · ${workout.distance}km`
-                    }
+                    {`${getWorkoutDisplayName(workout.type)} · ${workout.distance}km`}
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -503,7 +436,6 @@ export default function TrainingPlanScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Plan Overview Card */}
         <View style={styles.overviewCard}>
           <View style={styles.overviewHeader}>
             <View>
@@ -523,7 +455,6 @@ export default function TrainingPlanScreen() {
             </View>
           </View>
 
-          {/* Progress Bar */}
           <View style={styles.progressContainer}>
             <View style={styles.progressBar}>
               {Array.from({ length: progress.totalWeeks }, (_, i) => (
@@ -542,7 +473,6 @@ export default function TrainingPlanScreen() {
             </View>
           </View>
 
-          {/* Stats */}
           <View style={styles.statsRow}>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Weeks Completed</Text>
@@ -554,7 +484,6 @@ export default function TrainingPlanScreen() {
             </View>
           </View>
 
-          {/* Action Buttons */}
           <View style={styles.actionButtons}>
             <TouchableOpacity
               style={styles.actionButton}
@@ -573,7 +502,6 @@ export default function TrainingPlanScreen() {
           </View>
         </View>
 
-        {/* Week Breakdown */}
         {weekSummaries.map((week, index) => (
           <TouchableOpacity
             key={week.weekNumber}
@@ -587,7 +515,6 @@ export default function TrainingPlanScreen() {
               </View>
             </View>
 
-            {/* Progress Bar for Week */}
             <View style={styles.weekProgressContainer}>
               <View style={styles.weekProgressBar}>
                 {Array.from({ length: Math.max(week.totalWorkouts, 3) }, (_, i) => (
@@ -606,13 +533,11 @@ export default function TrainingPlanScreen() {
               </View>
             </View>
 
-            {/* Week Stats */}
             <View style={styles.weekStatsRow}>
               <Text style={styles.weekStat}>Total Workouts: {week.totalWorkouts}</Text>
               <Text style={styles.weekStat}>Distance: {week.totalDistance}km</Text>
             </View>
 
-            {/* Workouts List */}
             <View style={styles.workoutsList}>
               {week.workouts.map((workout, workoutIndex) => (
                 <View key={workoutIndex} style={styles.workoutItem}>
@@ -620,10 +545,7 @@ export default function TrainingPlanScreen() {
                   <View style={styles.workoutContent}>
                     <Text style={styles.workoutDay}>{workout.day}</Text>
                     <Text style={styles.workoutDescription}>
-                      {workout.type === 'run-walk'
-                        ? `${getWorkoutDisplayName(workout.type)} · ${workout.duration}`
-                        : `${getWorkoutDisplayName(workout.type)} · ${workout.distance}km`
-                      }
+                      {`${getWorkoutDisplayName(workout.type)} · ${workout.distance}km`}
                     </Text>
                   </View>
                 </View>
@@ -632,7 +554,6 @@ export default function TrainingPlanScreen() {
           </TouchableOpacity>
         ))}
 
-        {/* Premium Upsell (placeholder) */}
         <View style={styles.premiumCard}>
           <View style={styles.premiumHeader}>
             <Ionicons name="diamond" size={24} color={Theme.colors.accent.primary} />
@@ -873,7 +794,7 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.xl,
     padding: Theme.spacing.xl,
-    marginBottom: 100, // Extra space for tab bar
+    marginBottom: 100,
     borderWidth: 2,
     borderColor: Theme.colors.accent.primary,
   },
@@ -949,11 +870,6 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.xl,
     paddingBottom: Theme.spacing.lg,
   },
-  weekNavigation: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Theme.spacing.lg,
-  },
   navButton: {
     padding: Theme.spacing.sm,
   },
@@ -961,7 +877,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   headerSpacer: {
-    width: 40, // Same width as back button for centering
+    width: 40,
   },
   weekDetailProgress: {
     paddingHorizontal: Theme.spacing.xl,
@@ -1045,4 +961,4 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
   },
-}); 
+});

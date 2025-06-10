@@ -40,10 +40,20 @@ export const Theme = {
 
     // Special colors
     special: {
-      coin: '#F59E0B',         // Gold for coins
-      level: '#10B981',        // Green for level progress
-      shadow: '#000000',       // Shadow color
-      heart: '#FF0000',        // Red for heart
+      primary:{
+        exp: '#48C1F7',         // Blue
+        coin: '#10B981',         // Gold
+        level: '#10B981',        // Green for level progress
+        shadow: '#000000',       // Shadow color
+        heart: '#FF0000',        // Red for heart
+      },
+      secondary:{
+        exp: '#3AA9DD',         // Darker blue
+        coin: '#0EA472',        // Darker gold
+        level: '#0EA472',       // Darker green
+        shadow: '#000000',       // Shadow color
+        heart: '#E60000',       // Darker red
+      }
     },
 
     // Transparent variations

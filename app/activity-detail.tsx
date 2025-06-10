@@ -1,3 +1,4 @@
+import StatsBadges from '@/components/StatsBadges';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
@@ -629,44 +630,34 @@ export default function ActivityDetailScreen() {
           </View>
         </View>
 
-        {/* Main Stats - Game Style */}
+        {/* Main Stats - Badge Style */}
         <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>📊 Run Stats</Text>
-          <View style={styles.mainStatsContainer}>
-            <View style={styles.statCard}>
-              <View style={styles.statIcon}>
-                <Ionicons name="speedometer-outline" size={24} color="#3B82F6" />
-              </View>
-              <Text style={styles.statValue}>{formatDistance(activity.distance)} km</Text>
-              <Text style={styles.statLabel}>Distance</Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <View style={styles.statIcon}>
-                <Ionicons name="time-outline" size={24} color="#10B981" />
-              </View>
-              <Text style={styles.statValue}>{formatDuration(activity.duration)}</Text>
-              <Text style={styles.statLabel}>Time Adventuring</Text>
-            </View>
-
-            <View style={styles.statCard}>
-              <View style={styles.statIcon}>
-                <Ionicons name="flash-outline" size={24} color="#F59E0B" />
-              </View>
-              <Text style={styles.statValue}>{formatPace(calculatePace(activity.duration, activity.distance))}</Text>
-              <Text style={styles.statLabel}>Pace /km</Text>
-            </View>
-
-            {activity.averageHeartRate && (
-              <View style={styles.statCard}>
-                <View style={styles.statIcon}>
-                  <Ionicons name="heart-outline" size={24} color="#EF4444" />
-                </View>
-                <Text style={styles.statValue}>{Math.round(activity.averageHeartRate)}</Text>
-                <Text style={styles.statLabel}>Avg Heart Rate</Text>
-              </View>
-            )}
-          </View>
+          <StatsBadges stats={[
+            {
+              label: 'Distance',
+              value: formatDistance(activity.distance),
+              icon: '🏃',
+              color: '#FFB800'
+            },
+            {
+              label: 'Duration',
+              value: formatDuration(activity.duration),
+              icon: '⏱️',
+              color: '#10B981'
+            },
+            {
+              label: 'Pace',
+              value: formatPace(calculatePace(activity.duration, activity.distance)),
+              icon: '⚡',
+              color: '#3B82F6'
+            },
+            ...(activity.calories ? [{
+              label: 'Calories',
+              value: Math.round(activity.calories).toString(),
+              icon: '🔥',
+              color: '#EF4444'
+            }] : [])
+          ]} />
         </View>
 
         {/* Achievements Section */}
@@ -905,6 +896,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
   },
+
   powerSection: {
     paddingHorizontal: Theme.spacing.xl,
     marginBottom: Theme.spacing.xxxl,

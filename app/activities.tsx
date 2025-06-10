@@ -132,7 +132,7 @@ export default function ActivitiesScreen() {
   }
 
   // No data source configured
-  if (!profile.healthKitSyncEnabled && !profile.stravaSyncEnabled) {
+  if (profile && !profile.healthKitSyncEnabled && !profile.stravaSyncEnabled) {
     return (
       <View style={styles.container}>
         <View style={styles.header}>
@@ -276,9 +276,9 @@ export default function ActivitiesScreen() {
         {/* Data Source Info */}
         <View style={styles.dataSourceInfo}>
           <Text style={styles.dataSourceText}>
-            {profile.healthKitSyncEnabled && profile.stravaSyncEnabled
+            {profile && profile.healthKitSyncEnabled && profile.stravaSyncEnabled
               ? 'Showing runs from HealthKit ❤️ and Strava 🟠'
-              : profile.healthKitSyncEnabled
+              : profile && profile.healthKitSyncEnabled
                 ? 'Showing runs from HealthKit ❤️'
                 : 'Showing runs from Strava 🟠'
             }

@@ -14,10 +14,17 @@ const schema = defineSchema({
     totalCalories: v.number(),
     lastSyncDate: v.optional(v.string()), // ISO string for last HealthKit sync
     // Gamification fields
-    level: v.number(), // Current level based on total distance
+    level: v.number(), // Current level based on total XP
+    totalXP: v.optional(v.number()), // Total XP earned from running (defaults to 0)
     coins: v.optional(v.number()), // Coins earned from running (1 coin per km)
-    // Week preferences
+    // Streak tracking
+    currentStreak: v.optional(v.number()), // Current consecutive training days completed (defaults to 0)
+    longestStreak: v.optional(v.number()), // Longest streak ever achieved (defaults to 0)
+    lastStreakDate: v.optional(v.string()), // ISO date of last completed training day that counted toward streak
+    streakFreezeAvailable: v.optional(v.number()), // Number of streak freezes available (defaults to 0)
+    // User preferences
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))), // 0 = Sunday, 1 = Monday, defaults to 1 (Monday)
+    metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))), // User's preferred measurement system (defaults to metric)
     // Sync preferences
     healthKitSyncEnabled: v.optional(v.boolean()), // Whether HealthKit sync is enabled (defaults to false)
     stravaSyncEnabled: v.optional(v.boolean()), // Whether Strava sync is enabled (defaults to false)
