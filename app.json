@@ -12,7 +12,8 @@
       "supportsTablet": false,
       "bundleIdentifier": "com.edgarhnd.koko",
       "entitlements": {
-        "com.apple.developer.healthkit": true
+        "com.apple.developer.healthkit": true,
+        "aps-environment": "development"
       },
       "infoPlist": {
         "NSHealthShareUsageDescription": "This app needs access to health data to track your running activities and provide insights about your fitness progress.",
@@ -30,7 +31,13 @@
         "backgroundColor": "#ffffff"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.edgarhnd.koko"
+      "package": "com.edgarhnd.koko",
+      "permissions": [
+        "android.permission.RECEIVE_BOOT_COMPLETED",
+        "android.permission.VIBRATE",
+        "android.permission.WAKE_LOCK",
+        "com.google.android.c2dm.permission.RECEIVE"
+      ]
     },
     "web": {
       "bundler": "metro",
@@ -54,6 +61,14 @@
           "isClinicalDataEnabled": true,
           "healthSharePermission": "This app needs access to health data to track your running activities and provide insights about your fitness progress.",
           "healthUpdatePermission": "This app needs permission to write workout data to Apple Health to keep your fitness data synchronized."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "icon": "./assets/images/icon.png",
+          "color": "#ffffff",
+          "defaultChannel": "default"
         }
       ],
       "expo-font",

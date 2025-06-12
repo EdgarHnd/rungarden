@@ -11,7 +11,6 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
-import Rive from 'rive-react-native';
 
 interface Activity {
   type: string;
@@ -20,18 +19,32 @@ interface Activity {
   duration: string;
   distance?: number;
   emoji: string;
+  date?: string;
+  workoutSections?: WorkoutSection[];
+}
+
+interface WorkoutSection {
+  id: number;
+  type: 'warmup' | 'run' | 'rest' | 'repeat' | 'cooldown';
+  title: string;
+  subtitle?: string;
+  duration?: string;
+  distance?: string;
+  pace?: string;
+  repeats?: number;
 }
 
 export default function TrainingDetailScreen() {
   const params = useLocalSearchParams();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [scaleAnim] = useState(new Animated.Value(0));
-  const [riveUrl] = useState("https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a");
 
   useEffect(() => {
     if (params.activity) {
       try {
         const activityData = JSON.parse(params.activity as string);
+        console.log('Activity data:', activityData); // Debug log
+        console.log('Activity date:', activityData.date); // Debug log
         setActivity(activityData);
 
         // Entrance animation
@@ -68,29 +81,16 @@ export default function TrainingDetailScreen() {
     return infoMap[type] || { level: 'WORKOUT', emoji: '⭐', subtitle: 'Training Session' };
   };
 
-  const getWorkoutDescription = (activity: Activity) => {
-    switch (activity.type) {
-      case 'easy':
-        return 'A comfortable run at conversational pace. This builds your aerobic base and helps with recovery between harder sessions.';
-      case 'long':
-        return 'A longer endurance run to build your stamina. Take it steady and focus on completing the distance rather than speed.';
-      case 'rest':
-        return 'A complete rest day or light stretching/mobility work. Recovery is just as important as training for your progress.';
-      case 'race':
-        return 'Race day! Time to put your training to the test. Trust your preparation and enjoy the experience.';
-      default:
-        return 'A training session designed to help you progress toward your running goals.';
-    }
-  };
-
   const getSimpleRewards = (activity: Activity) => {
     // Simple reward calculation based on workout type
     const baseDistance = activity.distance ? Math.round(activity.distance / 1000 * 10) / 10 : 0;
     const coins = Math.max(1, Math.floor(baseDistance));
+    const xp = Math.max(5, Math.floor(baseDistance * 10));
 
     return {
       distance: baseDistance,
       coins: coins,
+      xp: xp,
       progress: activity.type === 'rest' ? 'Recovery' : 'Fitness',
     };
   };
@@ -126,6 +126,169 @@ export default function TrainingDetailScreen() {
     }
   };
 
+  const formatWorkoutDate = (dateStr?: string) => {
+    console.log('Formatting date:', dateStr); // Debug log
+
+    if (!dateStr) {
+      console.log('No date provided, using today'); // Debug log
+      return new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      }).toUpperCase();
+    }
+
+    try {
+      const date = new Date(dateStr);
+      console.log('Parsed date:', date); // Debug log
+
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        console.log('Invalid date, using today'); // Debug log
+        return new Date().toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+          year: 'numeric'
+        }).toUpperCase();
+      }
+
+      return date.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      }).toUpperCase();
+    } catch (error) {
+      console.log('Error parsing date:', error); // Debug log
+      return new Date().toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+      }).toUpperCase();
+    }
+  };
+
+  const isComplexWorkout = (activity: Activity) => {
+    return activity.workoutSections && activity.workoutSections.length > 0;
+  };
+
+  const getSectionIcon = (type: string) => {
+    switch (type) {
+      case 'warmup':
+        return 'flame-outline';
+      case 'run':
+        return 'fitness-outline';
+      case 'rest':
+        return 'pause-outline';
+      case 'repeat':
+        return 'repeat-outline';
+      case 'cooldown':
+        return 'snow-outline';
+      default:
+        return 'ellipse-outline';
+    }
+  };
+
+  const getSectionColor = (type: string) => {
+    switch (type) {
+      case 'warmup':
+        return '#FF9500';
+      case 'run':
+        return '#007AFF';
+      case 'rest':
+        return '#8E8E93';
+      case 'repeat':
+        return '#FF3B30';
+      case 'cooldown':
+        return '#30D158';
+      default:
+        return Theme.colors.text.tertiary;
+    }
+  };
+
+  const renderWorkoutBreakdown = () => {
+    if (!activity) return null;
+
+    return (
+      <View style={styles.workoutBreakdownSection}>
+        <View style={styles.descriptionHeader}>
+          <View style={styles.descriptionHeaderLeft}>
+            <Ionicons name="clipboard-outline" size={24} color={Theme.colors.text.primary} />
+            <Text style={styles.descriptionHeaderText}>Description</Text>
+          </View>
+          {/* <View style={styles.workoutTypeButtons}>
+            <View style={[styles.workoutTypeButton, styles.workoutTypeButtonActive]}>
+              <Text style={styles.workoutTypeButtonText}>OUTDOOR</Text>
+            </View>
+            <View style={styles.workoutTypeButton}>
+              <Text style={[styles.workoutTypeButtonText, styles.workoutTypeButtonInactive]}>TREADMILL</Text>
+            </View>
+          </View> */}
+        </View>
+
+        {/* If complex workout, show all sections */}
+        {isComplexWorkout(activity) ? (
+          activity.workoutSections!.map((section, index) => (
+            <View key={section.id} style={styles.workoutSectionContainer}>
+              {section.type === 'repeat' && (
+                <View style={styles.repeatBanner}>
+                  <Ionicons name="repeat-outline" size={20} color="#fff" />
+                  <Text style={styles.repeatText}>Repeat x{section.repeats || 4}</Text>
+                </View>
+              )}
+
+              {section.type !== 'repeat' && (
+                <View style={styles.workoutSection}>
+                  <Text style={styles.sectionNumber}>{index + 1}</Text>
+                  <View style={styles.sectionDivider} />
+                  <View style={styles.sectionContent}>
+                    <Text style={styles.workoutSectionTitle}>{section.title}</Text>
+                    {section.subtitle && (
+                      <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+                    )}
+                  </View>
+                  <View style={styles.sectionType}>
+                    <Ionicons
+                      name={getSectionIcon(section.type) as any}
+                      size={20}
+                      color={Theme.colors.text.tertiary}
+                    />
+                    <Text style={styles.sectionTypeText}>
+                      {section.type.toUpperCase()}
+                    </Text>
+                  </View>
+                </View>
+              )}
+            </View>
+          ))
+        ) : (
+          /* If simple activity, show as single workout section */
+          <View style={styles.workoutSectionContainer}>
+            <View style={styles.workoutSection}>
+              <Text style={styles.sectionNumber}>1</Text>
+              <View style={styles.sectionDivider} />
+              <View style={styles.sectionContent}>
+                <Text style={styles.workoutSectionTitle}>
+                  {rewards.distance > 0 ? `${rewards.distance}km at a conversational pace` : activity.title}
+                </Text>
+                {activity.description && (
+                  <Text style={styles.sectionSubtitle}>{activity.description}</Text>
+                )}
+              </View>
+              <View style={styles.sectionType}>
+                <Ionicons
+                  name="fitness-outline"
+                  size={20}
+                  color={Theme.colors.text.tertiary}
+                />
+                <Text style={styles.sectionTypeText}>RUN</Text>
+              </View>
+            </View>
+          </View>
+        )}
+      </View>
+    );
+  };
+
   if (!activity) {
     return (
       <View style={styles.container}>
@@ -148,7 +311,14 @@ export default function TrainingDetailScreen() {
         }} style={styles.backButton}>
           <Ionicons name="chevron-back-outline" size={24} color="#fff" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>{workoutInfo.level}</Text>
+        <View style={styles.headerInfo}>
+          <Text style={styles.headerDate}>
+            {activity.date ?
+              formatWorkoutDate(activity.date) :
+              formatWorkoutDate()
+            }
+          </Text>
+        </View>
         <View style={styles.placeholder} />
       </View>
 
@@ -156,85 +326,54 @@ export default function TrainingDetailScreen() {
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
           <View style={styles.workoutTypeContainer}>
-            <View style={styles.animationContainer}>
-              <Rive
-                url={riveUrl}
-                style={styles.animation}
-                autoplay={true}
-              />
-            </View>
-            <Text style={styles.workoutType}>{activity.title}</Text>
-            <View style={[styles.levelBadge, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
-              <Text style={styles.levelEmoji}>{workoutInfo.emoji}</Text>
-              <Text style={styles.levelText}>{workoutInfo.level}</Text>
-            </View>
+            <Text style={styles.workoutType}>{activity.title.toUpperCase()}</Text>
+            <Text style={styles.workoutSubtitle}>
+              {workoutInfo.subtitle}
+              {rewards.distance > 0 && ` • ${rewards.distance}km`}
+            </Text>
           </View>
         </Animated.View>
 
-        {/* Workout Details */}
-        <View style={styles.statsSection}>
-          <Text style={styles.sectionTitle}>Workout Details</Text>
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <View style={[styles.statIcon, { backgroundColor: Theme.colors.special.primary.level }]}>
-                <Ionicons name="time-outline" size={24} color="#fff" />
+        {/* Main Training Info */}
+        <View style={styles.mainInfoSection}>
+          <Text style={styles.sectionTitle}>Training Details</Text>
+          <View style={styles.mainInfoGrid}>
+            <View style={styles.mainInfoCard}>
+              <View style={[styles.mainInfoIcon, { backgroundColor: Theme.colors.special.primary.level }]}>
+                <Ionicons name="time-outline" size={28} color="#fff" />
               </View>
-              <Text style={styles.statValue}>{activity.duration}</Text>
-              <Text style={styles.statLabel}>Duration</Text>
+              <Text style={styles.mainInfoValue}>{activity.duration}</Text>
+              <Text style={styles.mainInfoLabel}>Duration</Text>
             </View>
 
             {rewards.distance > 0 && (
-              <View style={styles.statCard}>
-                <View style={[styles.statIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
-                  <Ionicons name="location-outline" size={24} color="#fff" />
+              <View style={styles.mainInfoCard}>
+                <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
+                  <Ionicons name="location-outline" size={28} color="#fff" />
                 </View>
-                <Text style={styles.statValue}>{rewards.distance}km</Text>
-                <Text style={styles.statLabel}>Distance</Text>
+                <Text style={styles.mainInfoValue}>{rewards.distance}km</Text>
+                <Text style={styles.mainInfoLabel}>Distance</Text>
               </View>
             )}
-
-            <View style={styles.statCard}>
-              <View style={[styles.statIcon, { backgroundColor: Theme.colors.accent.primary }]}>
-                <Ionicons name="fitness-outline" size={24} color="#fff" />
-              </View>
-              <Text style={styles.statValue}>{rewards.progress}</Text>
-              <Text style={styles.statLabel}>Focus</Text>
-            </View>
           </View>
         </View>
 
-        {/* Workout Description */}
-        <View style={styles.descriptionSection}>
-          <Text style={styles.sectionTitle}>About This Workout</Text>
-          <View style={styles.descriptionCard}>
-            <Text style={styles.descriptionText}>{getWorkoutDescription(activity)}</Text>
-            <View style={styles.originalDescription}>
-              <Text style={styles.originalDescriptionLabel}>Training Notes:</Text>
-              <Text style={styles.originalDescriptionText}>{activity.description}</Text>
-            </View>
-          </View>
-        </View>
+        {/* Workout Description/Breakdown */}
+        {renderWorkoutBreakdown()}
 
-        {/* Expected Progress */}
+        {/* Expected Rewards */}
         <View style={styles.rewardsSection}>
-          <Text style={styles.sectionTitle}>Progress Tracking</Text>
+          <Text style={styles.sectionTitle}>Expected Rewards</Text>
           <View style={styles.rewardsGrid}>
-            {rewards.distance > 0 && (
-              <View style={styles.rewardCard}>
-                <Text style={styles.rewardEmoji}>📏</Text>
-                <Text style={styles.rewardValue}>{rewards.distance}km</Text>
-                <Text style={styles.rewardLabel}>Distance</Text>
-              </View>
-            )}
             <View style={styles.rewardCard}>
-              <Text style={styles.rewardEmoji}>🪙</Text>
-              <Text style={styles.rewardValue}>+{rewards.coins}</Text>
-              <Text style={styles.rewardLabel}>Coins</Text>
+              <Text style={styles.rewardEmoji}>⚡</Text>
+              <Text style={styles.rewardExpValue}>+{rewards.xp}</Text>
+              <Text style={styles.rewardLabel}>XP</Text>
             </View>
             <View style={styles.rewardCard}>
-              <Text style={styles.rewardEmoji}>💪</Text>
-              <Text style={styles.rewardValue}>+1</Text>
-              <Text style={styles.rewardLabel}>Workout</Text>
+              <Text style={styles.rewardEmoji}>🍃</Text>
+              <Text style={styles.rewardLeavesValue}>+{rewards.coins}</Text>
+              <Text style={styles.rewardLabel}>Leaves</Text>
             </View>
           </View>
         </View>
@@ -255,24 +394,10 @@ export default function TrainingDetailScreen() {
           ))}
         </View>
 
-        {/* Weekly Progress */}
-        <View style={styles.progressSection}>
-          <Text style={styles.sectionTitle}>Weekly Progress</Text>
-          <View style={styles.progressCard}>
-            <View style={styles.progressHeader}>
-              <Text style={styles.progressTitle}>This Week's Training</Text>
-              <Text style={styles.progressLevel}>Keep Going!</Text>
-            </View>
-            <Text style={styles.progressDescription}>
-              Every workout brings you closer to your goal. Stay consistent!
-            </Text>
-          </View>
-        </View>
-
         {/* Start Workout Button */}
         <View style={styles.actionSection}>
           <TouchableOpacity
-            style={[styles.startButton, { backgroundColor: getWorkoutTypeColor(activity.type) }]}
+            style={styles.startButton}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
               router.back();
@@ -305,8 +430,12 @@ const styles = StyleSheet.create({
   backButton: {
     padding: Theme.spacing.sm,
   },
-  headerTitle: {
-    fontSize: 20,
+  headerInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerDate: {
+    fontSize: 16,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
@@ -321,45 +450,25 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.xl,
     paddingBottom: Theme.spacing.xxxl,
   },
-  levelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: Theme.spacing.lg,
-    paddingVertical: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.full,
-  },
-  levelEmoji: {
-    fontSize: 20,
-    marginRight: Theme.spacing.sm,
-  },
-  levelText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-  },
   workoutTypeContainer: {
     alignItems: 'center',
   },
-  animationContainer: {
-    width: 150,
-    height: 150,
-    marginBottom: Theme.spacing.sm,
-  },
-  animation: {
-    width: '100%',
-    height: '100%',
-  },
   workoutType: {
-    fontSize: 24,
+    fontSize: 28,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     letterSpacing: 1,
-    marginBottom: Theme.spacing.md,
+    marginBottom: Theme.spacing.sm,
     textAlign: 'center',
   },
-  statsSection: {
+  workoutSubtitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+  },
+  mainInfoSection: {
     paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
   },
   sectionTitle: {
     fontSize: 22,
@@ -367,43 +476,39 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     marginBottom: Theme.spacing.xl,
   },
-  statsGrid: {
+  mainInfoGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
-    flexWrap: 'wrap',
+    justifyContent: 'space-around',
+    marginBottom: Theme.spacing.xl,
   },
-  statCard: {
-    flex: 1,
+  mainInfoCard: {
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
+    padding: Theme.spacing.xl,
     alignItems: 'center',
-    marginHorizontal: 4,
-    minWidth: 100,
+    minWidth: 120,
+    flex: 1,
+    marginHorizontal: Theme.spacing.sm,
   },
-  statIcon: {
-    width: 48,
-    height: 48,
+  mainInfoIcon: {
+    width: 56,
+    height: 56,
     borderRadius: Theme.borderRadius.full,
     alignItems: 'center',
     justifyContent: 'center',
     marginBottom: Theme.spacing.md,
   },
-  statValue: {
-    fontSize: 20,
+  mainInfoValue: {
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     marginBottom: Theme.spacing.xs,
   },
-  statLabel: {
-    fontSize: 12,
+  mainInfoLabel: {
+    fontSize: 14,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
-  },
-  descriptionSection: {
-    paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
   },
   descriptionCard: {
     backgroundColor: Theme.colors.background.secondary,
@@ -415,26 +520,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     fontFamily: Theme.fonts.medium,
     lineHeight: 24,
-    marginBottom: Theme.spacing.lg,
-  },
-  originalDescription: {
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.medium,
-    padding: Theme.spacing.md,
-  },
-  originalDescriptionLabel: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-    marginBottom: Theme.spacing.xs,
-    textTransform: 'uppercase',
-    letterSpacing: 1,
-  },
-  originalDescriptionText: {
-    fontSize: 14,
-    color: Theme.colors.text.tertiary,
-    fontFamily: Theme.fonts.regular,
-    lineHeight: 20,
+    textAlign: 'center',
   },
   rewardsSection: {
     paddingHorizontal: Theme.spacing.xl,
@@ -448,22 +534,28 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.md,
+    padding: Theme.spacing.lg,
     alignItems: 'center',
-    marginHorizontal: 2,
+    marginHorizontal: 4,
   },
   rewardEmoji: {
-    fontSize: 24,
-    marginBottom: Theme.spacing.sm,
+    fontSize: 32,
+    marginBottom: Theme.spacing.md,
   },
-  rewardValue: {
-    fontSize: 18,
+  rewardExpValue: {
+    fontSize: 20,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
+    color: Theme.colors.special.primary.exp,
+    marginBottom: Theme.spacing.xs,
+  },
+  rewardLeavesValue: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.special.primary.coin,
     marginBottom: Theme.spacing.xs,
   },
   rewardLabel: {
-    fontSize: 10,
+    fontSize: 12,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
@@ -509,37 +601,6 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.regular,
     lineHeight: 20,
   },
-  progressSection: {
-    paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
-  },
-  progressCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-  },
-  progressHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-  },
-  progressTitle: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-  },
-  progressLevel: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-  },
-  progressDescription: {
-    fontSize: 14,
-    color: Theme.colors.text.tertiary,
-    fontFamily: Theme.fonts.regular,
-    lineHeight: 20,
-  },
   actionSection: {
     paddingHorizontal: Theme.spacing.xl,
     paddingBottom: 100,
@@ -549,12 +610,13 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.large,
     paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
-    ...Theme.shadows.medium,
+    borderBottomWidth: 4,
+    borderBottomColor: Theme.colors.accent.secondary,
   },
   startButtonText: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: Theme.colors.background.primary,
     letterSpacing: 1,
   },
   loading: {
@@ -563,5 +625,118 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
     marginTop: 100,
+  },
+
+  workoutBreakdownSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
+  },
+  descriptionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Theme.spacing.xl,
+  },
+  descriptionHeaderText: {
+    fontSize: 22,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  descriptionHeaderLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
+  },
+  workoutTypeButtons: {
+    flexDirection: 'row',
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.large,
+    padding: 2,
+  },
+  workoutTypeButton: {
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+    borderRadius: Theme.borderRadius.medium,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  workoutTypeButtonActive: {
+    backgroundColor: Theme.colors.background.primary,
+  },
+  workoutTypeButtonText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  workoutTypeButtonInactive: {
+    color: Theme.colors.text.tertiary,
+  },
+  workoutSectionContainer: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
+  },
+  repeatBanner: {
+    backgroundColor: '#FF6B35',
+    borderRadius: Theme.borderRadius.large,
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.sm,
+    marginBottom: Theme.spacing.md,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  repeatText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: '#fff',
+    marginLeft: Theme.spacing.sm,
+  },
+  workoutSection: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.sm,
+  },
+  sectionNumber: {
+    fontSize: 28,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    width: 40,
+    textAlign: 'center',
+  },
+  sectionDivider: {
+    width: 2,
+    backgroundColor: Theme.colors.text.tertiary,
+    height: 50,
+    marginHorizontal: Theme.spacing.lg,
+  },
+  sectionContent: {
+    flex: 1,
+  },
+  workoutSectionTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: 2,
+  },
+  sectionSubtitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    lineHeight: 18,
+  },
+  sectionType: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minWidth: 60,
+  },
+  sectionTypeText: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.tertiary,
+    marginTop: 4,
+    textAlign: 'center',
+    textTransform: 'uppercase',
   },
 }); 

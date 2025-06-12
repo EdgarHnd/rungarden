@@ -77,6 +77,7 @@ export const saveOnboardingData = mutation({
     preferredDays: v.array(v.string()),
     hasTreadmill: v.boolean(),
     preferTimeOverDistance: v.boolean(),
+    pushNotificationsEnabled: v.boolean(),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -93,30 +94,48 @@ export const saveOnboardingData = mutation({
       args.currentAbility
     );
 
-    // Check if profile already exists
+    // Extract push notification setting to save to user profile
+    const { pushNotificationsEnabled, ...trainingProfileData } = args;
+
+    // Check if training profile already exists
     const existingProfile = await ctx.db
       .query("trainingProfiles")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
+    let trainingProfileId;
     if (existingProfile) {
-      // Update existing profile
+      // Update existing training profile
       await ctx.db.patch(existingProfile._id, {
-        ...args,
+        ...trainingProfileData,
         fitnessLevel,
         updatedAt: now,
       });
-      return existingProfile._id;
+      trainingProfileId = existingProfile._id;
     } else {
-      // Create new profile
-      return await ctx.db.insert("trainingProfiles", {
+      // Create new training profile
+      trainingProfileId = await ctx.db.insert("trainingProfiles", {
         userId,
-        ...args,
+        ...trainingProfileData,
         fitnessLevel,
         createdAt: now,
         updatedAt: now,
       });
     }
+
+    // Update user profile with push notification preference
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (userProfile) {
+      await ctx.db.patch(userProfile._id, {
+        pushNotificationsEnabled,
+      });
+    }
+
+    return trainingProfileId;
   },
 });
 

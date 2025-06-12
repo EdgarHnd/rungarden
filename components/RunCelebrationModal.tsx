@@ -4,8 +4,18 @@ import { DatabaseActivity } from '@/services/DatabaseHealthService';
 import LevelingService from '@/services/LevelingService';
 import RunFeelingService, { FeelingType } from '@/services/RunFeelingService';
 import * as Haptics from 'expo-haptics';
-import React, { useState } from 'react';
-import { Image, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  interpolate,
+  default as Reanimated,
+  runOnJS,
+  useAnimatedReaction,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+  withTiming
+} from 'react-native-reanimated';
 
 interface RunCelebrationModalProps {
   visible: boolean;
@@ -52,9 +62,303 @@ export default function RunCelebrationModal({
   const [currentStep, setCurrentStep] = useState<'stats' | 'xp' | 'streak' | 'coins'>('stats');
   const [selectedFeeling, setSelectedFeeling] = useState<FeelingType | null>(null);
 
+  // Reanimated values for all animations
+  const stepScale = useSharedValue(0);
+  const stepOpacity = useSharedValue(0);
+  const xpCounterValue = useSharedValue(0);
+  const coinCounterValue = useSharedValue(0);
+  const progressValue = useSharedValue(0);
+  const streakScale = useSharedValue(0);
+  const rewardIconScale = useSharedValue(0);
+  const rewardIconRotation = useSharedValue(0);
+
+  // Reanimated values for feeling buttons
+  const feelingScales: Record<FeelingType, Reanimated.SharedValue<number>> = {
+    dead: useSharedValue(0.8),
+    tough: useSharedValue(0.8),
+    okay: useSharedValue(0.8),
+    good: useSharedValue(0.8),
+    amazing: useSharedValue(0.8),
+    struggled: useSharedValue(0.8),
+  };
+
+  // Live counter states
+  const [animatedXPValue, setAnimatedXPValue] = useState(0);
+  const [animatedCoinValue, setAnimatedCoinValue] = useState(0);
+  const [animatedProgress, setAnimatedProgress] = useState(0);
+
+  // Fast counter animations with useAnimatedReaction (safer syntax)
+  useAnimatedReaction(
+    () => xpCounterValue.value,
+    (value) => {
+      runOnJS(setAnimatedXPValue)(Math.floor(value));
+    },
+    []
+  );
+
+  useAnimatedReaction(
+    () => coinCounterValue.value,
+    (value) => {
+      runOnJS(setAnimatedCoinValue)(Math.floor(value));
+    },
+    []
+  );
+
+  useAnimatedReaction(
+    () => progressValue.value,
+    (value) => {
+      runOnJS(setAnimatedProgress)(value);
+    },
+    []
+  );
+
+  // Animated styles
+  const stepAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: stepScale.value }],
+      opacity: stepOpacity.value
+    };
+  });
+
+  const xpBadgeAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{
+        scale: interpolate(
+          stepOpacity.value,
+          [0, 1],
+          [0.5, 1]
+        )
+      }]
+    };
+  });
+
+  const progressAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      width: `${interpolate(
+        progressValue.value,
+        [0, 100],
+        [0, 100]
+      )}%` as const
+    };
+  });
+
+  const streakAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: streakScale.value }]
+    };
+  });
+
+  const streakDayAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{
+        scale: interpolate(
+          stepOpacity.value,
+          [0, 1],
+          [0.3, 1]
+        )
+      }]
+    };
+  });
+
+  const rewardIconAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [
+        { scale: rewardIconScale.value }
+      ]
+    };
+  });
+
+  useEffect(() => {
+    if (visible) {
+      // Reset all animations when modal opens
+      stepScale.value = 0;
+      stepOpacity.value = 0;
+      xpCounterValue.value = 0;
+      coinCounterValue.value = 0;
+      progressValue.value = 0;
+      streakScale.value = 0;
+      rewardIconScale.value = 0;
+      rewardIconRotation.value = 0;
+
+      // Reset feeling button scales
+      Object.values(feelingScales).forEach(scale => {
+        scale.value = 0.8;
+      });
+
+      setAnimatedXPValue(0);
+      setAnimatedCoinValue(0);
+      setAnimatedProgress(0);
+
+      // Initial entrance animation
+      animateStepEntrance();
+
+      // Success haptic for modal opening
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+  }, [visible]);
+
+  useEffect(() => {
+    if (visible) {
+      animateStepEntrance();
+    }
+  }, [currentStep]);
+
+  useEffect(() => {
+    // Animate feeling buttons when step changes or selection changes
+    if (currentStep === 'stats' && visible) {
+      feelings.forEach((feeling, index) => {
+        setTimeout(() => {
+          feelingScales[feeling.type].value = withSpring(1, {
+            damping: 15,
+            stiffness: 150,
+          });
+        }, index * 100);
+      });
+    }
+  }, [currentStep, visible]);
+
+  useEffect(() => {
+    // Handle selection animation
+    feelings.forEach(feeling => {
+      if (selectedFeeling === feeling.type) {
+        feelingScales[feeling.type].value = withSpring(1.1, {
+          damping: 10,
+          stiffness: 200,
+        });
+      } else {
+        feelingScales[feeling.type].value = withSpring(1, {
+          damping: 15,
+          stiffness: 150,
+        });
+      }
+    });
+  }, [selectedFeeling]);
+
+  const animateStepEntrance = () => {
+    // Reset step animations
+    stepScale.value = 0;
+    stepOpacity.value = 0;
+
+    // Entrance animation with bounce
+    stepScale.value = withSpring(1, {
+      damping: 15,
+      stiffness: 100,
+    });
+    stepOpacity.value = withTiming(1, {
+      duration: 300,
+    });
+
+    // Step-specific animations
+    if (currentStep === 'xp') {
+      animateXPCounter();
+      animateProgressBar();
+    } else if (currentStep === 'streak') {
+      animateStreakDisplay();
+    } else if (currentStep === 'coins') {
+      animateCoinCounter();
+      animateRewardIcon();
+    }
+  };
+
+  const animateXPCounter = () => {
+    const targetXP = LevelingService.distanceToXP(rewards.distanceGained);
+
+    // Heavy haptic for XP start
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    // Fast animated counter
+    xpCounterValue.value = withTiming(targetXP, {
+      duration: 1500,
+    });
+
+    // Success haptic when animation finishes
+    setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }, 1500);
+
+    // Add periodic light haptics during counting
+    const hapticInterval = setInterval(() => {
+      Haptics.selectionAsync();
+    }, 150);
+
+    setTimeout(() => {
+      clearInterval(hapticInterval);
+    }, 1500);
+  };
+
+  const animateProgressBar = () => {
+    progressValue.value = withTiming(60, {
+      duration: 1000,
+    });
+  };
+
+  const animateStreakDisplay = () => {
+    // Bounce in the streak flame
+    streakScale.value = withSpring(1, {
+      damping: 15,
+      stiffness: 80,
+    });
+
+    // Heavy haptic for streak emphasis
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    // Sequential light haptics for each day
+    const streakDays = streakInfo?.currentStreak || 0;
+    for (let i = 0; i < streakDays; i++) {
+      setTimeout(() => {
+        Haptics.selectionAsync();
+      }, i * 200);
+    }
+  };
+
+  const animateCoinCounter = () => {
+    const targetCoins = rewards.coinsGained;
+
+    // Medium haptic for coin start
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Fast animated counter
+    coinCounterValue.value = withTiming(targetCoins, {
+      duration: 1200,
+    });
+
+    // Success haptic when animation finishes
+    setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }, 1200);
+
+    // Coin collection haptics
+    const coinHapticInterval = setInterval(() => {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    }, 100);
+
+    setTimeout(() => {
+      clearInterval(coinHapticInterval);
+    }, 1200);
+  };
+
+  const animateRewardIcon = () => {
+    // Icon entrance with bounce - just zoom in effect
+    rewardIconScale.value = withSpring(1, {
+      damping: 15,
+      stiffness: 100,
+    });
+  };
+
   const handleFeelingSelect = (feeling: FeelingType) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedFeeling(feeling);
+
+    // Extra haptic for special feelings
+    if (feeling === 'amazing') {
+      setTimeout(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }, 100);
+    } else if (feeling === 'dead') {
+      setTimeout(() => {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+      }, 100);
+    }
   };
 
   const handleContinue = () => {
@@ -62,22 +366,35 @@ export default function RunCelebrationModal({
       if (selectedFeeling && runData) {
         RunFeelingService.recordFeeling(runData._id, selectedFeeling);
       }
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('xp');
     } else if (currentStep === 'xp') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('streak');
     } else if (currentStep === 'streak') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('coins');
     }
   };
 
   const handleClose = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCurrentStep('stats');
-    setSelectedFeeling(null);
-    onClose();
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    // Exit animation
+    stepScale.value = withTiming(0, {
+      duration: 200,
+    });
+
+    stepOpacity.value = withTiming(0, {
+      duration: 200,
+    });
+
+    // Use setTimeout for cleanup instead of animation callback
+    setTimeout(() => {
+      setCurrentStep('stats');
+      setSelectedFeeling(null);
+      onClose();
+    }, 200);
   };
 
   const formatDistance = (meters: number) => {
@@ -103,15 +420,52 @@ export default function RunCelebrationModal({
     const distance = runData.distance / 1000;
     if (distance >= 21) return '🏆';
     if (distance >= 10) return '🥇';
-    if (distance >= 5) return '⭐';
-    if (distance >= 1) return '🔥';
+    if (distance >= 5) return '🎉';
+    if (distance >= 1) return '🙌';
     return '🏃‍♂️';
   };
 
   if (!visible || !runData) return null;
 
+  // Animated Feeling Button Component
+  const AnimatedFeelingButton = ({ feeling }: { feeling: Feeling }) => {
+    const animatedStyle = useAnimatedStyle(() => {
+      return {
+        transform: [{ scale: feelingScales[feeling.type].value }],
+      };
+    });
+
+    return (
+      <Reanimated.View style={animatedStyle}>
+        <TouchableOpacity
+          style={[
+            styles.feelingButton,
+            selectedFeeling === feeling.type && {
+              backgroundColor: Theme.colors.background.primary,
+              borderColor: feeling.color,
+              shadowOffset: { width: 0, height: 4 },
+              shadowOpacity: 0.3,
+              shadowRadius: 6,
+              elevation: 8,
+            }
+          ]}
+          onPress={() => handleFeelingSelect(feeling.type)}
+          activeOpacity={0.7}
+        >
+          <Text style={styles.feelingEmoji}>{feeling.emoji}</Text>
+          <Text style={[
+            styles.feelingLabel,
+            selectedFeeling === feeling.type && styles.feelingLabelSelected
+          ]}>
+            {feeling.label}
+          </Text>
+        </TouchableOpacity>
+      </Reanimated.View>
+    );
+  };
+
   const renderStatsStep = () => (
-    <View style={styles.stepContent}>
+    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
           <Text style={styles.headerEmoji}>{getRunEmoji()}</Text>
@@ -119,57 +473,39 @@ export default function RunCelebrationModal({
         </View>
 
         <View style={styles.contentSection}>
-          <StatsBadges stats={[
-            {
-              label: 'Distance',
-              value: formatDistance(runData.distance),
-              icon: '🏃',
-              color: '#3B82F6'
-            },
-            {
-              label: 'Duration',
-              value: formatDuration(runData.duration),
-              icon: '⏱️',
-              color: '#10B981'
-            },
-            {
-              label: 'Pace',
-              value: formatPace(runData.duration, runData.distance),
-              icon: '⚡',
-              color: '#FFB800'
-            },
-            {
-              label: 'Calories',
-              value: Math.round(runData.calories).toString(),
-              icon: '🍦',
-              color: '#EF4444'
-            }
-          ]} />
-
+          <View style={styles.statsContainer}>
+            <StatsBadges stats={[
+              {
+                label: 'Distance',
+                value: formatDistance(runData.distance),
+                icon: '🏃',
+                color: '#3B82F6'
+              },
+              {
+                label: 'Duration',
+                value: formatDuration(runData.duration),
+                icon: '⏱️',
+                color: '#10B981'
+              },
+              {
+                label: 'Pace',
+                value: formatPace(runData.duration, runData.distance),
+                icon: '⚡',
+                color: '#FFB800'
+              },
+              {
+                label: 'Calories',
+                value: Math.round(runData.calories).toString(),
+                icon: '🍦',
+                color: '#EF4444'
+              }
+            ]} />
+          </View>
           <View style={styles.feelingSection}>
             <Text style={styles.sectionTitle}>How did you feel?</Text>
             <View style={styles.feelingsGrid}>
-              {feelings.map((feeling) => (
-                <TouchableOpacity
-                  key={feeling.type}
-                  style={[
-                    styles.feelingButton,
-                    selectedFeeling === feeling.type && {
-                      backgroundColor: feeling.color,
-                      borderColor: feeling.color,
-                    }
-                  ]}
-                  onPress={() => handleFeelingSelect(feeling.type)}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.feelingEmoji}>{feeling.emoji}</Text>
-                  <Text style={[
-                    styles.feelingLabel,
-                    selectedFeeling === feeling.type && styles.feelingLabelSelected
-                  ]}>
-                    {feeling.label}
-                  </Text>
-                </TouchableOpacity>
+              {feelings.map((feeling, index) => (
+                <AnimatedFeelingButton key={feeling.type} feeling={feeling} />
               ))}
             </View>
           </View>
@@ -192,11 +528,11 @@ export default function RunCelebrationModal({
           Continue
         </Text>
       </TouchableOpacity>
-    </View>
+    </Reanimated.View>
   );
 
   const renderXpStep = () => (
-    <View style={styles.stepContent}>
+    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
           <Text style={styles.headerTitle}>More XP!</Text>
@@ -204,14 +540,14 @@ export default function RunCelebrationModal({
 
         <View style={styles.contentSection}>
           <View style={styles.centerContent}>
-            <View style={styles.xpBadge}>
-              <Text style={styles.xpValue}>+{LevelingService.distanceToXP(rewards.distanceGained)}xp</Text>
-            </View>
+            <Reanimated.View style={[styles.xpBadge, xpBadgeAnimatedStyle]}>
+              <Text style={styles.xpValue}>+{animatedXPValue}xp</Text>
+            </Reanimated.View>
 
             <View style={styles.progressSection}>
               <Text style={styles.progressLabel}>lvl {rewards.oldLevel || 1}</Text>
               <View style={styles.progressBar}>
-                <View style={[styles.progressFill, { width: '60%' }]} />
+                <Reanimated.View style={[styles.progressFill, progressAnimatedStyle]} />
               </View>
               <Text style={styles.progressLabel}>lvl {(rewards.oldLevel || 1) + 1}</Text>
             </View>
@@ -226,21 +562,24 @@ export default function RunCelebrationModal({
       >
         <Text style={styles.actionButtonText}>Claim XP</Text>
       </TouchableOpacity>
-    </View>
+    </Reanimated.View>
   );
 
   const renderStreakStep = () => (
-    <View style={styles.stepContent}>
+    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
-        <View style={styles.streakDisplay}>
+        <Reanimated.View style={[styles.streakDisplay, streakAnimatedStyle]}>
           <Text style={styles.streakFlameIcon}>🔥</Text>
           <Text style={styles.streakMainNumber}>{streakInfo?.currentStreak || 0}</Text>
           <Text style={styles.streakMainLabel}>day streak</Text>
-        </View>
+        </Reanimated.View>
 
         <View style={styles.streakWeekView}>
           {['Th', 'Fr', 'Sa', 'Su', 'Mo', 'Tu', 'We'].map((dayName, index) => (
-            <View key={dayName} style={styles.streakDayColumn}>
+            <Reanimated.View
+              key={dayName}
+              style={[styles.streakDayColumn, streakDayAnimatedStyle]}
+            >
               <Text style={styles.streakDayName}>{dayName}</Text>
               <View style={[
                 styles.streakDayCircle,
@@ -250,7 +589,7 @@ export default function RunCelebrationModal({
                   <Text style={styles.streakCheckmark}>✓</Text>
                 )}
               </View>
-            </View>
+            </Reanimated.View>
           ))}
         </View>
 
@@ -271,19 +610,23 @@ export default function RunCelebrationModal({
       >
         <Text style={styles.actionButtonText}>I'M COMMITTED</Text>
       </TouchableOpacity>
-    </View>
+    </Reanimated.View>
   );
 
   const renderCoinsStep = () => (
-    <View style={styles.stepContent}>
+    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
-          <Text style={styles.rewardAmount}>+{rewards.coinsGained}</Text>
+          <Text style={styles.rewardAmount}>+{animatedCoinValue}</Text>
         </View>
         <View style={styles.contentSection}>
           <View style={styles.centerContent}>
-            <Image source={require('@/assets/images/icons/eucaleaf.png')} style={styles.rewardIcon} />
-            <Text style={styles.rewardMessage}>You earned {rewards.coinsGained} leaves!</Text>
+            <Reanimated.Image
+              source={require('@/assets/images/icons/eucaleaf.png')}
+              style={[styles.rewardIcon, rewardIconAnimatedStyle]}
+            />
+            <Text style={styles.rewardMessage}>You earned {animatedCoinValue} leaves</Text>
+            <Text style={styles.rewardSubtitle}>Spend them on new clothes and accessories for Koko!</Text>
           </View>
         </View>
       </View>
@@ -294,7 +637,7 @@ export default function RunCelebrationModal({
       >
         <Text style={styles.actionButtonText}>Continue</Text>
       </TouchableOpacity>
-    </View>
+    </Reanimated.View>
   );
 
   const renderCurrentStep = () => {
@@ -355,7 +698,7 @@ const styles = StyleSheet.create({
   // Header Section
   headerSection: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.xxxl,
+    marginBottom: Theme.spacing.xl,
   },
   headerEmoji: {
     fontSize: 64,
@@ -379,36 +722,40 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.semibold,
     color: Theme.colors.text.primary,
     textAlign: 'center',
-    marginBottom: Theme.spacing.lg,
+    marginBottom: Theme.spacing.xl,
+  },
+  statsContainer: {
+    marginVertical: Theme.spacing.xxxl,
   },
   // Feelings Section
   feelingSection: {
-    marginTop: Theme.spacing.xxxl,
     marginBottom: Theme.spacing.xl,
   },
   feelingsGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'space-around',
+    gap: 10,
   },
   feelingButton: {
-    width: '18%',
-    aspectRatio: 1,
-    borderRadius: Theme.borderRadius.medium,
-    borderWidth: 2,
+    width: 60,
+    height: 75,
+    borderRadius: Theme.borderRadius.large,
+    borderWidth: 3,
     borderColor: Theme.colors.border.primary,
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   feelingEmoji: {
-    fontSize: 20,
-    marginBottom: 2,
+    fontSize: 28,
+    marginBottom: 6,
   },
   feelingLabel: {
-    fontSize: 10,
+    fontSize: 11,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
+    lineHeight: 13,
   },
   feelingLabelSelected: {
     color: Theme.colors.text.primary,
@@ -420,12 +767,19 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.xxxl,
     paddingVertical: Theme.spacing.xl,
     marginBottom: Theme.spacing.xxxl,
+    backgroundColor: Theme.colors.special.primary.exp + '20',
+    borderRadius: Theme.borderRadius.large,
+    borderWidth: 2,
+    borderColor: Theme.colors.special.primary.exp + '40',
   },
   xpValue: {
     fontSize: 48,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.special.primary.exp,
     textAlign: 'center',
+    textShadowColor: Theme.colors.special.primary.exp + '30',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
 
   // Progress Section
@@ -526,6 +880,9 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.special.primary.coin,
     textAlign: 'center',
+    textShadowColor: Theme.colors.special.primary.coin + '30',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   rewardIcon: {
     width: 120,
@@ -536,6 +893,14 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+    textAlign: 'center',
+  },
+  rewardSubtitle: {
+    fontSize: 18,
+    marginTop: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.lg,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
     textAlign: 'center',
   },
 

@@ -9,7 +9,7 @@ import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function ProfileScreen() {
   const { signOut } = useAuthActions();
@@ -94,43 +94,50 @@ export default function ProfileScreen() {
     return streakInfo?.currentStreak || 0;
   };
 
+  // Debug log to see what streakInfo contains
+  React.useEffect(() => {
+    if (streakInfo) {
+      console.log('Profile streakInfo:', JSON.stringify(streakInfo, null, 2));
+    }
+  }, [streakInfo]);
+
   if (isLoading || !profileStats) {
     return (
-      <View style={styles.container}>
+      <SafeAreaView style={styles.container}>
         <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color="#58CC02" />
+          <ActivityIndicator size="large" color={Theme.colors.accent.primary} />
           <Text style={styles.loadingText}>Loading profile...</Text>
         </View>
-      </View>
+      </SafeAreaView>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Character Section with Green Background - Goes to top */}
-        <View style={styles.characterSection}>
+        {/* <View style={styles.characterSection}>
           {/* Settings Button positioned in top right */}
-          <TouchableOpacity
-            style={styles.settingsButton}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/settings');
-            }}
-            activeOpacity={0.7}
-          >
-            <FontAwesome5 name="cog" size={24} color={Theme.colors.text.primary} />
-          </TouchableOpacity>
+        <TouchableOpacity
+          style={styles.settingsButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            router.push('/settings');
+          }}
+          activeOpacity={0.7}
+        >
+          <FontAwesome5 name="cog" size={24} color={Theme.colors.text.primary} />
+        </TouchableOpacity>
 
-          {/* Rive Character */}
-          {/* <TouchableOpacity style={styles.characterContainer} onPress={toggleRiveUrl} activeOpacity={0.8}>
+        {/* Rive Character */}
+        {/* <TouchableOpacity style={styles.characterContainer} onPress={toggleRiveUrl} activeOpacity={0.8}>
             <Rive
               url={riveUrl}
               style={styles.riveAvatar}
               autoplay={true}
             />
           </TouchableOpacity> */}
-        </View>
+        {/* </View> */}
 
         {/* Profile Info Section */}
         <View style={styles.profileInfoSection}>
@@ -284,7 +291,12 @@ export default function ProfileScreen() {
 
         {/* Streak Display */}
         <StreakDisplay
-          streakInfo={streakInfo || null}
+          streakInfo={streakInfo ? {
+            currentStreak: streakInfo.currentStreak,
+            longestStreak: streakInfo.longestStreak,
+            lastStreakDate: streakInfo.lastStreakDate,
+            plannedWorkouts: streakInfo.plannedWorkouts || []
+          } : null}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             // Could navigate to a detailed streak screen or show info
@@ -378,7 +390,7 @@ export default function ProfileScreen() {
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -390,7 +402,6 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-
   loadingContainer: {
     flex: 1,
     justifyContent: 'center',
@@ -406,7 +417,7 @@ const styles = StyleSheet.create({
 
   settingsButton: {
     position: 'absolute',
-    top: 50, // Position below status bar
+    top: 10, // Position below status bar
     right: 20,
     padding: 8,
     zIndex: 10,

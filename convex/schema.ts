@@ -31,6 +31,15 @@ const schema = defineSchema({
     autoSyncEnabled: v.optional(v.boolean()), // Whether automatic syncing is enabled (defaults to false)
     lastHealthKitSync: v.optional(v.string()), // Last HealthKit sync timestamp
     lastStravaSync: v.optional(v.string()), // Last Strava sync timestamp
+    // Strava integration
+    stravaAthleteId: v.optional(v.number()), // Strava athlete ID for webhook matching
+    stravaAccessRevoked: v.optional(v.boolean()), // Whether user revoked Strava access
+    stravaAccessToken: v.optional(v.string()), // Strava access token for server-side API calls
+    stravaRefreshToken: v.optional(v.string()), // Strava refresh token for token renewal
+    stravaTokenExpiresAt: v.optional(v.number()), // When the access token expires (timestamp)
+    // Push notifications
+    pushNotificationToken: v.optional(v.string()), // Expo push notification token
+    pushNotificationsEnabled: v.optional(v.boolean()), // Whether user wants push notifications
     createdAt: v.string(),
     updatedAt: v.string(),
   })
@@ -257,6 +266,9 @@ const schema = defineSchema({
     healthKitUuid: v.optional(v.string()), // Original HealthKit UUID
     // Strava data
     stravaId: v.optional(v.number()), // Original Strava activity ID
+    // UI state tracking
+    celebrationShown: v.optional(v.boolean()), // Whether celebration modal has been shown for this activity
+    isNewActivity: v.optional(v.boolean()), // Whether this is a new activity that should trigger celebration
     // Sync metadata
     syncedAt: v.string(), // When this was synced
     // Additional computed fields
@@ -282,6 +294,34 @@ const schema = defineSchema({
   })
     .index("by_user", ["userId"])
     .index("by_user_and_week", ["userId", "weekStart"]),
+
+  // Strava sync queue - for webhook-triggered syncs
+  stravaSyncQueue: defineTable({
+    userId: v.string(), // User ID that needs syncing
+    activityIds: v.optional(v.array(v.number())), // Specific Strava activity IDs to sync (optional)
+    status: v.union(v.literal("pending"), v.literal("processing"), v.literal("completed"), v.literal("failed")),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+    completedAt: v.optional(v.string()),
+    error: v.optional(v.string()), // Error message if failed
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"]),
+
+  // Push notification logs
+  pushNotificationLogs: defineTable({
+    userId: v.string(),
+    type: v.string(),
+    title: v.string(),
+    body: v.string(),
+    status: v.string(),
+    sentAt: v.string(),
+    expoPushTicket: v.optional(v.any()),
+    error: v.optional(v.string()),
+  })
+    .index("by_user", ["userId"])
+    .index("by_status", ["status"])
+    .index("by_type", ["type"]),
 });
  
 export default schema;

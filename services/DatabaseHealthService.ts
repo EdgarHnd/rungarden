@@ -34,7 +34,6 @@ export interface UserProfile {
   // Sync preferences
   healthKitSyncEnabled?: boolean; // Whether HealthKit sync is enabled
   stravaSyncEnabled?: boolean; // Whether Strava sync is enabled
-  autoSyncEnabled?: boolean; // Whether automatic syncing is enabled
   lastHealthKitSync?: string; // Last HealthKit sync timestamp
   lastStravaSync?: string; // Last Strava sync timestamp
   createdAt: string;
@@ -183,18 +182,7 @@ class DatabaseHealthService {
     }
   }
 
-  /**
-   * Check if auto sync is enabled for the user
-   */
-  async isAutoSyncEnabled(): Promise<boolean> {
-    try {
-      const profile = await this.getUserProfile();
-      return profile.autoSyncEnabled ?? false;
-    } catch (error) {
-      console.error('Error checking auto sync status:', error);
-      return false;
-    }
-  }
+
 
   /**
    * Enable or disable HealthKit sync
@@ -212,20 +200,7 @@ class DatabaseHealthService {
     }
   }
 
-  /**
-   * Enable or disable auto sync
-   */
-  async setAutoSyncEnabled(enabled: boolean): Promise<void> {
-    try {
-      await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
-        autoSyncEnabled: enabled,
-      });
-      console.log(`[DatabaseHealthService] Auto sync ${enabled ? 'enabled' : 'disabled'}`);
-    } catch (error) {
-      console.error('Error updating auto sync preference:', error);
-      throw error;
-    }
-  }
+
 
   /**
    * Sync activities only if HealthKit sync is enabled
@@ -241,32 +216,11 @@ class DatabaseHealthService {
   }
 
   /**
-   * Get activities with optional auto-sync (only if enabled)
+   * Get activities from database (auto-sync is now handled via webhooks for Strava)
    */
   async getActivitiesWithOptionalSync(days: number = 30): Promise<DatabaseActivity[]> {
-    // Always get activities from database first
-    const activities = await this.getActivitiesFromDatabase(days, 100);
-
-    // Only auto-sync if both HealthKit sync and auto sync are enabled
-    const isHealthKitEnabled = await this.isHealthKitSyncEnabled();
-    const isAutoSyncEnabled = await this.isAutoSyncEnabled();
-
-    if (isHealthKitEnabled && isAutoSyncEnabled) {
-      try {
-        // Perform background sync
-        const syncResult = await this.syncActivitiesFromHealthKit(days);
-        console.log('[DatabaseHealthService] Auto-sync completed:', syncResult);
-        
-        // Return fresh data after sync
-        return this.getActivitiesFromDatabase(days, 100);
-      } catch (error) {
-        console.error('[DatabaseHealthService] Auto-sync failed:', error);
-        // Return cached data on sync failure
-        return activities;
-      }
-    }
-
-    return activities;
+    // Simply return activities from database since webhooks handle real-time sync
+    return this.getActivitiesFromDatabase(days, 100);
   }
 }
 

@@ -239,14 +239,45 @@ export const updateMetricSystem = mutation({
   },
 });
 
+// Update Strava tokens (for server-side token refresh)
+export const updateStravaTokens = mutation({
+  args: {
+    userId: v.id("users"),
+    accessToken: v.string(),
+    refreshToken: v.string(),
+    expiresAt: v.number(),
+  },
+  handler: async (ctx, args) => {
+    const existingProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+
+    if (existingProfile) {
+      await ctx.db.patch(existingProfile._id, {
+        stravaAccessToken: args.accessToken,
+        stravaRefreshToken: args.refreshToken,
+        stravaTokenExpiresAt: args.expiresAt,
+        updatedAt: new Date().toISOString(),
+      });
+    }
+  },
+});
+
 // Update sync preferences
 export const updateSyncPreferences = mutation({
   args: {
     healthKitSyncEnabled: v.optional(v.boolean()),
     stravaSyncEnabled: v.optional(v.boolean()),
-    autoSyncEnabled: v.optional(v.boolean()),
     lastHealthKitSync: v.optional(v.union(v.string(), v.null())),
     lastStravaSync: v.optional(v.union(v.string(), v.null())),
+    stravaAthleteId: v.optional(v.number()),
+    stravaAccessRevoked: v.optional(v.boolean()),
+    stravaAccessToken: v.optional(v.string()),
+    stravaRefreshToken: v.optional(v.string()),
+    stravaTokenExpiresAt: v.optional(v.number()),
+    pushNotificationToken: v.optional(v.string()),
+    pushNotificationsEnabled: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -290,7 +321,6 @@ export const updateSyncPreferences = mutation({
         coins: 0,
         healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
         stravaSyncEnabled: args.stravaSyncEnabled ?? false,
-        autoSyncEnabled: args.autoSyncEnabled ?? false,
         lastHealthKitSync: args.lastHealthKitSync === null ? undefined : args.lastHealthKitSync,
         lastStravaSync: args.lastStravaSync === null ? undefined : args.lastStravaSync,
         createdAt: now,
@@ -424,6 +454,65 @@ export const getUserCoins = query({
       .first();
 
     return profile?.coins ?? 0;
+  },
+});
+
+// Update push notification settings
+export const updatePushNotificationSettings = mutation({
+  args: {
+    token: v.optional(v.string()),
+    enabled: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const existingProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (!existingProfile) {
+      throw new Error("Profile not found");
+    }
+
+    const updateData: any = {
+      updatedAt: new Date().toISOString(),
+    };
+
+    if (args.token !== undefined) {
+      updateData.pushNotificationToken = args.token;
+    }
+    if (args.enabled !== undefined) {
+      updateData.pushNotificationsEnabled = args.enabled;
+    }
+
+    await ctx.db.patch(existingProfile._id, updateData);
+    
+    return { success: true };
+  },
+});
+
+// Get user's push notification settings
+export const getPushNotificationSettings = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return { enabled: false, token: null };
+    }
+
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    return {
+      enabled: profile?.pushNotificationsEnabled ?? false,
+      token: profile?.pushNotificationToken ?? null,
+    };
   },
 });
 
@@ -691,43 +780,194 @@ export const useStreakFreeze = mutation({
   },
 });
 
-// Migration to update existing profiles to XP-based leveling system
-export const migrateProfilesToXP = mutation({
-  args: {},
-  handler: async (ctx) => {
-    console.log("[Migration] Starting migration to XP-based leveling system...");
-    
-    // Get all profiles
-    const allProfiles = await ctx.db.query("userProfiles").collect();
-    const profilesToMigrate = allProfiles.filter(profile => profile.totalXP === undefined);
-    
-    console.log(`[Migration] Found ${profilesToMigrate.length} profiles needing XP migration`);
-    
-    let migratedCount = 0;
-    
-    for (const profile of profilesToMigrate) {
-      // Calculate totalXP from existing totalDistance
-      const totalXP = distanceToXP(profile.totalDistance);
-      
-      // Recalculate level based on XP
-      const level = calculateLevelFromXP(totalXP);
-      
-      await ctx.db.patch(profile._id, {
-        totalXP,
-        level,
-        updatedAt: new Date().toISOString(),
-      });
-      
-      migratedCount++;
-      console.log(`[Migration] Migrated profile ${profile._id}: ${profile.totalDistance}m → ${totalXP} XP, Level ${level}`);
+
+// Complete rest day and update streak
+export const completeRestDay = mutation({
+  args: { 
+    date: v.string() // Date in YYYY-MM-DD format
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
     }
+
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (!profile) {
+      throw new Error("Profile not found");
+    }
+
+    const today = new Date().toISOString().split('T')[0];
     
-    console.log(`[Migration] Successfully migrated ${migratedCount} profiles to XP system`);
+    // Only allow completing today's rest day
+    if (args.date !== today) {
+      throw new Error("Can only complete today's rest day");
+    }
+
+    // Check if rest day has already been completed today by checking lastStreakDate
+    // If the last streak date is today and it wasn't from a workout, it was a rest day
+    if (profile.lastStreakDate === args.date) {
+      // Check if there's a workout for today - if not, it was likely a rest day completion
+      const todayWorkout = await ctx.db
+        .query("activities")
+        .withIndex("by_user_and_date", (q) => 
+          q.eq("userId", userId).gte("startDate", args.date).lt("startDate", args.date + "T23:59:59")
+        )
+        .first();
+      
+      if (!todayWorkout) {
+        // Return success with current streak info instead of throwing error
+        return {
+          success: false,
+          alreadyCompleted: true,
+          message: "Rest day already completed for today",
+          rewards: {
+            xpGained: 1000,
+            coinsGained: 1,
+            leveledUp: false,
+            oldLevel: profile.level || 1,
+            newLevel: profile.level || 1,
+          },
+          streak: {
+            currentStreak: profile.currentStreak || 0,
+            longestStreak: profile.longestStreak || 0,
+            streakIncreased: false,
+            milestoneMessage: undefined,
+            streakFreezesEarned: 0
+          }
+        };
+      }
+    }
+
+    // Rest day rewards: 1000 XP and 1 coin
+    const restXP = 1000;
+    const restCoins = 1;
     
+    const currentXP = profile.totalXP || 0;
+    const currentCoins = profile.coins || 0;
+    const currentStreak = profile.currentStreak || 0;
+    const longestStreak = profile.longestStreak || 0;
+    const lastStreakDate = profile.lastStreakDate;
+
+    // Calculate new totals
+    const newTotalXP = currentXP + restXP;
+    const newCoins = currentCoins + restCoins;
+    const newLevel = calculateLevelFromXP(newTotalXP);
+    const oldLevel = profile.level || 1;
+
+    // Update streak for rest day completion
+    let newCurrentStreak = currentStreak;
+    let streakIncreased = false;
+
+    if (!lastStreakDate || currentStreak === 0) {
+      // First ever day completed (rest day can start a streak)
+      newCurrentStreak = 1;
+      streakIncreased = true;
+    } else {
+      const lastStreakDateTime = new Date(lastStreakDate).getTime();
+      const restDateTime = new Date(args.date).getTime();
+      const daysBetween = Math.floor((restDateTime - lastStreakDateTime) / (1000 * 60 * 60 * 24));
+
+      if (daysBetween <= 3) { // Allow some flexibility
+        newCurrentStreak = currentStreak + 1;
+        streakIncreased = true;
+      } else {
+        // Gap is too large, reset streak to 1 (this rest day still counts)
+        newCurrentStreak = 1;
+        streakIncreased = false;
+      }
+    }
+
+    const newLongestStreak = Math.max(newCurrentStreak, longestStreak);
+
+    // Check for milestone rewards
+    let newStreakFreezes = profile.streakFreezeAvailable || 0;
+    let milestoneMessage: string | undefined;
+
+    const milestones = [7, 14, 30, 60, 100, 365];
+    for (const milestone of milestones) {
+      if (newCurrentStreak >= milestone && currentStreak < milestone) {
+        // Award streak freezes at certain milestones
+        if (milestone === 7) {
+          newStreakFreezes += 1;
+          milestoneMessage = "7 day streak! Earned 1 streak freeze! 🧊";
+        } else if (milestone === 30) {
+          newStreakFreezes += 2;
+          milestoneMessage = "30 day streak! Earned 2 streak freezes! 🧊🧊";
+        } else if (milestone === 100) {
+          newStreakFreezes += 3;
+          milestoneMessage = "100 day streak! Earned 3 streak freezes! 🧊🧊🧊";
+        } else {
+          milestoneMessage = `${milestone} day streak milestone! Amazing! 🏆`;
+        }
+        break;
+      }
+    }
+
+    // Rest day completion is tracked by the streak update above
+
+    // Update profile with new values
+    await ctx.db.patch(profile._id, {
+      totalXP: newTotalXP,
+      level: newLevel,
+      coins: newCoins,
+      currentStreak: newCurrentStreak,
+      longestStreak: newLongestStreak,
+      lastStreakDate: args.date,
+      streakFreezeAvailable: newStreakFreezes,
+      updatedAt: new Date().toISOString(),
+    });
+
     return {
       success: true,
-      migratedCount,
-      totalProfiles: allProfiles.length,
+      rewards: {
+        xpGained: restXP,
+        coinsGained: restCoins,
+        leveledUp: newLevel > oldLevel,
+        oldLevel,
+        newLevel,
+      },
+      streak: {
+        currentStreak: newCurrentStreak,
+        longestStreak: newLongestStreak,
+        streakIncreased,
+        milestoneMessage,
+        streakFreezesEarned: newStreakFreezes - (profile.streakFreezeAvailable || 0)
+      }
     };
+  },
+});
+
+// Get user profile by userId (for server-side operations like webhooks)
+export const getProfileByUserId = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .first();
+  },
+});
+
+// Get user profile or create if it doesn't exist
+export const getOrCreateProfileByUserId = query({
+  args: { userId: v.id("users") },
+  handler: async (ctx, args) => {
+    const userId = args.userId;
+    const existingProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (existingProfile) {
+      return existingProfile;
+    }
+
+    // Return null if no profile exists - will be created by mutation
+    return null;
   },
 }); 

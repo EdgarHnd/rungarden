@@ -45,7 +45,7 @@ export const Theme = {
         coin: '#10B981',         // Gold
         level: '#10B981',        // Green for level progress
         shadow: '#000000',       // Shadow color
-        heart: '#FF0000',        // Red for heart
+        heart: '#EF4444',        // Red for heart
       },
       secondary:{
         exp: '#3AA9DD',         // Darker blue

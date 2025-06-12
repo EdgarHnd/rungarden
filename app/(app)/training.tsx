@@ -374,7 +374,8 @@ export default function TrainingPlanScreen() {
                     description: workout.description,
                     duration: workout.duration,
                     distance: workout.distance,
-                    emoji: getWorkoutEmoji(workout.type)
+                    emoji: getWorkoutEmoji(workout.type),
+                    date: workout.date // Add the actual scheduled date
                   };
 
                   router.push({

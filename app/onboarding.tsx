@@ -32,9 +32,10 @@ interface OnboardingData {
   preferredDays: string[];
   hasTreadmill: boolean | null;
   preferTimeOverDistance: boolean | null;
+  pushNotificationsEnabled: boolean | null;
 }
 
-const TOTAL_STEPS = 8;
+const TOTAL_STEPS = 9;
 
 export default function OnboardingScreen() {
   const { signIn } = useAuthActions();
@@ -51,6 +52,7 @@ export default function OnboardingScreen() {
     preferredDays: [],
     hasTreadmill: null,
     preferTimeOverDistance: null,
+    pushNotificationsEnabled: null,
   });
 
   const updateData = (updates: Partial<OnboardingData>) => {
@@ -90,7 +92,8 @@ export default function OnboardingScreen() {
       case 4: return data.longestDistance !== null;
       case 5: return data.daysPerWeek >= 2;
       case 6: return true; // Preferences are optional
-      case 7: return true; // Auth step
+      case 7: return data.pushNotificationsEnabled !== null;
+      case 8: return true; // Auth step
       default: return false;
     }
   };
@@ -98,7 +101,7 @@ export default function OnboardingScreen() {
   const saveOnboardingDataToStorage = async () => {
     if (!data.goalDistance || !data.targetDate || !data.currentAbility ||
       !data.longestDistance || data.hasTreadmill === null ||
-      data.preferTimeOverDistance === null) {
+      data.preferTimeOverDistance === null || data.pushNotificationsEnabled === null) {
       console.error('Missing required onboarding data');
       return;
     }
@@ -113,6 +116,7 @@ export default function OnboardingScreen() {
         preferredDays: data.preferredDays,
         hasTreadmill: data.hasTreadmill,
         preferTimeOverDistance: data.preferTimeOverDistance,
+        pushNotificationsEnabled: data.pushNotificationsEnabled,
       };
 
       await AsyncStorage.setItem('pendingOnboardingData', JSON.stringify(onboardingData));
@@ -210,7 +214,8 @@ export default function OnboardingScreen() {
         case 4: return { title: '📏 Longest distance recently?', subtitle: 'What\'s the furthest you\'ve run in the past month?' };
         case 5: return { title: '📅 Training schedule', subtitle: 'How many days per week can you train?' };
         case 6: return { title: '⚙️ Training preferences', subtitle: 'These help us customize your workouts (optional)' };
-        case 7: return { title: '🎉 Almost there!', subtitle: 'Sign in to save your personalized training plan' };
+        case 7: return { title: '🔔 Stay motivated!', subtitle: 'Get notified when it\'s time to run and track progress' };
+        case 8: return { title: '🎉 Almost there!', subtitle: 'Sign in to save your personalized training plan' };
         default: return { title: 'Welcome to Koko', subtitle: 'Let\'s create your perfect training plan' };
       }
     };
@@ -612,6 +617,80 @@ export default function OnboardingScreen() {
     </View>
   );
 
+  const renderPushNotifications = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.pushNotificationsContainer}>
+        <View style={styles.motivationFeatures}>
+          <View style={styles.featureItem}>
+            <Text style={styles.featureEmoji}>🏃‍♂️</Text>
+            <View style={styles.featureContent}>
+              <Text style={styles.featureTitle}>Training Reminders</Text>
+              <Text style={styles.featureDescription}>Get notified when it's time for your next run</Text>
+            </View>
+          </View>
+
+          <View style={styles.featureItem}>
+            <Text style={styles.featureEmoji}>🎉</Text>
+            <View style={styles.featureContent}>
+              <Text style={styles.featureTitle}>Activity Celebrations</Text>
+              <Text style={styles.featureDescription}>Celebrate your progress when new runs are synced</Text>
+            </View>
+          </View>
+
+          <View style={styles.featureItem}>
+            <Text style={styles.featureEmoji}>🏆</Text>
+            <View style={styles.featureContent}>
+              <Text style={styles.featureTitle}>Achievement Alerts</Text>
+              <Text style={styles.featureDescription}>Get notified when you unlock new milestones</Text>
+            </View>
+          </View>
+        </View>
+
+        <View style={styles.pushNotificationsCard}>
+          <View style={styles.pushNotificationsHeader}>
+            <Text style={styles.pushNotificationsEmoji}>🔔</Text>
+            <View style={styles.pushNotificationsContent}>
+              <Text style={styles.pushNotificationsTitle}>Enable Notifications</Text>
+              <Text style={styles.pushNotificationsSubtitle}>Stay motivated and track your progress</Text>
+            </View>
+          </View>
+          <View style={styles.pushNotificationsOptions}>
+            {[
+              { value: true, label: 'Enable', color: Theme.colors.status.success },
+              { value: false, label: 'Skip', color: Theme.colors.status.error },
+            ].map((option) => (
+              <TouchableOpacity
+                key={option.label}
+                style={[
+                  styles.pushNotificationsButton,
+                  data.pushNotificationsEnabled === option.value && [
+                    styles.pushNotificationsButtonSelected,
+                    { backgroundColor: option.color }
+                  ]
+                ]}
+                onPress={() => {
+                  updateData({ pushNotificationsEnabled: option.value });
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Text style={[
+                  styles.pushNotificationsButtonText,
+                  data.pushNotificationsEnabled === option.value && styles.pushNotificationsButtonTextSelected
+                ]}>{option.label}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
+
+        <View style={styles.pushNotificationsDisclaimer}>
+          <Text style={styles.pushNotificationsDisclaimerText}>
+            You can always change this setting later in the app
+          </Text>
+        </View>
+      </View>
+    </View>
+  );
+
   const renderAuth = () => (
     <View style={styles.stepContainer}>
       <View style={styles.authPreview}>
@@ -686,6 +765,7 @@ export default function OnboardingScreen() {
           {renderLongestDistance()}
           {renderTrainingAvailability()}
           {renderPreferences()}
+          {renderPushNotifications()}
           {renderAuth()}
         </Animated.View>
       </ScrollView>
@@ -1303,5 +1383,72 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.accent.primary,
+  },
+  pushNotificationsContainer: {
+    gap: Theme.spacing.xl,
+  },
+  motivationFeatures: {
+    gap: Theme.spacing.lg,
+    marginBottom: Theme.spacing.xl,
+  },
+  pushNotificationsCard: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+  },
+  pushNotificationsHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  pushNotificationsEmoji: {
+    fontSize: 24,
+    marginRight: Theme.spacing.md,
+  },
+  pushNotificationsContent: {
+    flex: 1,
+  },
+  pushNotificationsTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: 4,
+  },
+  pushNotificationsSubtitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  pushNotificationsOptions: {
+    flexDirection: 'row',
+    gap: Theme.spacing.md,
+  },
+  pushNotificationsButton: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.medium,
+    paddingVertical: Theme.spacing.md,
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  pushNotificationsButtonSelected: {
+    borderColor: Theme.colors.accent.primary,
+  },
+  pushNotificationsButtonText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.tertiary,
+  },
+  pushNotificationsButtonTextSelected: {
+    color: Theme.colors.text.primary,
+  },
+  pushNotificationsDisclaimer: {
+    alignItems: 'center',
+  },
+  pushNotificationsDisclaimerText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
   },
 }); 

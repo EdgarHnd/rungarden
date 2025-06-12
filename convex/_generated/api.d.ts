@@ -20,6 +20,8 @@ import type * as leaderboard from "../leaderboard.js";
 import type * as migrations from "../migrations.js";
 import type * as planAdaptation from "../planAdaptation.js";
 import type * as plannedWorkouts from "../plannedWorkouts.js";
+import type * as pushNotifications from "../pushNotifications.js";
+import type * as stravaWebhooks from "../stravaWebhooks.js";
 import type * as trainingPlan from "../trainingPlan.js";
 import type * as trainingProfile from "../trainingProfile.js";
 import type * as userProfile from "../userProfile.js";
@@ -42,6 +44,8 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   planAdaptation: typeof planAdaptation;
   plannedWorkouts: typeof plannedWorkouts;
+  pushNotifications: typeof pushNotifications;
+  stravaWebhooks: typeof stravaWebhooks;
   trainingPlan: typeof trainingPlan;
   trainingProfile: typeof trainingProfile;
   userProfile: typeof userProfile;

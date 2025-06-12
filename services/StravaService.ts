@@ -136,7 +136,7 @@ class StravaService {
         canOpenStravaApp = false;
       }
       // TODO: Remove this
-      //canOpenStravaApp = false;
+      canOpenStravaApp = false;
 
       
       if (canOpenStravaApp) {

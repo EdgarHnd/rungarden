@@ -2,6 +2,7 @@ import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import DatabaseHealthService from '@/services/DatabaseHealthService';
 import DatabaseStravaService from '@/services/DatabaseStravaService';
+import { PushNotificationService } from '@/services/PushNotificationService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useConvex, useConvexAuth, useMutation, useQuery } from 'convex/react';
@@ -21,10 +22,13 @@ export default function SettingsScreen() {
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
   const updateMetricSystem = useMutation(api.userProfile.updateMetricSystem);
+  const pushNotificationSettings = useQuery(api.userProfile.getPushNotificationSettings);
+  const updatePushSettings = useMutation(api.userProfile.updatePushNotificationSettings);
 
   const [isLoading, setIsLoading] = useState(true);
   const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
   const [stravaService, setStravaService] = useState<DatabaseStravaService | null>(null);
+  const [pushService, setPushService] = useState<PushNotificationService | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
   const [isStravaAuthenticated, setIsStravaAuthenticated] = useState(false);
   const [isDeduplicating, setIsDeduplicating] = useState(false);
@@ -33,11 +37,16 @@ export default function SettingsScreen() {
     if (isAuthenticated && convex) {
       const healthSvc = new DatabaseHealthService(convex);
       const stravaSvc = new DatabaseStravaService(convex);
+      const pushSvc = new PushNotificationService(convex);
       setHealthService(healthSvc);
       setStravaService(stravaSvc);
+      setPushService(pushSvc);
 
       // Check Strava authentication status
       stravaSvc.isAuthenticated().then(setIsStravaAuthenticated).catch(() => setIsStravaAuthenticated(false));
+
+      // Initialize push notification channels
+      pushSvc.configureNotificationChannels();
     }
     if (profile) {
       setIsLoading(false);
@@ -133,18 +142,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleAutoSyncToggle = async (enabled: boolean) => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      await updateSyncPreferences({ autoSyncEnabled: enabled });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    } catch (error) {
-      console.error('Error updating auto sync:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Error', 'Failed to update auto sync setting');
-    }
-  };
-
   const handleManualSync = async () => {
     if (!profile?.healthKitSyncEnabled) {
       Alert.alert('HealthKit Sync Disabled', 'Please enable HealthKit sync first.');
@@ -176,7 +173,7 @@ export default function SettingsScreen() {
   };
 
   const handleStravaConnect = async () => {
-    if (!stravaService) return;
+    if (!stravaService) return false;
 
     try {
       setIsLoading(true);
@@ -185,17 +182,101 @@ export default function SettingsScreen() {
       const success = await stravaService.authenticate();
       if (success) {
         setIsStravaAuthenticated(true);
+
+        // Store the athlete ID for webhook matching
+        try {
+          await stravaService.storeStravaAthleteId(profile?.userId || '');
+        } catch (error) {
+          console.warn('Could not store Strava athlete ID:', error);
+        }
+
         await updateSyncPreferences({ stravaSyncEnabled: true });
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Success', 'Successfully connected to Strava!');
+
+        // Automatically sync existing activities after successful connection
+        try {
+          console.log('[Settings] Performing initial Strava sync for existing activities...');
+          const syncResult = await stravaService.forceSyncFromStrava(30);
+
+          if (syncResult && syncResult.created > 0) {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert(
+              'Connected & Synced!',
+              `Successfully connected to Strava and synced ${syncResult.created} activities!`
+            );
+          } else {
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            Alert.alert('Success', 'Successfully connected to Strava!');
+          }
+        } catch (syncError) {
+          console.warn('Initial sync failed but connection succeeded:', syncError);
+          Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          Alert.alert('Connected!', 'Successfully connected to Strava! You can manually sync activities in the settings.');
+        }
+
+        return true;
       } else {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
         Alert.alert('Error', 'Failed to connect to Strava. Please try again.');
+        return false;
       }
     } catch (error) {
       console.error('Error connecting to Strava:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Error', 'Failed to connect to Strava. Please try again.');
+      return false;
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleHealthKitConnect = async () => {
+    try {
+      setIsLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Request HealthKit permissions when enabling
+      if (Platform.OS === 'ios' && healthService) {
+        const hasPermissions = await healthService.initializeHealthKit();
+        if (!hasPermissions) {
+          Alert.alert(
+            'Health Permissions Required',
+            'Please enable Health permissions in your iPhone Settings:\n\n1. Open Settings\n2. Scroll down and tap on "Privacy & Security"\n3. Tap on "Health"\n4. Find "Koko" and enable all permissions',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+      }
+
+      await updateSyncPreferences({
+        healthKitSyncEnabled: true,
+        lastHealthKitSync: undefined,
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Error connecting HealthKit:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'Failed to connect to HealthKit');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const handleStravaSyncEnable = async () => {
+    try {
+      setIsLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      await updateSyncPreferences({
+        stravaSyncEnabled: true,
+        lastStravaSync: undefined,
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Error enabling Strava sync:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'Failed to enable Strava sync');
     } finally {
       setIsLoading(false);
     }
@@ -445,9 +526,120 @@ export default function SettingsScreen() {
     }
   };
 
+  const handlePushNotificationToggle = async (enabled: boolean) => {
+    if (!pushService) return;
+
+    try {
+      setIsLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      if (enabled) {
+        // Register for push notifications
+        const result = await pushService.registerForPushNotifications();
+        if (!result.success) {
+          Alert.alert(
+            'Push Notification Setup Failed',
+            result.error || 'Could not set up push notifications',
+            [{ text: 'OK' }]
+          );
+          return;
+        }
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Push Notifications Enabled', 'You\'ll now receive notifications when new activities are synced!');
+      } else {
+        // Disable push notifications
+        await pushService.disablePushNotifications();
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      }
+    } catch (error) {
+      console.error('Error updating push notifications:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'Failed to update push notification settings');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const sendTestPushNotification = async () => {
+    if (!pushService || !profile?.userId) return;
+
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // Get the latest activity to use real data
+      const latestActivities = await convex.query(api.activities.getUserActivities, { days: 7, limit: 1 });
+      const latestActivity = latestActivities?.[0];
+
+      if (!latestActivity) {
+        Alert.alert('No Activity Found', 'You need at least one activity to test notifications.');
+        return;
+      }
+
+      const success = await pushService.sendTestNotification(profile.userId, latestActivity);
+
+      if (success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Test Sent!', 'Check your notifications to see if it worked. Tap the notification to see the celebration!');
+      } else {
+        Alert.alert('Test Failed', 'Could not send test notification. Make sure push notifications are enabled.');
+      }
+    } catch (error) {
+      console.error('Error sending test notification:', error);
+      Alert.alert('Error', 'Failed to send test notification');
+    }
+  };
+
   const handleGoBack = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.back();
+  };
+
+  const createStravaWebhook = async () => {
+    if (!stravaService) return;
+
+    try {
+      setIsLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      const success = await stravaService.createWebhook();
+
+      if (success) {
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert('Webhook Created', 'Real-time activity sync has been set up successfully!');
+      } else {
+        Alert.alert('Error', 'Failed to create webhook. Please try again.');
+      }
+    } catch (error) {
+      console.error('Error creating Strava webhook:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+      Alert.alert('Error', 'Failed to create webhook');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const testWebhookEndpoint = async () => {
+    try {
+      setIsLoading(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+      // Test if our webhook endpoint is responding
+      const testUrl = 'https://fast-dragon-309.convex.site/strava/webhooks?hub.verify_token=test&hub.challenge=test123&hub.mode=subscribe';
+
+      const response = await fetch(testUrl);
+      const text = await response.text();
+
+      if (response.ok && text.includes('test123')) {
+        Alert.alert('Webhook Endpoint OK', '✅ Your webhook endpoint is responding correctly!');
+      } else {
+        Alert.alert('Webhook Issue', `❌ Endpoint responded with: ${response.status}\n\n${text}`);
+      }
+    } catch (error) {
+      console.error('Error testing webhook endpoint:', error);
+      Alert.alert('Connection Error', '❌ Could not reach webhook endpoint');
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   if (isLoading) {
@@ -524,112 +716,233 @@ export default function SettingsScreen() {
               />
             </View>
           </View>
-        </View>
 
-        {/* Data Sync Section */}
-        <View style={styles.sectionGroup}>
-          <Text style={styles.sectionTitle}>Data Source</Text>
-          <Text style={styles.sectionDescription}>
-            Choose your primary data source for running activities. Only one source can be active at a time to prevent duplicates.
-          </Text>
-
-          {/* HealthKit Sync Toggle */}
-          {Platform.OS === 'ios' && (
-            <View style={styles.section}>
-              <View style={styles.sectionContent}>
-                <View style={styles.syncOptionContent}>
-                  <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="heartbeat" size={20} color={Theme.colors.status.error} />
-                    <Text style={styles.syncOptionTitle}>Apple HealthKit</Text>
-                  </View>
-                  <Text style={styles.syncOptionDescription}>
-                    Sync running activities from the Health app
-                  </Text>
-                </View>
-                <Switch
-                  value={profile?.healthKitSyncEnabled ?? false}
-                  onValueChange={handleHealthKitToggle}
-                  trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.status.success }}
-                  thumbColor={Theme.colors.text.primary}
-                  ios_backgroundColor={Theme.colors.background.tertiary}
-                  disabled={isLoading}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* Strava Sync */}
-          {isStravaAuthenticated ? (
-            <View style={styles.section}>
-              <View style={styles.sectionContent}>
-                <View style={styles.syncOptionContent}>
-                  <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="running" size={20} color={Theme.colors.accent.primary} />
-                    <Text style={styles.syncOptionTitle}>Strava</Text>
-                    <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.status.success }]}>
-                      <Text style={styles.comingSoonText}>Connected</Text>
-                    </View>
-                  </View>
-                  <Text style={styles.syncOptionDescription}>
-                    Sync activities from your Strava account
-                  </Text>
-                </View>
-                <Switch
-                  value={profile?.stravaSyncEnabled ?? false}
-                  onValueChange={handleStravaSyncToggle}
-                  trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.status.success }}
-                  thumbColor={Theme.colors.text.primary}
-                  ios_backgroundColor={Theme.colors.background.tertiary}
-                  disabled={isLoading}
-                />
-              </View>
-            </View>
-          ) : (
-            <TouchableOpacity
-              style={[styles.section]}
-              onPress={handleStravaConnect}
-              activeOpacity={0.7}
-            >
-              <View style={styles.sectionContent}>
-                <View style={styles.syncOptionContent}>
-                  <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="running" size={20} color={Theme.colors.accent.primary} />
-                    <Text style={styles.syncOptionTitle}>Strava</Text>
-                  </View>
-                  <Text style={styles.syncOptionDescription}>
-                    Connect to sync activities from your Strava account
-                  </Text>
-                </View>
-                <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.text.primary} />
-              </View>
-            </TouchableOpacity>
-          )}
-
-          {/* Auto Sync Toggle */}
+          {/* Push Notifications Toggle */}
           {(profile?.healthKitSyncEnabled || profile?.stravaSyncEnabled) && (
             <View style={styles.section}>
               <View style={styles.sectionContent}>
                 <View style={styles.syncOptionContent}>
                   <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="sync" size={20} color={Theme.colors.accent.primary} />
-                    <Text style={styles.syncOptionTitle}>Auto Sync</Text>
+                    <FontAwesome5 name="bell" size={20} color={Theme.colors.accent.primary} />
+                    <Text style={styles.syncOptionTitle}>Push Notifications</Text>
                   </View>
                   <Text style={styles.syncOptionDescription}>
-                    Automatically sync when opening the app
+                    Get notified when new activities are synced
                   </Text>
                 </View>
                 <Switch
-                  value={profile?.autoSyncEnabled ?? false}
-                  onValueChange={handleAutoSyncToggle}
+                  value={pushNotificationSettings?.enabled ?? false}
+                  onValueChange={handlePushNotificationToggle}
                   trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.status.success }}
                   thumbColor={Theme.colors.text.primary}
                   ios_backgroundColor={Theme.colors.background.tertiary}
+                  disabled={isLoading}
                 />
               </View>
             </View>
           )}
 
-          {/* HealthKit Manual Sync Button */}
+          {/* Test Push Notification */}
+          {pushNotificationSettings?.enabled && (
+            <TouchableOpacity
+              style={styles.section}
+              onPress={sendTestPushNotification}
+              activeOpacity={0.7}
+            >
+              <View style={styles.sectionContent}>
+                <View style={styles.syncOptionContent}>
+                  <View style={styles.syncOptionHeader}>
+                    <FontAwesome5 name="paper-plane" size={20} color={Theme.colors.accent.primary} />
+                    <Text style={styles.syncOptionTitle}>Send Test Notification</Text>
+                  </View>
+                  <Text style={styles.syncOptionDescription}>
+                    Test if push notifications are working
+                  </Text>
+                </View>
+                <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
+              </View>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        {/* Data Source Section */}
+        <View style={styles.sectionGroup}>
+          <Text style={styles.sectionTitle}>Data Source</Text>
+          <Text style={styles.sectionDescription}>
+            Choose your primary data source for running activities. Only one source can be active at a time.
+          </Text>
+
+          {/* HealthKit Sync */}
+          {Platform.OS === 'ios' && (
+            <TouchableOpacity
+              style={styles.section}
+              onPress={() => {
+                if (profile?.healthKitSyncEnabled) {
+                  // Already connected - show disconnect option
+                  Alert.alert(
+                    'Disconnect HealthKit',
+                    'Are you sure you want to disconnect from HealthKit? This will disable syncing but keep your existing activities.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Disconnect',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            setIsLoading(true);
+                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                            await updateSyncPreferences({
+                              healthKitSyncEnabled: false,
+                              lastHealthKitSync: null,
+                            });
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                          } catch (error) {
+                            console.error('Error disconnecting HealthKit:', error);
+                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                            Alert.alert('Error', 'Failed to disconnect from HealthKit');
+                          } finally {
+                            setIsLoading(false);
+                          }
+                        }
+                      }
+                    ]
+                  );
+                } else {
+                  // Not connected - handle connection
+                  if (profile?.stravaSyncEnabled) {
+                    Alert.alert(
+                      'Switch to HealthKit',
+                      'Strava is currently your active data source. Connecting to HealthKit will disconnect Strava to prevent duplicate activities. Continue?',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Switch to HealthKit',
+                          onPress: async () => {
+                            await switchToHealthKit();
+                          }
+                        }
+                      ]
+                    );
+                  } else {
+                    handleHealthKitConnect();
+                  }
+                }
+              }}
+              activeOpacity={0.7}
+            >
+              <View style={styles.sectionContent}>
+                <View style={styles.syncOptionContent}>
+                  <View style={styles.syncOptionHeader}>
+                    <FontAwesome5 name="heartbeat" size={20} color={Theme.colors.status.error} />
+                    <Text style={styles.syncOptionTitle}>Apple HealthKit</Text>
+                    {profile?.healthKitSyncEnabled && (
+                      <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.status.success }]}>
+                        <Text style={styles.comingSoonText}>Connected</Text>
+                      </View>
+                    )}
+                  </View>
+                  <Text style={styles.syncOptionDescription}>
+                    {profile?.healthKitSyncEnabled
+                      ? 'Syncing activities from the Health app'
+                      : 'Connect to sync running activities from the Health app'
+                    }
+                  </Text>
+                </View>
+                <FontAwesome5
+                  name={profile?.healthKitSyncEnabled ? "unlink" : "chevron-right"}
+                  size={20}
+                  color={profile?.healthKitSyncEnabled ? Theme.colors.status.error : Theme.colors.text.primary}
+                />
+              </View>
+            </TouchableOpacity>
+          )}
+
+          {/* Strava Sync */}
+          <TouchableOpacity
+            style={styles.section}
+            onPress={() => {
+              if (isStravaAuthenticated && profile?.stravaSyncEnabled) {
+                // Already connected - show disconnect option
+                handleStravaDisconnect();
+              } else if (isStravaAuthenticated) {
+                // Authenticated but not syncing - enable sync
+                if (profile?.healthKitSyncEnabled) {
+                  Alert.alert(
+                    'Switch to Strava',
+                    'HealthKit is currently your active data source. Connecting to Strava will disconnect HealthKit to prevent duplicate activities. Continue?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Switch to Strava',
+                        onPress: async () => {
+                          await switchToStrava();
+                        }
+                      }
+                    ]
+                  );
+                } else {
+                  handleStravaSyncEnable();
+                }
+              } else {
+                // Not authenticated - handle connection
+                if (profile?.healthKitSyncEnabled) {
+                  Alert.alert(
+                    'Switch to Strava',
+                    'HealthKit is currently your active data source. Connecting to Strava will disconnect HealthKit to prevent duplicate activities. Continue?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Switch to Strava',
+                        onPress: async () => {
+                          const success = await handleStravaConnect();
+                          if (success) {
+                            await switchToStrava();
+                          }
+                        }
+                      }
+                    ]
+                  );
+                } else {
+                  handleStravaConnect();
+                }
+              }
+            }}
+            activeOpacity={0.7}
+          >
+            <View style={styles.sectionContent}>
+              <View style={styles.syncOptionContent}>
+                <View style={styles.syncOptionHeader}>
+                  <FontAwesome5 name="running" size={20} color={Theme.colors.accent.primary} />
+                  <Text style={styles.syncOptionTitle}>Strava</Text>
+                  {isStravaAuthenticated && profile?.stravaSyncEnabled && (
+                    <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.status.success }]}>
+                      <Text style={styles.comingSoonText}>Connected</Text>
+                    </View>
+                  )}
+                  {!profile?.healthKitSyncEnabled && !profile?.stravaSyncEnabled && (
+                    <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.accent.primary }]}>
+                      <Text style={styles.comingSoonText}>Recommended</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.syncOptionDescription}>
+                  {isStravaAuthenticated && profile?.stravaSyncEnabled
+                    ? 'Syncing activities from your Strava account (via webhooks)'
+                    : isStravaAuthenticated
+                      ? 'Connected but not syncing - tap to enable'
+                      : 'Connect to sync activities from your Strava account'
+                  }
+                </Text>
+              </View>
+              <FontAwesome5
+                name={isStravaAuthenticated && profile?.stravaSyncEnabled ? "unlink" : "chevron-right"}
+                size={20}
+                color={isStravaAuthenticated && profile?.stravaSyncEnabled ? Theme.colors.status.error : Theme.colors.text.primary}
+              />
+            </View>
+          </TouchableOpacity>
+
+          {/* Manual Sync Buttons - Only show for connected sources */}
           {profile?.healthKitSyncEnabled && (
             <TouchableOpacity
               style={[styles.section, isSyncing && styles.disabledSection]}
@@ -662,7 +975,6 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           )}
 
-          {/* Strava Manual Sync Button */}
           {profile?.stravaSyncEnabled && isStravaAuthenticated && (
             <TouchableOpacity
               style={[styles.section, isSyncing && styles.disabledSection]}
@@ -695,43 +1007,116 @@ export default function SettingsScreen() {
             </TouchableOpacity>
           )}
 
-
-
-          {/* Strava Disconnect Button */}
-          {isStravaAuthenticated && (
-            <TouchableOpacity
-              style={styles.section}
-              onPress={handleStravaDisconnect}
-              activeOpacity={0.7}
-            >
-              <View style={styles.sectionContent}>
-                <View style={styles.syncOptionContent}>
-                  <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="unlink" size={20} color={Theme.colors.status.error} />
-                    <Text style={[styles.syncOptionTitle, { color: Theme.colors.status.error }]}>
-                      Disconnect Strava
-                    </Text>
-                  </View>
-                  <Text style={styles.syncOptionDescription}>
-                    Remove Strava connection and disable syncing
-                  </Text>
-                </View>
-                <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.status.error} />
-              </View>
-            </TouchableOpacity>
-          )}
-
           {/* Current Data Source Info */}
           {(profile?.healthKitSyncEnabled || profile?.stravaSyncEnabled) && (
             <View style={styles.infoSection}>
               <FontAwesome5 name="info-circle" size={16} color={Theme.colors.status.success} />
               <Text style={styles.infoText}>
                 {profile?.healthKitSyncEnabled
-                  ? 'HealthKit is your active data source. Switch to Strava anytime if you prefer.'
-                  : 'Strava is your active data source. Switch to HealthKit anytime if you prefer.'
+                  ? 'HealthKit is your active data source. Activities sync automatically when added to Health app.'
+                  : 'Strava is your active data source. Activities sync automatically via webhooks when you upload to Strava.'
                 }
               </Text>
             </View>
+          )}
+
+          {/* Webhook Management for Strava */}
+          {profile?.stravaSyncEnabled && isStravaAuthenticated && (
+            <>
+              <TouchableOpacity
+                style={styles.section}
+                onPress={async () => {
+                  if (!stravaService) return;
+
+                  try {
+                    setIsLoading(true);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+                    const subscriptions = await stravaService.viewWebhookSubscription();
+
+                    if (subscriptions && subscriptions.length > 0) {
+                      const sub = subscriptions[0];
+                      Alert.alert(
+                        'Webhook Status',
+                        `✅ Active webhook found!\n\nID: ${sub.id}\nCallback URL: ${sub.callback_url}\nCreated: ${new Date(sub.created_at).toLocaleDateString()}`,
+                        [{ text: 'OK' }]
+                      );
+                    } else {
+                      Alert.alert(
+                        'No Webhook Found',
+                        'No active webhook subscription found. This means new activities won\'t sync automatically. Would you like to create one?',
+                        [
+                          { text: 'Cancel', style: 'cancel' },
+                          {
+                            text: 'Create Webhook',
+                            onPress: async () => {
+                              await createStravaWebhook();
+                            }
+                          }
+                        ]
+                      );
+                    }
+                  } catch (error) {
+                    console.error('Error checking webhook status:', error);
+                    Alert.alert('Error', 'Failed to check webhook status');
+                  } finally {
+                    setIsLoading(false);
+                  }
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.sectionContent}>
+                  <View style={styles.syncOptionContent}>
+                    <View style={styles.syncOptionHeader}>
+                      <FontAwesome5 name="broadcast-tower" size={20} color={Theme.colors.accent.primary} />
+                      <Text style={styles.syncOptionTitle}>Check Webhook Status</Text>
+                    </View>
+                    <Text style={styles.syncOptionDescription}>
+                      Verify if real-time sync is working
+                    </Text>
+                  </View>
+                  <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.section}
+                onPress={testWebhookEndpoint}
+                activeOpacity={0.7}
+              >
+                <View style={styles.sectionContent}>
+                  <View style={styles.syncOptionContent}>
+                    <View style={styles.syncOptionHeader}>
+                      <FontAwesome5 name="plus-circle" size={20} color={Theme.colors.accent.primary} />
+                      <Text style={styles.syncOptionTitle}>Test Webhook Endpoint</Text>
+                    </View>
+                    <Text style={styles.syncOptionDescription}>
+                      Test if real-time sync is working
+                    </Text>
+                  </View>
+                  <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
+                </View>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.section}
+                onPress={createStravaWebhook}
+                activeOpacity={0.7}
+              >
+                <View style={styles.sectionContent}>
+                  <View style={styles.syncOptionContent}>
+                    <View style={styles.syncOptionHeader}>
+                      <FontAwesome5 name="link" size={20} color={Theme.colors.accent.primary} />
+                      <Text style={styles.syncOptionTitle}>Create Webhook</Text>
+                    </View>
+                    <Text style={styles.syncOptionDescription}>
+                      Set up real-time activity sync (only needed once)
+                    </Text>
+                  </View>
+                  <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
+                </View>
+              </TouchableOpacity>
+            </>
           )}
 
           {/* No Data Source Info */}
@@ -740,8 +1125,8 @@ export default function SettingsScreen() {
               <FontAwesome5 name="info-circle" size={16} color={Theme.colors.text.tertiary} />
               <Text style={styles.infoText}>
                 {Platform.OS === 'ios'
-                  ? 'Choose HealthKit or Strava as your primary data source to automatically track your runs.'
-                  : 'Connect to Strava to automatically track your runs.'
+                  ? 'Choose HealthKit or Strava as your primary data source to automatically track your runs. Strava is recommended for the best experience.'
+                  : 'Connect to Strava to automatically track your runs and get the best experience.'
                 }
               </Text>
             </View>
@@ -865,11 +1250,8 @@ export default function SettingsScreen() {
             </View>
           </TouchableOpacity>
         </View>
-
-        {/* Bottom spacing for tab bar */}
-        <View style={styles.bottomSpacing} />
-      </ScrollView>
-    </LinearGradient>
+      </ScrollView >
+    </LinearGradient >
   );
 }
 
@@ -1011,9 +1393,6 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.status.error,
     flex: 1,
-  },
-  bottomSpacing: {
-    height: 100,
   },
   closeButton: {
     padding: Theme.spacing.sm,

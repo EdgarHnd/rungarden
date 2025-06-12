@@ -25,7 +25,6 @@ class StreakService {
   ): StreakInfo {
     // Filter out rest days - only training days count toward streak
     const trainingWorkouts = plannedWorkouts.filter(workout => 
-      workout.type !== 'rest' && 
       workout.type !== 'cross-train' // Also exclude cross-training from streak
     );
 
@@ -91,11 +90,13 @@ class StreakService {
         currentStreak++;
         lastStreakDate = workoutDate;
       } else if (workout.status === 'missed' || workout.status === 'skipped') {
-        // Streak is broken by missed or skipped training days
+        // Only break streak if this was a planned/scheduled training day that was missed
+        // This ensures only missing planned workouts breaks the streak
         break;
       }
       // 'scheduled' workouts in the past should break the streak too
       else if (workout.status === 'scheduled' && workoutDate < today) {
+        // This was a planned workout that wasn't completed - breaks streak
         break;
       }
     }
@@ -209,8 +210,8 @@ class StreakService {
     let newCurrentStreak = currentStreak;
     let streakIncreased = false;
 
-    if (!lastStreakDate) {
-      // First ever training day completed
+    if (!lastStreakDate || currentStreak === 0) {
+      // First ever training day completed - always counts as streak = 1
       newCurrentStreak = 1;
       streakIncreased = true;
     } else {
@@ -222,7 +223,7 @@ class StreakService {
         newCurrentStreak = currentStreak + 1;
         streakIncreased = true;
       } else {
-        // Gap is too large, reset streak
+        // Gap is too large, reset streak to 1 (this workout still counts)
         newCurrentStreak = 1;
         streakIncreased = false;
       }
@@ -263,12 +264,12 @@ class StreakService {
     const { currentStreak, streakStatus } = streakInfo;
 
     if (currentStreak === 0) {
-      return "Start your training streak today! 🔥";
+      return "Complete your first workout to start your streak! 🔥";
     }
 
     if (streakStatus === 'active') {
       if (currentStreak === 1) {
-        return "Great start! Keep it going! 💪";
+        return "Streak started! Your first training day is complete! 🎉";
       } else if (currentStreak < 7) {
         return `${currentStreak} day streak! You're building momentum! 🚀`;
       } else if (currentStreak < 14) {
@@ -281,7 +282,7 @@ class StreakService {
     }
 
     if (streakStatus === 'at_risk') {
-      return `${currentStreak} day streak at risk! Complete today's workout! ⚡`;
+      return `${currentStreak} day streak at risk! Complete today's planned workout! ⚡`;
     }
 
     return "Time to rebuild your streak! You've got this! 💪";

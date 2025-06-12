@@ -150,53 +150,7 @@ class DatabaseStravaService {
     return this.syncActivitiesFromStrava(days);
   }
 
-  /**
-   * Check if Strava sync is enabled for the user
-   */
-  async isSyncEnabled(): Promise<boolean> {
-    try {
-      const profile = await this.convexClient.query(api.userProfile.getOrCreateProfile);
-      return profile?.stravaSyncEnabled ?? false;
-    } catch (error) {
-      console.error('Error checking Strava sync status:', error);
-      return false;
-    }
-  }
 
-  /**
-   * Enable or disable Strava sync
-   */
-  async setSyncEnabled(enabled: boolean): Promise<void> {
-    try {
-      await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
-        stravaSyncEnabled: enabled,
-        lastStravaSync: enabled ? undefined : null,
-      });
-      console.log(`[DatabaseStravaService] Strava sync ${enabled ? 'enabled' : 'disabled'}`);
-    } catch (error) {
-      console.error('Error updating Strava sync preference:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Sync activities only if Strava sync is enabled
-   */
-  async syncActivitiesIfEnabled(days: number = 30): Promise<SyncResult | null> {
-    const isEnabled = await this.isSyncEnabled();
-    if (!isEnabled) {
-      console.log('[DatabaseStravaService] Strava sync is disabled, skipping sync');
-      return null;
-    }
-    
-    const isAuth = await this.isAuthenticated();
-    if (!isAuth) {
-      console.log('[DatabaseStravaService] Not authenticated with Strava, skipping sync');
-      return null;
-    }
-    
-    return this.syncActivitiesFromStrava(days);
-  }
 
   /**
    * Get Strava activities from database (filtered by source)
@@ -231,6 +185,237 @@ class DatabaseStravaService {
     } catch (error) {
       console.error('Error fetching Strava athlete stats:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Create a Strava webhook subscription
+   * This should only be called once per application
+   */
+  async createWebhookSubscription(callbackUrl: string, verifyToken: string): Promise<{ id: number } | null> {
+    try {
+      // Get Strava credentials from environment (same as StravaService)
+      const clientId = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID;
+      const clientSecret = process.env.EXPO_PUBLIC_STRAVA_CLIENT_SECRET;
+      
+      if (!clientId || !clientSecret) {
+        throw new Error('Strava client credentials not configured. Please set EXPO_PUBLIC_STRAVA_CLIENT_ID and EXPO_PUBLIC_STRAVA_CLIENT_SECRET');
+      }
+
+      console.log('[DatabaseStravaService] Creating webhook with:', {
+        clientId: `${clientId.substring(0, 4)}...${clientId.substring(clientId.length - 4)}`,
+        clientSecret: `${clientSecret.substring(0, 4)}...***`,
+        callbackUrl,
+        verifyToken
+      });
+
+      const response = await fetch('https://www.strava.com/api/v3/push_subscriptions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/x-www-form-urlencoded',
+        },
+        body: new URLSearchParams({
+          client_id: clientId,
+          client_secret: clientSecret,
+          callback_url: callbackUrl,
+          verify_token: verifyToken,
+        }),
+      });
+
+      const responseText = await response.text();
+      console.log('[DatabaseStravaService] Strava API response:', {
+        status: response.status,
+        statusText: response.statusText,
+        body: responseText
+      });
+
+      if (!response.ok) {
+        console.error('[DatabaseStravaService] Failed to create webhook subscription:', responseText);
+        return null;
+      }
+
+      const result = JSON.parse(responseText);
+      console.log('[DatabaseStravaService] Webhook subscription created:', result);
+      return result;
+    } catch (error) {
+      console.error('[DatabaseStravaService] Error creating webhook subscription:', error);
+      return null;
+    }
+  }
+
+  /**
+   * View existing webhook subscription
+   */
+  async viewWebhookSubscription(): Promise<any> {
+    try {
+      const clientId = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID;
+      const clientSecret = process.env.EXPO_PUBLIC_STRAVA_CLIENT_SECRET;
+      
+      if (!clientId || !clientSecret) {
+        throw new Error('Strava client credentials not configured. Please set EXPO_PUBLIC_STRAVA_CLIENT_ID and EXPO_PUBLIC_STRAVA_CLIENT_SECRET');
+      }
+
+      const url = new URL('https://www.strava.com/api/v3/push_subscriptions');
+      url.searchParams.append('client_id', clientId);
+      url.searchParams.append('client_secret', clientSecret);
+
+      const response = await fetch(url.toString());
+
+      if (!response.ok) {
+        const errorText = await response.text();
+        console.error('[DatabaseStravaService] Failed to view webhook subscription:', errorText);
+        return null;
+      }
+
+      const result = await response.json();
+      console.log('[DatabaseStravaService] Current webhook subscriptions:', result);
+      return result;
+    } catch (error) {
+      console.error('[DatabaseStravaService] Error viewing webhook subscription:', error);
+      return null;
+    }
+  }
+
+  /**
+   * Delete webhook subscription
+   */
+  async deleteWebhookSubscription(subscriptionId: number): Promise<boolean> {
+    try {
+      const clientId = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID;
+      const clientSecret = process.env.EXPO_PUBLIC_STRAVA_CLIENT_SECRET;
+      
+      if (!clientId || !clientSecret) {
+        throw new Error('Strava client credentials not configured. Please set EXPO_PUBLIC_STRAVA_CLIENT_ID and EXPO_PUBLIC_STRAVA_CLIENT_SECRET');
+      }
+
+      const url = new URL(`https://www.strava.com/api/v3/push_subscriptions/${subscriptionId}`);
+      url.searchParams.append('client_id', clientId);
+      url.searchParams.append('client_secret', clientSecret);
+
+      const response = await fetch(url.toString(), {
+        method: 'DELETE',
+      });
+
+      if (response.status === 204) {
+        console.log('[DatabaseStravaService] Webhook subscription deleted successfully');
+        return true;
+      } else {
+        const errorText = await response.text();
+        console.error('[DatabaseStravaService] Failed to delete webhook subscription:', errorText);
+        return false;
+      }
+    } catch (error) {
+      console.error('[DatabaseStravaService] Error deleting webhook subscription:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Store Strava athlete ID and tokens in user profile for webhook matching and server-side operations
+   */
+  async storeStravaAthleteId(userId: string): Promise<void> {
+    try {
+      const athlete = await StravaService.getAthlete();
+      
+      if (athlete && athlete.id) {
+        // Get current tokens from secure storage
+        const tokens = await this.getStoredTokens();
+        
+        await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
+          stravaAthleteId: athlete.id,
+          stravaAccessToken: tokens.accessToken,
+          stravaRefreshToken: tokens.refreshToken,
+          stravaTokenExpiresAt: tokens.expiresAt,
+        });
+        
+        console.log(`[DatabaseStravaService] Stored Strava athlete ID ${athlete.id} and tokens for user ${userId}`);
+      }
+    } catch (error) {
+      console.error('[DatabaseStravaService] Error storing Strava athlete ID and tokens:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Get stored Strava tokens from secure storage
+   */
+  private async getStoredTokens(): Promise<{
+    accessToken?: string;
+    refreshToken?: string;
+    expiresAt?: number;
+  }> {
+    try {
+      // Import SecureStore dynamically since it's React Native specific
+      const SecureStore = await import('expo-secure-store');
+      
+      const [accessToken, refreshToken, expiresAt] = await Promise.all([
+        SecureStore.getItemAsync('strava_access_token'),
+        SecureStore.getItemAsync('strava_refresh_token'),
+        SecureStore.getItemAsync('strava_expires_at'),
+      ]);
+
+      return {
+        accessToken: accessToken || undefined,
+        refreshToken: refreshToken || undefined,
+        expiresAt: expiresAt ? parseInt(expiresAt) : undefined,
+      };
+    } catch (error) {
+      console.error('[DatabaseStravaService] Error getting stored tokens:', error);
+      return {};
+    }
+  }
+
+  /**
+   * Create webhook with current Convex deployment URL
+   */
+  async createWebhook(): Promise<boolean> {
+    try {
+      // Use the current Convex site URL
+      const callbackUrl = 'https://fast-dragon-309.convex.site/strava/webhooks';
+      const verifyToken = 'koko-webhook-token';
+      
+      // First check if there are existing subscriptions
+      console.log('[DatabaseStravaService] Checking for existing webhook subscriptions...');
+      const existingSubscriptions = await this.viewWebhookSubscription();
+      
+      if (existingSubscriptions && existingSubscriptions.length > 0) {
+        console.log(`[DatabaseStravaService] Found ${existingSubscriptions.length} existing subscriptions`);
+        
+        // Check if any of them have the same callback URL
+        const matchingSubscription = existingSubscriptions.find((sub: any) => sub.callback_url === callbackUrl);
+        
+        if (matchingSubscription) {
+          console.log(`[DatabaseStravaService] Found existing subscription with matching URL: ${matchingSubscription.id}`);
+          return true; // Already have the correct webhook
+        }
+        
+        // Only delete if we have a different callback URL
+        console.log('[DatabaseStravaService] Deleting subscriptions with different callback URLs...');
+        for (const sub of existingSubscriptions) {
+          const deleted = await this.deleteWebhookSubscription(sub.id);
+          if (deleted) {
+            console.log(`[DatabaseStravaService] Deleted subscription ${sub.id}`);
+          } else {
+            console.warn(`[DatabaseStravaService] Failed to delete subscription ${sub.id}`);
+            throw new Error(`Failed to delete existing subscription ${sub.id}`);
+          }
+        }
+      }
+      
+      // Now create the new subscription
+      console.log('[DatabaseStravaService] Creating new webhook subscription...');
+      const result = await this.createWebhookSubscription(callbackUrl, verifyToken);
+      
+      if (result && result.id) {
+        console.log(`[DatabaseStravaService] Successfully created webhook with ID: ${result.id}`);
+        return true;
+      } else {
+        console.error('[DatabaseStravaService] Failed to create webhook - no ID returned');
+        return false;
+      }
+    } catch (error) {
+      console.error('[DatabaseStravaService] Error creating webhook:', error);
+      return false;
     }
   }
 }

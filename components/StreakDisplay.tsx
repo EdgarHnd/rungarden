@@ -25,6 +25,19 @@ interface DayStatus {
 }
 
 export default function StreakDisplay({ streakInfo, onPress }: StreakDisplayProps) {
+  // Debug logging
+  React.useEffect(() => {
+    if (streakInfo) {
+      console.log('StreakDisplay received streakInfo:', JSON.stringify({
+        currentStreak: streakInfo.currentStreak,
+        longestStreak: streakInfo.longestStreak,
+        lastStreakDate: streakInfo.lastStreakDate,
+        plannedWorkoutsLength: streakInfo.plannedWorkouts?.length || 0,
+        plannedWorkouts: streakInfo.plannedWorkouts?.slice(0, 3) || [] // First 3 for debugging
+      }, null, 2));
+    }
+  }, [streakInfo]);
+
   // Generate the last 7 days for display
   const generateWeekDays = (): DayStatus[] => {
     const days: DayStatus[] = [];
@@ -151,12 +164,29 @@ export default function StreakDisplay({ streakInfo, onPress }: StreakDisplayProp
 
       <View style={styles.weekContainer}>
         <View style={styles.daysContainer}>
-          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, index) => (
-            <View key={dayName} style={styles.dayColumn}>
-              {getFlameIcon(weekDays[index])}
-              <Text style={styles.dayLabel}>{dayName}</Text>
-            </View>
-          ))}
+          {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, index) => {
+            const dayData = weekDays[index];
+            if (!dayData) {
+              // Fallback for missing day data
+              const fallbackDay: DayStatus = {
+                date: '',
+                type: 'rest',
+                isTrainingDay: false
+              };
+              return (
+                <View key={dayName} style={styles.dayColumn}>
+                  {getFlameIcon(fallbackDay)}
+                  <Text style={styles.dayLabel}>{dayName}</Text>
+                </View>
+              );
+            }
+            return (
+              <View key={dayName} style={styles.dayColumn}>
+                {getFlameIcon(dayData)}
+                <Text style={styles.dayLabel}>{dayName}</Text>
+              </View>
+            );
+          })}
         </View>
       </View>
 

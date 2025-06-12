@@ -1,9 +1,12 @@
+import RestCelebrationModal from '@/components/RestCelebrationModal';
 import SuggestedActivityCard from '@/components/SuggestedActivityCard';
 import WorkoutCard from '@/components/WorkoutCard';
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
 import { RunningActivity } from '@/services/HealthService';
+import { useMutation } from 'convex/react';
 import { router } from 'expo-router';
-import React from 'react';
+import React, { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 interface DayCardProps {
@@ -12,6 +15,11 @@ interface DayCardProps {
   plannedWorkout: any; // Direct planned workout from training plan
   formatDistance: (meters: number) => string;
   formatPace: (duration: number, distance: number) => string;
+  streakInfo?: {
+    currentStreak: number;
+    longestStreak: number;
+  };
+  isRestDayCompleted?: boolean;
 }
 
 export default function DayCard({
@@ -19,8 +27,13 @@ export default function DayCard({
   activities,
   plannedWorkout,
   formatDistance,
-  formatPace
+  formatPace,
+  streakInfo,
+  isRestDayCompleted,
 }: DayCardProps) {
+  const [showRestCelebrationModal, setShowRestCelebrationModal] = useState(false);
+  const completeRestDay = useMutation(api.userProfile.completeRestDay);
+
   const handleActivityPress = (activity: RunningActivity) => {
     router.push({
       pathname: '/activity-detail',
@@ -50,15 +63,29 @@ export default function DayCard({
     return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
   };
 
-  const handleTrainingPress = (plannedWorkout: any) => {
-    // Transform planned workout data for training-detail screen
+  const handleTrainingPress = async (plannedWorkout: any) => {
+    // If it's a rest day, show the modal. Non-today rest days are disabled.
+    if (plannedWorkout.type === 'rest') {
+      try {
+        const result = await completeRestDay({ date: plannedWorkout.scheduledDate });
+        if (result.success || result.alreadyCompleted) {
+          setShowRestCelebrationModal(true);
+        }
+      } catch (e) {
+        console.error("Failed to complete rest day", e);
+      }
+      return;
+    }
+
+    // For non-rest days, continue with normal navigation to training-detail
     const trainingActivity = {
       type: plannedWorkout.type,
       title: getWorkoutDisplayName(plannedWorkout.type),
       description: plannedWorkout.description,
       duration: plannedWorkout.duration || '30 min',
       distance: plannedWorkout.distance ? plannedWorkout.distance / 1000 : undefined, // Convert meters to km
-      emoji: getWorkoutEmoji(plannedWorkout.type)
+      emoji: getWorkoutEmoji(plannedWorkout.type),
+      date: plannedWorkout.scheduledDate // Add the actual scheduled date
     };
 
     router.push({
@@ -68,6 +95,9 @@ export default function DayCard({
       }
     });
   };
+
+  // Check if this day is today
+  const isToday = date === new Date().toISOString().split('T')[0];
 
   return (
     <View style={styles.dayCard}>
@@ -88,9 +118,18 @@ export default function DayCard({
       {plannedWorkout && (
         <SuggestedActivityCard
           plannedWorkout={plannedWorkout}
-          onPress={() => handleTrainingPress(plannedWorkout)}
+          onPress={(plannedWorkout.type === 'rest' && (!isToday || isRestDayCompleted)) ? undefined : () => handleTrainingPress(plannedWorkout)}
+          isToday={isToday}
+          isRestDayCompleted={isRestDayCompleted}
         />
       )}
+
+      {/* Rest Celebration Modal */}
+      <RestCelebrationModal
+        visible={showRestCelebrationModal}
+        onClose={() => setShowRestCelebrationModal(false)}
+        streakInfo={streakInfo}
+      />
 
       {/* Empty state for past days with no activities */}
       {/* {activities.length === 0 && new Date(date) < new Date(new Date().toISOString().split('T')[0]) && (

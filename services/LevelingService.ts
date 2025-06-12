@@ -90,15 +90,10 @@ class LevelingService {
 
   // Get level title based on level
   static getLevelTitle(level: number): string {
-    if (level >= 50) return "Koala Legend";
-    if (level >= 40) return "Ultra Koala";
-    if (level >= 30) return "Marathon Koala";
-    if (level >= 25) return "Elite Koala";
-    if (level >= 20) return "Racing Koala";
-    if (level >= 15) return "Swift Koala";
-    if (level >= 10) return "Running Koala";
-    if (level >= 5) return "Jogging Koala";
-    return "Baby Koala";
+    const { LEVELS } = require('@/constants/Levels');
+    // Ensure level is within bounds (1-100)
+    const levelIndex = Math.max(1, Math.min(level, 100)) - 1;
+    return LEVELS[levelIndex] || "Walker";
   }
 
   // Get level emoji
@@ -126,20 +121,14 @@ class LevelingService {
   }
 
   // Helper to format XP for display
-  static formatXP(xp: number): string {
-    if (xp >= 1000000) {
-      return `${(xp / 1000000).toFixed(1)}M XP`;
-    } else if (xp >= 1000) {
-      return `${(xp / 1000).toFixed(1)}k XP`;
-    } else {
-      return `${xp} XP`;
-    }
+  static formatXP(xp: number, showXp: boolean = true): string {
+    return `${xp} ${showXp ? 'XP' : ''}`;
   }
 
   // Get level requirements for display
   static getLevelRequirements(): Array<{ level: number; xp: number; title: string; emoji: string }> {
     const levels = [];
-    for (let i = 1; i <= 50; i++) {
+    for (let i = 1; i <= 100; i++) {
       levels.push({
         level: i,
         xp: this.getXPForLevel(i),

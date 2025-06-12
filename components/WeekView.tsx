@@ -1,8 +1,9 @@
+import XPInfoModal from '@/components/XPInfoModal';
 import Theme from '@/constants/theme';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface Activity {
@@ -30,6 +31,7 @@ interface DayData {
   activities: DatabaseActivity[];
   plannedWorkout: any; // Direct planned workout data from the training plan
   weekIndex: number;
+  isRestDayCompleted?: boolean;
 }
 
 interface WeekData {
@@ -72,6 +74,7 @@ export default function WeekView({
 }: WeekViewProps) {
   const scrollViewRef = useRef<ScrollView>(null);
   const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
+  const [showXPInfoModal, setShowXPInfoModal] = useState(false);
 
   // Calculate the actual width of each page in the ScrollView
   // This accounts for the horizontal padding of the parent container.
@@ -192,25 +195,24 @@ export default function WeekView({
     <View style={styles.container}>
       {/* Level Progress Section */}
       {levelInfo && (
-        <View style={styles.progressContainer}>
+        <TouchableOpacity
+          style={styles.progressContainer}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setShowXPInfoModal(true);
+          }}
+          activeOpacity={0.8}
+        >
           <View style={styles.progressHeader}>
-            <Text style={styles.progressLabel}>Level {levelInfo.level}</Text>
+            <Text style={styles.progressLabel}>Lvl {levelInfo.level} - {LevelingService.getLevelTitle(levelInfo.level)}</Text>
             <Text style={styles.progressText}>
-              {LevelingService.formatXP(levelInfo.totalXP)} / {LevelingService.formatXP(levelInfo.xpForNextLevel)}
+              {LevelingService.formatXP(levelInfo.remainingXPForNextLevel, true)} to Lvl {levelInfo.level + 1}
             </Text>
           </View>
           <View style={styles.progressBar}>
             <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
           </View>
-          {/* <View style={styles.levelDetails}>
-            <Text style={styles.levelDetailText}>
-              {formatDistance(levelInfo.totalDistance)} total distance
-            </Text>
-            <Text style={styles.levelDetailText}>
-              {formatDistance(levelInfo.distanceForNextLevel)} for Level {levelInfo.level + 1}
-            </Text>
-          </View> */}
-        </View>
+        </TouchableOpacity>
       )}
 
       {/* Swipable Week Calendar */}
@@ -231,6 +233,7 @@ export default function WeekView({
               const hasRun = hasRunActivity(day.activities);
               const isTodayDay = isToday(day.date);
               const hasPlannedWorkout = day.plannedWorkout && day.plannedWorkout.type !== 'rest';
+              const isRestDayCompleted = day.plannedWorkout?.type === 'rest' && day.isRestDayCompleted;
 
               return (
                 <TouchableOpacity
@@ -270,12 +273,17 @@ export default function WeekView({
                         styles.checkmark,
                         isSelected && styles.selectedCheckmark
                       ]}>
-                        <Text style={[
-                          styles.checkmarkText,
-                          isSelected && styles.selectedCheckmarkText
-                        ]}>
-                          ✓
-                        </Text>
+                        <Ionicons name="flash" size={10} color={isSelected ? Theme.colors.special.primary.coin : Theme.colors.text.primary} />
+                      </View>
+                    )}
+
+                    {isRestDayCompleted && (
+                      <View style={[
+                        styles.checkmark,
+                        styles.restDayIconContainer,
+                        isSelected && styles.selectedCheckmark
+                      ]}>
+                        <Ionicons name="bed" size={10} color={isSelected ? Theme.colors.special.primary.coin : Theme.colors.text.primary} />
                       </View>
                     )}
 
@@ -302,6 +310,13 @@ export default function WeekView({
           </View>
         ))}
       </ScrollView>
+
+      {/* XP Info Modal */}
+      <XPInfoModal
+        visible={showXPInfoModal}
+        onClose={() => setShowXPInfoModal(false)}
+        levelInfo={levelInfo}
+      />
     </View>
   );
 }
@@ -326,12 +341,12 @@ const styles = StyleSheet.create({
   },
   progressLabel: {
     fontSize: 16,
-    color: Theme.colors.text.tertiary,
-    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
   },
   progressText: {
-    fontSize: 16,
-    color: Theme.colors.text.primary,
+    fontSize: 14,
+    color: Theme.colors.text.muted,
     fontFamily: Theme.fonts.bold,
   },
   progressBar: {
@@ -343,18 +358,8 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
     borderRadius: Theme.borderRadius.small,
-  },
-  levelDetails: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  levelDetailText: {
-    fontSize: 12,
-    color: Theme.colors.text.muted,
-    fontFamily: Theme.fonts.medium,
   },
   weekTitle: {
     fontSize: 14,
@@ -437,6 +442,9 @@ const styles = StyleSheet.create({
   },
   selectedCheckmarkText: {
     color: Theme.colors.status.success,
+  },
+  restDayIconContainer: {
+    backgroundColor: Theme.colors.special.primary.coin,
   },
   plannedWorkoutIndicator: {
     position: 'absolute',

@@ -20,6 +20,8 @@ interface SuggestedActivityCardProps {
   weeklyProgress?: number;
   weeklyGoal?: string;
   onPress?: () => void;
+  isToday?: boolean;
+  isRestDayCompleted?: boolean;
 }
 
 // Helper function to get workout emoji based on type
@@ -112,7 +114,9 @@ export default function SuggestedActivityCard({
   plannedWorkout,
   weeklyProgress = 5.2,
   weeklyGoal = "20",
-  onPress
+  onPress,
+  isToday = false,
+  isRestDayCompleted = false,
 }: SuggestedActivityCardProps) {
   const getIntensityColor = (intensity: string) => {
     switch (intensity) {
@@ -130,6 +134,8 @@ export default function SuggestedActivityCard({
     }
   };
 
+  const isRestDay = plannedWorkout.type === 'rest';
+  const isCompleted = isRestDay && isRestDayCompleted;
   const workoutTitle = getWorkoutTitle(plannedWorkout);
   const workoutSubtitle = getWorkoutSubtitle(plannedWorkout);
   const workoutEmoji = getWorkoutEmoji(plannedWorkout.type, plannedWorkout.isDefault);
@@ -139,7 +145,9 @@ export default function SuggestedActivityCard({
     <TouchableOpacity
       style={[
         styles.card,
-        plannedWorkout.isDefault && styles.defaultCard
+        plannedWorkout.isDefault && styles.defaultCard,
+        isToday && styles.todayCard,
+        isCompleted && [{ borderColor: Theme.colors.status.success }]
       ]}
       onPress={handlePress}
       activeOpacity={onPress ? 0.7 : 1}
@@ -158,18 +166,43 @@ export default function SuggestedActivityCard({
 
       <Text style={styles.description}>{plannedWorkout.description}</Text>
 
-      <View style={styles.detailsRow}>
-        <View style={styles.detail}>
-          <Text style={styles.detailLabel}>Duration</Text>
-          <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
+      {isToday ? (
+        <View style={styles.startButtonContainer}>
+          <TouchableOpacity
+            style={[
+              styles.startButton,
+              { backgroundColor: isRestDay ? Theme.colors.special.primary.coin : Theme.colors.accent.primary },
+              isCompleted && styles.completedButton
+            ]}
+            onPress={handlePress}
+            activeOpacity={0.8}
+            disabled={!onPress || isCompleted}
+          >
+            <Text style={[styles.startButtonText, isCompleted && styles.completedButtonText]}>
+              {isRestDay
+                ? isCompleted
+                  ? 'COMPLETED'
+                  : '🧘‍♂️ START REST DAY'
+                : '🏃‍♂️ START WORKOUT'}
+            </Text>
+          </TouchableOpacity>
         </View>
-        <View style={styles.detail}>
-          <Text style={styles.detailLabel}>Activity Type</Text>
-          <Text style={styles.detailValue}>
-            {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
-          </Text>
-        </View>
-      </View>
+      ) : (
+        plannedWorkout.type !== 'rest' && (
+          <View style={styles.detailsRow}>
+            <View style={styles.detail}>
+              <Text style={styles.detailLabel}>Duration</Text>
+              <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
+            </View>
+            <View style={styles.detail}>
+              <Text style={styles.detailLabel}>Activity Type</Text>
+              <Text style={styles.detailValue}>
+                {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+              </Text>
+            </View>
+          </View>
+        )
+      )}
     </TouchableOpacity>
   );
 }
@@ -242,6 +275,36 @@ const styles = StyleSheet.create({
   },
   defaultCard: {
     backgroundColor: Theme.colors.background.secondary,
+  },
+  todayCard: {
+    borderWidth: 2,
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.background.secondary,
+  },
+  startButtonContainer: {
+    marginTop: Theme.spacing.lg,
+  },
+  startButton: {
+    paddingVertical: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.xxl,
+    borderRadius: Theme.borderRadius.large,
+    width: '100%',
+    alignItems: 'center',
+    borderBottomWidth: 4,
+    borderBottomColor: 'rgba(0,0,0,0.2)',
+  },
+  startButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.background.secondary,
+    textTransform: 'uppercase',
+  },
+  completedButton: {
+    backgroundColor: '#047857',
+    borderBottomColor: 'rgba(0,0,0,0.1)',
+  },
+  completedButtonText: {
+    color: Theme.colors.background.secondary,
   },
   targetContainer: {
     flexDirection: 'row',
