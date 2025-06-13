@@ -713,25 +713,6 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Account Section */}
-        <View style={styles.sectionGroup}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <TouchableOpacity
-            style={styles.section}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              // Navigate to profile editing or account details
-              Alert.alert('Coming Soon', 'Profile editing features are coming soon!');
-            }}
-            activeOpacity={0.7}
-          >
-            <View style={styles.sectionContent}>
-              <Text style={styles.optionText}>Edit Profile</Text>
-              <FontAwesome5 name="user-edit" size={20} color={Theme.colors.text.primary} />
-            </View>
-          </TouchableOpacity>
-        </View>
-
         {/* Preferences Section */}
         <View style={styles.sectionGroup}>
           <Text style={styles.sectionTitle}>Preferences</Text>
@@ -1251,7 +1232,7 @@ export default function SettingsScreen() {
             style={styles.section}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Linking.openURL('https://www.apple.com/legal/internet-services/itunes/dev/stdeula/');
+              Linking.openURL('https://www.trykoko.app/terms');
             }}
             activeOpacity={0.7}
           >
@@ -1265,7 +1246,7 @@ export default function SettingsScreen() {
             style={styles.section}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Alert.alert('Coming Soon', 'Privacy policy will be available soon!');
+              Linking.openURL('https://www.trykoko.app/privacy');
             }}
             activeOpacity={0.7}
           >
@@ -1279,7 +1260,7 @@ export default function SettingsScreen() {
             style={styles.section}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Linking.openURL('mailto:support@koko.app');
+              Linking.openURL('mailto:support@trykoko.app');
             }}
             activeOpacity={0.7}
           >
