@@ -358,7 +358,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.special.primary.exp,
+    backgroundColor: Theme.colors.accent.primary,
     borderRadius: Theme.borderRadius.small,
   },
   weekTitle: {

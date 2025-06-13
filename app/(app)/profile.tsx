@@ -1,4 +1,5 @@
 import StreakDisplay from '@/components/StreakDisplay';
+import XPInfoModal from '@/components/XPInfoModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import ChallengeService from '@/services/ChallengeService';
@@ -26,6 +27,8 @@ export default function ProfileScreen() {
   // State for goal editing
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [newGoal, setNewGoal] = useState('');
+  const [showStreakModal, setShowStreakModal] = useState(false);
+  const [showLevelModal, setShowLevelModal] = useState(false);
 
   const isLoading = profile === undefined || profileStats === undefined;
 
@@ -205,13 +208,20 @@ export default function ProfileScreen() {
                 </View>
               </View>
 
-              <View style={styles.duolingoStatCard}>
+              <TouchableOpacity
+                style={styles.duolingoStatCard}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowStreakModal(true);
+                }}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.duolingoStatIcon}>🔥</Text>
                 <View style={styles.duolingoStatText}>
                   <Text style={styles.duolingoStatNumber}>{calculateStreak()}</Text>
                   <Text style={styles.duolingoStatLabel}>Streak</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             </View>
 
             <View style={styles.duolingoStatsRow}>
@@ -226,8 +236,8 @@ export default function ProfileScreen() {
               <View style={styles.duolingoStatCard}>
                 <Text style={styles.duolingoStatIcon}>🍦</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{Math.round(profileStats.totalCalories / 300)}</Text>
-                  <Text style={styles.duolingoStatLabel}>Ice Creams</Text>
+                  <Text style={styles.duolingoStatNumber}>{profileStats.totalCalories}</Text>
+                  <Text style={styles.duolingoStatLabel}>Calories</Text>
                 </View>
               </View>
             </View>
@@ -239,7 +249,14 @@ export default function ProfileScreen() {
           <View style={styles.levelSection}>
             <Text style={styles.sectionTitle}>Level Progress</Text>
             {/* Current Level Display */}
-            <View style={styles.currentLevelCard}>
+            <TouchableOpacity
+              style={styles.currentLevelCard}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowLevelModal(true);
+              }}
+              activeOpacity={0.7}
+            >
               <View style={styles.levelHeader}>
                 <Text style={styles.currentLevelEmoji}>{LevelingService.getLevelEmoji(levelInfo.level)}</Text>
                 <View style={styles.levelTextInfo}>
@@ -259,63 +276,40 @@ export default function ProfileScreen() {
                   />
                 </View>
                 <Text style={styles.progressText}>
-                  {Math.round(levelInfo.progressToNextLevel * 100)}% to Level {levelInfo.level + 1}
+                  {LevelingService.formatXP(levelInfo.remainingXPForNextLevel, true)} to Level {levelInfo.level + 1}
                 </Text>
               </View>
-            </View>
-
-            {/* Upcoming Levels */}
-            <View style={styles.upcomingLevelsContainer}>
-              <Text style={styles.upcomingLevelsTitle}>Upcoming Levels</Text>
-              <View style={styles.upcomingLevelsRow}>
-                {[1, 2, 3].map((offset) => {
-                  const nextLevel = levelInfo.level + offset;
-                  const levelRequirements = LevelingService.getLevelRequirements();
-                  const levelReq = levelRequirements.find(req => req.level === nextLevel);
-
-                  if (!levelReq) return null;
-
-                  return (
-                    <View key={nextLevel} style={styles.upcomingLevelCard}>
-                      <Text style={styles.upcomingLevelEmoji}>{levelReq.emoji}</Text>
-                      <Text style={styles.upcomingLevelNumber}>Level {nextLevel}</Text>
-                      <Text style={styles.upcomingLevelTitle} numberOfLines={2}>{levelReq.title}</Text>
-                      <Text style={styles.upcomingLevelDistance}>{LevelingService.formatXP(levelReq.xp)}</Text>
-                    </View>
-                  );
-                })}
-              </View>
-            </View>
+            </TouchableOpacity>
           </View>
         )}
 
-        {/* Streak Display */}
-        <StreakDisplay
-          streakInfo={streakInfo ? {
-            currentStreak: streakInfo.currentStreak,
-            longestStreak: streakInfo.longestStreak,
-            lastStreakDate: streakInfo.lastStreakDate,
-            plannedWorkouts: streakInfo.plannedWorkouts || []
-          } : null}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            // Could navigate to a detailed streak screen or show info
-          }}
-        />
+        {/* Level Info Modal */}
+        {showLevelModal && (
+          <XPInfoModal
+            visible={showLevelModal}
+            onClose={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowLevelModal(false);
+            }}
+            levelInfo={levelInfo}
+          />
+        )}
 
-        {/* Friend Streaks Section */}
-        {/* <View style={styles.friendStreaksSection}>
-          <Text style={styles.sectionTitle}>Friend Streaks</Text>
-          <View style={styles.friendStreaksRow}>
-            {[...Array(5)].map((_, index) => (
-              <TouchableOpacity key={index} style={styles.friendStreakItem} activeOpacity={0.7}>
-                <View style={styles.friendStreakCircle}>
-                  <FontAwesome5 name="plus" size={20} color="#7C8DB0" />
-                </View>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View> */}
+        {/* Streak Display Modal */}
+        {showStreakModal && (
+          <StreakDisplay
+            visible={showStreakModal}
+            streakInfo={streakInfo ? {
+              currentStreak: streakInfo.currentStreak,
+              longestStreak: streakInfo.longestStreak,
+              lastStreakDate: streakInfo.lastStreakDate,
+            } : null}
+            onClose={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowStreakModal(false);
+            }}
+          />
+        )}
 
         {/* Challenges Section */}
         <View style={styles.achievementsSection}>
@@ -765,7 +759,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.special.primary.level,
+    backgroundColor: Theme.colors.accent.primary,
     borderRadius: 4,
   },
   progressText: {

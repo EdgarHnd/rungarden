@@ -25,9 +25,9 @@ function distanceToXP(distanceMeters: number): number {
   return Math.floor(distanceMeters * 0.1);
 }
 
-// Calculate coins from total distance (1 coin per km)
+// Calculate coins from total distance (10 coins per km)
 function calculateCoinsFromDistance(totalDistance: number): number {
-  return Math.floor(totalDistance / 1000); // 1 coin per kilometer
+  return Math.floor(totalDistance / 100); // 10 coins per kilometer
 }
 
 // Get user profile
@@ -130,7 +130,7 @@ export const updateProfile = mutation({
     // Calculate coins from total distance if not provided but totalDistance is
     let calculatedCoins = args.coins;
     if (calculatedCoins === undefined && args.totalDistance !== undefined) {
-      calculatedCoins = calculateCoinsFromDistance(args.totalDistance);
+      calculatedCoins = 0; // Don't calculate coins automatically
     }
 
     // Calculate totalXP from totalDistance if not provided
@@ -843,9 +843,9 @@ export const completeRestDay = mutation({
       }
     }
 
-    // Rest day rewards: 1000 XP and 1 coin
+    // Rest day rewards: 1000 XP and 10 coins
     const restXP = 1000;
-    const restCoins = 1;
+    const restCoins = 10;
     
     const currentXP = profile.totalXP || 0;
     const currentCoins = profile.coins || 0;
@@ -970,4 +970,55 @@ export const getOrCreateProfileByUserId = query({
     // Return null if no profile exists - will be created by mutation
     return null;
   },
-}); 
+});
+
+// Helper function to update user profile totals
+async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
+  const allActivities = await ctx.db
+    .query("activities")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .collect();
+
+  const totalDistance = allActivities.reduce((sum: number, a: any) => sum + a.distance, 0);
+  const totalCalories = allActivities.reduce((sum: number, a: any) => sum + a.calories, 0);
+  const totalWorkouts = allActivities.length;
+  
+  // Calculate XP and level from total distance
+  const totalXP = distanceToXP(totalDistance);
+  const level = calculateLevelFromXP(totalXP);
+  
+  // Don't calculate coins automatically
+  const coins = 0;
+
+  const existingProfile = await ctx.db
+    .query("userProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+
+  const now = new Date().toISOString();
+
+  if (existingProfile) {
+    await ctx.db.patch(existingProfile._id, {
+      totalDistance,
+      totalWorkouts,
+      totalCalories,
+      totalXP,
+      level,
+      coins,
+      updatedAt: now,
+    });
+  } else {
+    await ctx.db.insert("userProfiles", {
+      userId,
+      weeklyGoal: 10000, // Default 10km
+      totalDistance,
+      totalWorkouts,
+      totalCalories,
+      totalXP,
+      level,
+      coins,
+      createdAt: now,
+      updatedAt: now,
+    });
+  }
+} 

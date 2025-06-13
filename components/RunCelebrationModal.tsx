@@ -34,6 +34,7 @@ interface RunCelebrationModalProps {
     currentStreak: number;
     longestStreak: number;
   };
+  isInitialSync?: boolean;
 }
 
 interface Feeling {
@@ -57,7 +58,8 @@ export default function RunCelebrationModal({
   rewards,
   onClose,
   metricSystem = 'metric',
-  streakInfo
+  streakInfo,
+  isInitialSync
 }: RunCelebrationModalProps) {
   const [currentStep, setCurrentStep] = useState<'stats' | 'xp' | 'streak' | 'coins'>('stats');
   const [selectedFeeling, setSelectedFeeling] = useState<FeelingType | null>(null);
@@ -370,7 +372,11 @@ export default function RunCelebrationModal({
       setCurrentStep('xp');
     } else if (currentStep === 'xp') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setCurrentStep('streak');
+      if (isInitialSync) {
+        handleClose(); // Skip streak and coins for initial sync
+      } else {
+        setCurrentStep('streak');
+      }
     } else if (currentStep === 'streak') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('coins');

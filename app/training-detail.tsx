@@ -1,5 +1,7 @@
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
 import { Ionicons } from '@expo/vector-icons';
+import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -38,6 +40,24 @@ export default function TrainingDetailScreen() {
   const params = useLocalSearchParams();
   const [activity, setActivity] = useState<Activity | null>(null);
   const [scaleAnim] = useState(new Animated.Value(0));
+
+  // Get user profile for metric system preference
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const isMetric = (profile?.metricSystem ?? 'metric') === 'metric';
+
+  // Get training profile for workout style preference
+  const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
+  const preferTimeOverDistance = trainingProfile?.preferTimeOverDistance ?? true;
+
+  // Helper function to format distance based on metric system preference
+  const formatDistanceForDisplay = (distanceKm: number): string => {
+    if (isMetric) {
+      return `${distanceKm}km`;
+    } else {
+      const miles = distanceKm * 0.621371;
+      return `${miles.toFixed(1)}mi`;
+    }
+  };
 
   useEffect(() => {
     if (params.activity) {
@@ -84,14 +104,25 @@ export default function TrainingDetailScreen() {
   const getSimpleRewards = (activity: Activity) => {
     // Simple reward calculation based on workout type
     const baseDistance = activity.distance ? Math.round(activity.distance / 1000 * 10) / 10 : 0;
-    const coins = Math.max(1, Math.floor(baseDistance));
-    const xp = Math.max(5, Math.floor(baseDistance * 10));
+
+    // Rest days get minimal rewards, running days get full rewards
+    if (activity.type === 'rest') {
+      return {
+        distance: 0,
+        coins: 1, // Small reward for rest day completion
+        xp: 50,   // Small XP for recovery
+        progress: 'Recovery',
+      };
+    }
+
+    const coins = Math.max(1, Math.floor(baseDistance * 10));  // 10 coins per km
+    const xp = Math.max(5, Math.floor(baseDistance * 1000));   // 1000 XP per km
 
     return {
       distance: baseDistance,
       coins: coins,
       xp: xp,
-      progress: activity.type === 'rest' ? 'Recovery' : 'Fitness',
+      progress: 'Fitness',
     };
   };
 
@@ -268,7 +299,10 @@ export default function TrainingDetailScreen() {
               <View style={styles.sectionDivider} />
               <View style={styles.sectionContent}>
                 <Text style={styles.workoutSectionTitle}>
-                  {rewards.distance > 0 ? `${rewards.distance}km at a conversational pace` : activity.title}
+                  {preferTimeOverDistance
+                    ? `${activity.duration} at a conversational pace`
+                    : (rewards.distance > 0 ? `${formatDistanceForDisplay(rewards.distance)} at a conversational pace` : activity.title)
+                  }
                 </Text>
                 {activity.description && (
                   <Text style={styles.sectionSubtitle}>{activity.description}</Text>
@@ -309,7 +343,7 @@ export default function TrainingDetailScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           router.back();
         }} style={styles.backButton}>
-          <Ionicons name="chevron-back-outline" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerDate}>
@@ -329,7 +363,10 @@ export default function TrainingDetailScreen() {
             <Text style={styles.workoutType}>{activity.title.toUpperCase()}</Text>
             <Text style={styles.workoutSubtitle}>
               {workoutInfo.subtitle}
-              {rewards.distance > 0 && ` • ${rewards.distance}km`}
+              {preferTimeOverDistance
+                ? (activity.duration && ` • ${activity.duration}`)
+                : (rewards.distance > 0 && ` • ${formatDistanceForDisplay(rewards.distance)}`)
+              }
             </Text>
           </View>
         </Animated.View>
@@ -338,22 +375,25 @@ export default function TrainingDetailScreen() {
         <View style={styles.mainInfoSection}>
           <Text style={styles.sectionTitle}>Training Details</Text>
           <View style={styles.mainInfoGrid}>
-            <View style={styles.mainInfoCard}>
-              <View style={[styles.mainInfoIcon, { backgroundColor: Theme.colors.special.primary.level }]}>
-                <Ionicons name="time-outline" size={28} color="#fff" />
-              </View>
-              <Text style={styles.mainInfoValue}>{activity.duration}</Text>
-              <Text style={styles.mainInfoLabel}>Duration</Text>
-            </View>
-
-            {rewards.distance > 0 && (
+            {/* Show either duration OR distance based on user preference */}
+            {preferTimeOverDistance ? (
               <View style={styles.mainInfoCard}>
-                <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
-                  <Ionicons name="location-outline" size={28} color="#fff" />
+                <View style={[styles.mainInfoIcon, { backgroundColor: Theme.colors.special.primary.level }]}>
+                  <Ionicons name="time-outline" size={28} color="#fff" />
                 </View>
-                <Text style={styles.mainInfoValue}>{rewards.distance}km</Text>
-                <Text style={styles.mainInfoLabel}>Distance</Text>
+                <Text style={styles.mainInfoValue}>{activity.duration}</Text>
+                <Text style={styles.mainInfoLabel}>Duration</Text>
               </View>
+            ) : (
+              rewards.distance > 0 && (
+                <View style={styles.mainInfoCard}>
+                  <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
+                    <Ionicons name="location-outline" size={28} color="#fff" />
+                  </View>
+                  <Text style={styles.mainInfoValue}>{formatDistanceForDisplay(rewards.distance)}</Text>
+                  <Text style={styles.mainInfoLabel}>Distance</Text>
+                </View>
+              )
             )}
           </View>
         </View>

@@ -1,4 +1,6 @@
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
+import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import React from 'react';
 import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -23,6 +25,19 @@ interface SuggestedActivityCardProps {
   isToday?: boolean;
   isRestDayCompleted?: boolean;
 }
+
+// Helper function to format distance based on metric system preference
+const formatDistance = (distanceMeters: number, isMetric: boolean): string => {
+  if (!distanceMeters || distanceMeters === 0) return '';
+
+  if (isMetric) {
+    const km = distanceMeters / 1000;
+    return `${km.toFixed(1)}km`;
+  } else {
+    const miles = (distanceMeters / 1000) * 0.621371;
+    return `${miles.toFixed(1)}mi`;
+  }
+};
 
 // Helper function to get workout emoji based on type
 const getWorkoutEmoji = (type: string, isDefault?: boolean): string => {
@@ -118,6 +133,14 @@ export default function SuggestedActivityCard({
   isToday = false,
   isRestDayCompleted = false,
 }: SuggestedActivityCardProps) {
+  // Get user profile for metric system preference
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const isMetric = (profile?.metricSystem ?? 'metric') === 'metric';
+
+  // Get training profile for workout style preference  
+  const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
+  const preferTimeOverDistance = trainingProfile?.preferTimeOverDistance ?? true;
+
   const getIntensityColor = (intensity: string) => {
     switch (intensity) {
       case 'Easy': return '#10B981';
@@ -156,7 +179,14 @@ export default function SuggestedActivityCard({
       <View style={styles.header}>
         <Text style={styles.emoji}>{workoutEmoji}</Text>
         <View style={styles.headerText}>
-          <Text style={styles.title}>{workoutTitle}</Text>
+          <Text style={styles.title}>
+            {isToday && ((preferTimeOverDistance && plannedWorkout.duration) || (!preferTimeOverDistance && plannedWorkout.distance && plannedWorkout.distance > 0))
+              ? preferTimeOverDistance
+                ? `${workoutTitle} • ${plannedWorkout.duration || 'Flexible'}`
+                : `${workoutTitle} • ${formatDistance(plannedWorkout.distance!, isMetric)}`
+              : workoutTitle
+            }
+          </Text>
           <Text style={styles.subtitle}>{workoutSubtitle}</Text>
         </View>
         <View style={[styles.intensityBadge, { backgroundColor: getIntensityColor(workoutIntensity) }]}>
@@ -190,16 +220,51 @@ export default function SuggestedActivityCard({
       ) : (
         plannedWorkout.type !== 'rest' && (
           <View style={styles.detailsRow}>
-            <View style={styles.detail}>
-              <Text style={styles.detailLabel}>Duration</Text>
-              <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
-            </View>
-            <View style={styles.detail}>
-              <Text style={styles.detailLabel}>Activity Type</Text>
-              <Text style={styles.detailValue}>
-                {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
-              </Text>
-            </View>
+            {plannedWorkout.distance && plannedWorkout.distance > 0 ? (
+              <>
+                {/* Show either distance OR duration based on user preference */}
+                {preferTimeOverDistance ? (
+                  <>
+                    <View style={styles.detail}>
+                      <Text style={styles.detailLabel}>Duration</Text>
+                      <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
+                    </View>
+                    <View style={styles.detail}>
+                      <Text style={styles.detailLabel}>Activity Type</Text>
+                      <Text style={styles.detailValue}>
+                        {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+                      </Text>
+                    </View>
+                  </>
+                ) : (
+                  <>
+                    <View style={styles.detail}>
+                      <Text style={styles.detailLabel}>Distance</Text>
+                      <Text style={styles.detailValue}>{formatDistance(plannedWorkout.distance, isMetric)}</Text>
+                    </View>
+                    <View style={styles.detail}>
+                      <Text style={styles.detailLabel}>Activity Type</Text>
+                      <Text style={styles.detailValue}>
+                        {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+                      </Text>
+                    </View>
+                  </>
+                )}
+              </>
+            ) : (
+              <>
+                <View style={styles.detail}>
+                  <Text style={styles.detailLabel}>Duration</Text>
+                  <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
+                </View>
+                <View style={styles.detail}>
+                  <Text style={styles.detailLabel}>Activity Type</Text>
+                  <Text style={styles.detailValue}>
+                    {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+                  </Text>
+                </View>
+              </>
+            )}
           </View>
         )
       )}

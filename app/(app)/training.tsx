@@ -114,6 +114,16 @@ const handleManagePlan = () => {
   router.push('/manage-plan');
 };
 
+// Helper function to format distance based on metric system preference
+const formatDistance = (distanceKm: number, isMetric: boolean): string => {
+  if (isMetric) {
+    return `${distanceKm}km`;
+  } else {
+    const miles = distanceKm * 0.621371;
+    return `${miles.toFixed(1)}mi`;
+  }
+};
+
 export default function TrainingPlanScreen() {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const trainingPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
@@ -122,6 +132,13 @@ export default function TrainingPlanScreen() {
   const completedWorkouts = useQuery(api.workoutCompletions.getUserCompletions, { days: 365 });
   const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
   const regenerateTrainingPlan = useMutation(api.trainingPlan.regenerateTrainingPlan);
+
+  // Get user profile for metric system preference
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const isMetric = (profile?.metricSystem ?? 'metric') === 'metric';
+
+  // Get workout style preference
+  const preferTimeOverDistance = trainingProfile?.preferTimeOverDistance ?? true;
 
   const handleActivitiesPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -167,7 +184,6 @@ export default function TrainingPlanScreen() {
       const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
       const workouts = planWeek.days
-        .filter(day => day.type !== 'rest')
         .map(day => {
           const scheduledWorkout = weekWorkouts.find(w =>
             w.scheduledDate === day.date
@@ -355,7 +371,7 @@ export default function TrainingPlanScreen() {
               Total Workouts: <Text style={styles.weekDetailStatsValue}>{selectedWeekData.totalWorkouts}</Text>
             </Text>
             <Text style={styles.weekDetailStatsText}>
-              Distance: <Text style={styles.weekDetailStatsValue}>{selectedWeekData.totalDistance}km</Text>
+              Distance: <Text style={styles.weekDetailStatsValue}>{formatDistance(selectedWeekData.totalDistance, isMetric)}</Text>
             </Text>
           </View>
 
@@ -373,7 +389,7 @@ export default function TrainingPlanScreen() {
                     title: getWorkoutDisplayName(workout.type),
                     description: workout.description,
                     duration: workout.duration,
-                    distance: workout.distance,
+                    distance: workout.distance * 1000, // Convert km back to meters for reward calculation
                     emoji: getWorkoutEmoji(workout.type),
                     date: workout.date // Add the actual scheduled date
                   };
@@ -412,11 +428,17 @@ export default function TrainingPlanScreen() {
                   </View>
 
                   <Text style={styles.detailedWorkoutTitle}>
-                    {`${workout.distance}km ${getWorkoutDisplayName(workout.type)}`}
+                    {preferTimeOverDistance
+                      ? `${workout.duration} ${getWorkoutDisplayName(workout.type)}`
+                      : `${formatDistance(workout.distance, isMetric)} ${getWorkoutDisplayName(workout.type)}`
+                    }
                   </Text>
 
                   <Text style={styles.detailedWorkoutType}>
-                    {`${getWorkoutDisplayName(workout.type)} · ${workout.distance}km`}
+                    {preferTimeOverDistance
+                      ? `${getWorkoutDisplayName(workout.type)} · ${workout.duration}`
+                      : `${getWorkoutDisplayName(workout.type)} · ${formatDistance(workout.distance, isMetric)}`
+                    }
                   </Text>
                 </View>
               </TouchableOpacity>
@@ -481,7 +503,9 @@ export default function TrainingPlanScreen() {
             </View>
             <View style={styles.statItem}>
               <Text style={styles.statLabel}>Distance</Text>
-              <Text style={styles.statValue}>{progress.totalDistance}/{Math.round(weekSummaries.reduce((sum, week) => sum + week.totalDistance, 0))} km</Text>
+              <Text style={styles.statValue}>
+                {formatDistance(progress.totalDistance, isMetric)}/{formatDistance(Math.round(weekSummaries.reduce((sum, week) => sum + week.totalDistance, 0)), isMetric)}
+              </Text>
             </View>
           </View>
 
@@ -536,7 +560,7 @@ export default function TrainingPlanScreen() {
 
             <View style={styles.weekStatsRow}>
               <Text style={styles.weekStat}>Total Workouts: {week.totalWorkouts}</Text>
-              <Text style={styles.weekStat}>Distance: {week.totalDistance}km</Text>
+              <Text style={styles.weekStat}>Distance: {formatDistance(week.totalDistance, isMetric)}</Text>
             </View>
 
             <View style={styles.workoutsList}>
@@ -546,7 +570,10 @@ export default function TrainingPlanScreen() {
                   <View style={styles.workoutContent}>
                     <Text style={styles.workoutDay}>{workout.day}</Text>
                     <Text style={styles.workoutDescription}>
-                      {`${getWorkoutDisplayName(workout.type)} · ${workout.distance}km`}
+                      {preferTimeOverDistance
+                        ? `${getWorkoutDisplayName(workout.type)} · ${workout.duration}`
+                        : `${getWorkoutDisplayName(workout.type)} · ${formatDistance(workout.distance, isMetric)}`
+                      }
                     </Text>
                   </View>
                 </View>

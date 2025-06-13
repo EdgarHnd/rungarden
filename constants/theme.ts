@@ -46,6 +46,7 @@ export const Theme = {
         level: '#10B981',        // Green for level progress
         shadow: '#000000',       // Shadow color
         heart: '#EF4444',        // Red for heart
+        energy: '#FFD700',        // Gold for energy
       },
       secondary:{
         exp: '#3AA9DD',         // Darker blue
@@ -53,6 +54,7 @@ export const Theme = {
         level: '#0EA472',       // Darker green
         shadow: '#000000',       // Shadow color
         heart: '#E60000',       // Darker red
+        energy: '#FFD700',       // Darker gold for energy
       }
     },
 

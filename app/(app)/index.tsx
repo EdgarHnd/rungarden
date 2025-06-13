@@ -1,6 +1,8 @@
 import DayCard from '@/components/DayCard';
+import InitialSyncModal from '@/components/InitialSyncModal';
 import RestCelebrationModal from '@/components/RestCelebrationModal';
 import RunCelebrationModal from '@/components/RunCelebrationModal';
+import StreakDisplay from '@/components/StreakDisplay';
 import WeekView from '@/components/WeekView';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
@@ -9,6 +11,7 @@ import ChallengeService from '@/services/ChallengeService';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import { PushNotificationService } from '@/services/PushNotificationService';
 import { Ionicons } from '@expo/vector-icons';
+import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -104,10 +107,14 @@ export default function HomeScreen() {
       oldLevel?: number;
       challengesUnlocked?: string[];
     };
+    isInitialSync: boolean;
   } | null>(null);
 
   // Rest celebration state
   const [showRestCelebrationModal, setShowRestCelebrationModal] = useState(false);
+
+  // Streak modal state
+  const [showStreakModal, setShowStreakModal] = useState(false);
 
   // Debug modal state
   const [showDebugModal, setShowDebugModal] = useState(false);
@@ -359,6 +366,43 @@ export default function HomeScreen() {
 
   // Auto-sync Strava activities when app first loads (once only)
   const [hasPerformedInitialSync, setHasPerformedInitialSync] = useState(false);
+  const [initialSyncModalVisible, setInitialSyncModalVisible] = useState(false);
+  const [initialSyncResult, setInitialSyncResult] = useState<{
+    created: number;
+    updated: number;
+    skipped: number;
+    distanceGained: number;
+    leveledUp?: boolean;
+    newLevel?: number;
+    oldLevel?: number;
+  } | null>(null);
+
+  // Check for data source connection
+  useEffect(() => {
+    const checkDataSource = async () => {
+      if (isAuthenticated && profile && !profile.healthKitSyncEnabled && !profile.stravaSyncEnabled) {
+        // Check if we've shown the alert before
+        const hasShownAlert = await AsyncStorage.getItem('hasShownDataSourceAlert');
+        if (!hasShownAlert) {
+          Alert.alert(
+            'Connect a Data Source',
+            'To track your runs, you need to connect either Strava or Apple Health. Strava is recommended for the best experience.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => router.push('/settings')
+              }
+            ]
+          );
+          // Mark that we've shown the alert
+          await AsyncStorage.setItem('hasShownDataSourceAlert', 'true');
+        }
+      }
+    };
+
+    checkDataSource();
+  }, [isAuthenticated, profile]);
 
   useEffect(() => {
     const performAutoSync = async () => {
@@ -397,6 +441,20 @@ export default function HomeScreen() {
           return;
         } catch (error) {
           console.error('[HomeScreen] Webhook sync failed:', error);
+          // Show alert if authentication error
+          if (error instanceof Error && error.message.includes('Not authenticated with Strava')) {
+            Alert.alert(
+              'Strava Connection Required',
+              'Please connect to Strava in Settings to enable activity syncing.',
+              [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                  text: 'Open Settings',
+                  onPress: () => router.push('/settings')
+                }
+              ]
+            );
+          }
         }
       }
 
@@ -423,9 +481,37 @@ export default function HomeScreen() {
 
         if (syncResult && syncResult.created > 0) {
           console.log(`[HomeScreen] Auto-sync completed: ${syncResult.created} new activities`);
+
+          // Show modal for first-time sync with significant results
+          if (syncResult.created >= 5 || (syncResult.distanceGained && syncResult.distanceGained > 10000)) {
+            setInitialSyncResult({
+              created: syncResult.created,
+              updated: syncResult.updated || 0,
+              skipped: syncResult.skipped || 0,
+              distanceGained: syncResult.distanceGained || 0,
+              leveledUp: syncResult.leveledUp,
+              newLevel: syncResult.newLevel,
+              oldLevel: syncResult.oldLevel,
+            });
+            setInitialSyncModalVisible(true);
+          }
         }
       } catch (error) {
         console.error('[HomeScreen] Auto-sync failed:', error);
+        // Show alert if authentication error
+        if (error instanceof Error && error.message.includes('Not authenticated with Strava')) {
+          Alert.alert(
+            'Strava Connection Required',
+            'Please connect to Strava in Settings to enable activity syncing.',
+            [
+              { text: 'Cancel', style: 'cancel' },
+              {
+                text: 'Open Settings',
+                onPress: () => router.push('/settings')
+              }
+            ]
+          );
+        }
       }
     };
 
@@ -460,7 +546,8 @@ export default function HomeScreen() {
 
       setRunCelebrationData({
         runData: mockRunData,
-        rewards: mockRewards
+        rewards: mockRewards,
+        isInitialSync: false // Not an initial sync for notification
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -490,14 +577,15 @@ export default function HomeScreen() {
       // Calculate rewards for this activity
       const mockRewards = {
         distanceGained: activityTocelebrate.distance,
-        coinsGained: Math.floor(activityTocelebrate.distance / 1000),
-        leveledUp: false, // Could be calculated properly
+        coinsGained: 0, // No coins for initial sync
+        leveledUp: false,
         challengesUnlocked: [],
       };
 
       setRunCelebrationData({
         runData: activityTocelebrate,
-        rewards: mockRewards
+        rewards: mockRewards,
+        isInitialSync: false // Not an initial sync for notification
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -623,14 +711,14 @@ export default function HomeScreen() {
             </TouchableOpacity>
             <View style={styles.livesRowContainer}>
               {[...Array(4)].map((_, index) => {
-                const currentLives = 3; // TODO: Get from user profile/state
+                const currentLives = 4; // TODO: Get from user profile/state
                 const isAlive = index < currentLives;
                 return (
                   <Ionicons
                     key={index}
-                    name={isAlive ? "heart" : "heart-outline"}
+                    name={isAlive ? "flash" : "flash-outline"}
                     size={25}
-                    color={isAlive ? Theme.colors.special.primary.heart : Theme.colors.text.primary}
+                    color={isAlive ? Theme.colors.special.primary.energy : Theme.colors.text.primary}
                   />
                 );
               })}
@@ -641,7 +729,7 @@ export default function HomeScreen() {
               style={styles.streakContainer}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                router.push('/profile');
+                setShowStreakModal(true);
               }}
               activeOpacity={0.7}
             >
@@ -739,6 +827,7 @@ export default function HomeScreen() {
             currentStreak: streakInfo?.currentStreak || 0,
             longestStreak: streakInfo?.longestStreak || 0,
           }}
+          isInitialSync={runCelebrationData?.isInitialSync || false}
           onClose={async () => {
             // Mark celebration as shown if this was for a new activity
             if (runCelebrationData?.runData?._id) {
@@ -769,6 +858,20 @@ export default function HomeScreen() {
           streakInfo={{
             currentStreak: streakInfo?.currentStreak || 0,
             longestStreak: streakInfo?.longestStreak || 0,
+          }}
+        />
+
+        {/* Streak Modal */}
+        <StreakDisplay
+          visible={showStreakModal}
+          streakInfo={streakInfo ? {
+            currentStreak: streakInfo.currentStreak,
+            longestStreak: streakInfo.longestStreak,
+            lastStreakDate: streakInfo.lastStreakDate,
+          } : null}
+          onClose={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setShowStreakModal(false);
           }}
         />
 
@@ -835,7 +938,8 @@ export default function HomeScreen() {
 
                     setRunCelebrationData({
                       runData: lastActivity,
-                      rewards: mockRewards
+                      rewards: mockRewards,
+                      isInitialSync: false // Not an initial sync for debug
                     });
 
                     setShowDebugModal(false);
@@ -872,6 +976,16 @@ export default function HomeScreen() {
             </View>
           </View>
         </Modal>
+
+        <InitialSyncModal
+          visible={initialSyncModalVisible}
+          syncResult={initialSyncResult}
+          onClose={() => {
+            setInitialSyncModalVisible(false);
+            setInitialSyncResult(null);
+          }}
+          metricSystem={profile?.metricSystem || 'metric'}
+        />
       </SafeAreaView >
     );
   } catch (error) {

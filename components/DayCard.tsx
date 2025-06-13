@@ -83,7 +83,7 @@ export default function DayCard({
       title: getWorkoutDisplayName(plannedWorkout.type),
       description: plannedWorkout.description,
       duration: plannedWorkout.duration || '30 min',
-      distance: plannedWorkout.distance ? plannedWorkout.distance / 1000 : undefined, // Convert meters to km
+      distance: plannedWorkout.distance || 0, // Keep in meters for reward calculation
       emoji: getWorkoutEmoji(plannedWorkout.type),
       date: plannedWorkout.scheduledDate // Add the actual scheduled date
     };

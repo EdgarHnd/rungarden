@@ -40,9 +40,9 @@ function distanceToXP(distanceMeters: number): number {
   return Math.floor(distanceMeters * 0.1);
 }
 
-// Calculate coins from total distance (1 coin per km)
+// Calculate coins from total distance (10 coins per km)
 function calculateCoinsFromDistance(totalDistance: number): number {
-  return Math.floor(totalDistance / 1000); // 1 coin per kilometer
+  return Math.floor(totalDistance / 100); // 10 coins per kilometer
 }
 
 export const getUserActivitiesForYear = query({
@@ -283,11 +283,9 @@ export const syncActivitiesFromHealthKit = mutation({
       if (updatedProfile) {
         const oldLevel = currentProfile.level || 1;
         const newLevel = updatedProfile.level;
-        const oldCoins = currentProfile.coins || 0;
-        const newCoins = updatedProfile.coins || 0;
         
         syncResults.distanceGained = totalDistanceGained;
-        syncResults.coinsGained = newCoins - oldCoins;
+        syncResults.coinsGained = 0; // No coins for initial sync
         syncResults.leveledUp = newLevel > oldLevel;
         syncResults.newLevel = newLevel;
         syncResults.oldLevel = oldLevel;
@@ -385,8 +383,8 @@ export const syncActivitiesFromStravaServer = mutation({
             averageHeartRate: activity.averageHeartRate,
             workoutName: activity.workoutName,
             pace,
-            isNewActivity: true, // Mark as new for celebration
-            celebrationShown: false, // Not shown yet
+            isNewActivity: false, // Don't mark initial sync activities as new
+            celebrationShown: true, // Mark as already shown
             syncedAt: now,
             createdAt: now,
           });
@@ -454,7 +452,7 @@ async function updateUserProfileTotalsServer(ctx: any, userId: string) {
   if (userProfile) {
     const totalXP = distanceToXP(totalDistance);
     const level = calculateLevelFromXP(totalXP);
-    const coins = calculateCoinsFromDistance(totalDistance);
+    const coins = 0; // Don't calculate coins automatically
 
     await ctx.db.patch(userProfile._id, {
       totalDistance,
@@ -486,10 +484,10 @@ export const getProfileStats = query({
     const totalCalories = allActivities.reduce((sum, a) => sum + a.calories, 0);
     const totalWorkouts = allActivities.length;
     
-    // Calculate XP, level and coins from total distance
+    // Calculate XP and level from total distance
     const totalXP = distanceToXP(totalDistance);
     const level = calculateLevelFromXP(totalXP);
-    const coins = calculateCoinsFromDistance(totalDistance);
+    const coins = 0; // Don't calculate coins automatically
 
     return {
       totalDistance,
@@ -1083,8 +1081,8 @@ export const syncActivitiesFromStrava = mutation({
             averageHeartRate: activity.averageHeartRate,
             workoutName: activity.workoutName,
             pace,
-            isNewActivity: true, // Mark as new for celebration
-            celebrationShown: false, // Not shown yet
+            isNewActivity: false, // Don't mark initial sync activities as new
+            celebrationShown: true, // Mark as already shown
             syncedAt: now,
             createdAt: now,
           });
@@ -1103,6 +1101,18 @@ export const syncActivitiesFromStrava = mutation({
       }
     }
 
+    // Calculate sync results for client
+    let distanceGained = 0;
+    let coinsGained = 0; // No coins for initial sync
+    let leveledUp = false;
+    let newLevel = 1;
+    let oldLevel = 1;
+
+    // Capture the OLD level BEFORE updating the profile
+    if (created > 0 && currentProfile) {
+      oldLevel = currentProfile.level || 1;
+    }
+
     // Update user profile totals if we created new activities
     if (created > 0) {
       await updateUserProfileTotalsServer(ctx, userId);
@@ -1118,30 +1128,9 @@ export const syncActivitiesFromStrava = mutation({
           lastStravaSync: now,
           updatedAt: now,
         });
-      }
-    }
-
-    // Calculate sync results for client
-    let distanceGained = 0;
-    let coinsGained = 0;
-    let leveledUp = false;
-    let newLevel = 1;
-    let oldLevel = 1;
-
-    if (totalDistanceGained > 0 && currentProfile) {
-      const updatedProfile = await ctx.db
-        .query("userProfiles")
-        .withIndex("by_user", (q: any) => q.eq("userId", userId))
-        .first();
-
-      if (updatedProfile) {
-        oldLevel = currentProfile.level || 1;
-        newLevel = updatedProfile.level;
-        const oldCoins = currentProfile.coins || 0;
-        const newCoins = updatedProfile.coins || 0;
         
-        distanceGained = totalDistanceGained;
-        coinsGained = newCoins - oldCoins;
+        // Get the NEW level AFTER updating the profile
+        newLevel = userProfile.level || 1;
         leveledUp = newLevel > oldLevel;
       }
     }
@@ -1151,8 +1140,8 @@ export const syncActivitiesFromStrava = mutation({
       updated,
       skipped,
       lastSyncDate: now,
-      distanceGained,
-      coinsGained,
+      distanceGained: totalDistanceGained,
+      coinsGained: 0, // No coins for initial sync
       leveledUp,
       newLevel,
       oldLevel,

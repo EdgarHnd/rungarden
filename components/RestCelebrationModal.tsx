@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
@@ -14,6 +15,7 @@ import {
   withSpring,
   withTiming
 } from 'react-native-reanimated';
+import StreakModalComponent from './StreakModalComponent';
 
 interface RestCelebrationModalProps {
   visible: boolean;
@@ -40,7 +42,6 @@ export default function RestCelebrationModal({
   // Reanimated values
   const stepScale = useSharedValue(0);
   const stepOpacity = useSharedValue(0);
-  const streakScale = useSharedValue(0);
   const rewardScale = useSharedValue(0);
   const xpCounterValue = useSharedValue(0);
 
@@ -61,12 +62,6 @@ export default function RestCelebrationModal({
     return {
       transform: [{ scale: stepScale.value }],
       opacity: stepOpacity.value
-    };
-  });
-
-  const streakAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [{ scale: streakScale.value }]
     };
   });
 
@@ -91,7 +86,6 @@ export default function RestCelebrationModal({
       setHasAttemptedCompletion(false);
       stepScale.value = 0;
       stepOpacity.value = 0;
-      streakScale.value = 0;
       rewardScale.value = 0;
       xpCounterValue.value = 0;
       setAnimatedXPValue(0);
@@ -115,16 +109,11 @@ export default function RestCelebrationModal({
     stepScale.value = withSpring(1, { damping: 15, stiffness: 100 });
     stepOpacity.value = withTiming(1, { duration: 300 });
 
-    if (currentStep === 'streak') {
-      setTimeout(() => {
-        streakScale.value = withSpring(1, { damping: 10, stiffness: 80 });
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      }, 300);
-    } else if (currentStep === 'rewards') {
+    if (currentStep === 'rewards') {
       setTimeout(() => {
         rewardScale.value = withSpring(1, { damping: 12, stiffness: 100 });
         // Animate XP counter
-        xpCounterValue.value = withTiming(1000, { duration: 1500 });
+        xpCounterValue.value = withTiming(100, { duration: 1500 });
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }, 300);
     }
@@ -193,8 +182,8 @@ export default function RestCelebrationModal({
           setCompletionResult({
             success: true,
             rewards: {
-              xpGained: 1000,
-              coinsGained: 1
+              xpGained: 100,
+              coinsGained: 10
             },
             streak: {
               currentStreak: streakInfo?.currentStreak || 0,
@@ -276,19 +265,10 @@ export default function RestCelebrationModal({
 
   const renderStreakStep = () => (
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
-      <View style={styles.centeredGroup}>
-        <Reanimated.View style={[styles.streakDisplay, streakAnimatedStyle]}>
-          <Text style={styles.streakFlame}>🔥</Text>
-          <Text style={styles.streakNumber}>{completionResult?.streak?.currentStreak || streakInfo?.currentStreak || 0}</Text>
-          <Text style={styles.streakLabel}>day streak</Text>
-          <Text style={styles.streakMessage}>
-            {completionResult?.streak?.streakIncreased
-              ? "Streak continued! Consistency is key! 🌟"
-              : "Your journey begins! 🎯"
-            }
-          </Text>
-        </Reanimated.View>
-      </View>
+      <StreakModalComponent
+        currentStreak={completionResult?.streak?.currentStreak || streakInfo?.currentStreak || 0}
+        streakIncreased={completionResult?.streak?.streakIncreased}
+      />
 
       <TouchableOpacity
         style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
@@ -310,8 +290,8 @@ export default function RestCelebrationModal({
         <View style={styles.contentSection}>
           <Reanimated.View style={[styles.rewardsGrid, rewardAnimatedStyle]}>
             <View style={styles.rewardCard}>
-              <Text style={styles.rewardEmoji}>⭐</Text>
-              <Text style={styles.rewardValue}>+{animatedXPValue}</Text>
+              <Ionicons name="flash" size={24} color={Theme.colors.special.primary.exp} />
+              <Text style={[styles.rewardValue, styles.rewardExpValue]}>+{animatedXPValue}</Text>
               <Text style={styles.rewardLabel}>XP</Text>
             </View>
             <View style={styles.rewardCard}>
@@ -319,8 +299,8 @@ export default function RestCelebrationModal({
                 source={require('@/assets/images/icons/eucaleaf.png')}
                 style={styles.leafIcon}
               />
-              <Text style={styles.rewardValue}>+1</Text>
-              <Text style={styles.rewardLabel}>Leaf</Text>
+              <Text style={[styles.rewardValue, styles.rewardLeavesValue]}>+10</Text>
+              <Text style={styles.rewardLabel}>Leaves</Text>
             </View>
           </Reanimated.View>
 
@@ -463,35 +443,6 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
 
-  // Streak Section
-  streakDisplay: {
-    alignItems: 'center',
-    marginBottom: Theme.spacing.xxxl,
-  },
-  streakFlame: {
-    fontSize: 72,
-    marginBottom: Theme.spacing.lg,
-  },
-  streakNumber: {
-    fontSize: 72,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-    marginBottom: Theme.spacing.xs,
-  },
-  streakLabel: {
-    fontSize: 20,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
-  },
-  streakMessage: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
-    lineHeight: 22,
-  },
-
   // Rewards Section
   rewardsTitle: {
     fontSize: 28,
@@ -524,8 +475,13 @@ const styles = StyleSheet.create({
   rewardValue: {
     fontSize: 28,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
     marginBottom: Theme.spacing.xs,
+  },
+  rewardExpValue: {
+    color: Theme.colors.special.primary.exp,
+  },
+  rewardLeavesValue: {
+    color: Theme.colors.special.primary.coin,
   },
   rewardLabel: {
     fontSize: 14,
