@@ -15,7 +15,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Rive, { RiveRef } from 'rive-react-native';
 
@@ -90,6 +90,9 @@ export default function HomeScreen() {
   const [isBgAnimationRunning, setIsBgAnimationRunning] = useState(false);
   const bgAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
   const isTransitioningRef = useRef(false);
+
+  // Add debounce ref to prevent cascading updates
+  const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Add Rive ref for controlling the animation
   const riveRef = useRef<RiveRef>(null);
@@ -602,62 +605,101 @@ export default function HomeScreen() {
     };
   }, [isAuthenticated]);
 
-  const { weeks, allDays } = generateWeekData();
+  // Memoize week data generation to prevent unnecessary recalculations
+  const weekData = useMemo(() => {
+    return generateWeekData();
+  }, [activities, plannedWorkouts, weekStartDay]);
 
+  const { weeks, allDays } = weekData;
+
+  // Use useCallback for stable handler references
+  const handleDaySelect = useCallback((dayIndex: number) => {
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    Haptics.selectionAsync();
+
+    // Batch the state updates to prevent cascading re-renders
+    updateTimeoutRef.current = setTimeout(() => {
+      setCurrentDayIndex(dayIndex);
+
+      // Update current week index based on selected day
+      const weekIndex = Math.floor(dayIndex / 7);
+      if (weekIndex !== currentWeekIndex) {
+        setCurrentWeekIndex(weekIndex);
+      }
+    }, 0);
+  }, [currentWeekIndex]);
+
+  const handleWeekChange = useCallback((weekIndex: number) => {
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
+
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Batch the state updates to prevent cascading re-renders
+    updateTimeoutRef.current = setTimeout(() => {
+      setCurrentWeekIndex(weekIndex);
+
+      // Auto-select the first day of the new week if current day is not in this week
+      const currentWeek = Math.floor(currentDayIndex / 7);
+      if (currentWeek !== weekIndex) {
+        const firstDayOfWeek = weekIndex * 7;
+        setCurrentDayIndex(firstDayOfWeek);
+      }
+    }, 0);
+  }, [currentDayIndex]);
+
+  // Debounced effect for Rive URL and background animation changes
   useEffect(() => {
     if (allDays.length === 0 || isTransitioningRef.current) return;
 
-    const selectedDayData = allDays[currentDayIndex];
-    if (selectedDayData) {
-      const workoutType = selectedDayData.plannedWorkout?.type;
-      const newUrl = workoutType === 'rest' ? RIVE_URL_IDDLE : RIVE_URL_RUNNING;
+    // Clear any existing timeout
+    if (updateTimeoutRef.current) {
+      clearTimeout(updateTimeoutRef.current);
+    }
 
-      if (newUrl === RIVE_URL_RUNNING) {
-        startBgAnimation();
-      } else {
-        stopBgAnimation();
-      }
+    // Debounce the animation changes to prevent flickering
+    updateTimeoutRef.current = setTimeout(() => {
+      const selectedDayData = allDays[currentDayIndex];
+      if (selectedDayData) {
+        const workoutType = selectedDayData.plannedWorkout?.type;
+        const newUrl = workoutType === 'rest' ? RIVE_URL_IDDLE : RIVE_URL_RUNNING;
 
-      if (riveUrl !== newUrl) {
-        if (riveUrl !== null) { // Don't show puff on first load
-          isTransitioningRef.current = true;
-          setShowPuff(true);
-          setRiveUrl(newUrl);
-
-          setTimeout(() => {
-            setShowPuff(false);
-            isTransitioningRef.current = false;
-          }, 800);
+        if (newUrl === RIVE_URL_RUNNING) {
+          startBgAnimation();
         } else {
-          setRiveUrl(newUrl);
+          stopBgAnimation();
+        }
+
+        if (riveUrl !== newUrl) {
+          if (riveUrl !== null) { // Don't show puff on first load
+            isTransitioningRef.current = true;
+            setShowPuff(true);
+            setRiveUrl(newUrl);
+
+            setTimeout(() => {
+              setShowPuff(false);
+              isTransitioningRef.current = false;
+            }, 800);
+          } else {
+            setRiveUrl(newUrl);
+          }
         }
       }
-    }
+    }, 100); // 100ms debounce to prevent rapid changes
   }, [allDays, currentDayIndex, riveUrl]);
 
-  // Fixed event handlers
-  const handleDaySelect = (dayIndex: number) => {
-    Haptics.selectionAsync();
-    setCurrentDayIndex(dayIndex);
-
-    // Update current week index based on selected day
-    const weekIndex = Math.floor(dayIndex / 7);
-    if (weekIndex !== currentWeekIndex) {
-      setCurrentWeekIndex(weekIndex);
-    }
-  };
-
-  const handleWeekChange = (weekIndex: number) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setCurrentWeekIndex(weekIndex);
-
-    // Auto-select the first day of the new week if current day is not in this week
-    const currentWeek = Math.floor(currentDayIndex / 7);
-    if (currentWeek !== weekIndex) {
-      const firstDayOfWeek = weekIndex * 7;
-      setCurrentDayIndex(firstDayOfWeek);
-    }
-  };
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (updateTimeoutRef.current) {
+        clearTimeout(updateTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Format helpers
   const formatDistance = (meters: number) => {

@@ -3,7 +3,7 @@ import Theme from '@/constants/theme';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface Activity {
@@ -76,18 +76,48 @@ export default function WeekView({
   const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
   const [showXPInfoModal, setShowXPInfoModal] = useState(false);
 
+  // Add ref to track if we're already scrolling to prevent feedback loops
+  const isScrollingRef = useRef(false);
+  const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   // Calculate the actual width of each page in the ScrollView
   // This accounts for the horizontal padding of the parent container.
   const pageWidth = screenWidth - 40; // 20px padding on each side
 
+  // Debounced scroll to week to prevent flickering
   useEffect(() => {
-    if (scrollViewRef.current && weeks && weeks.length > currentWeekIndex) {
-      if (pageWidth > 0) { // Ensure pageWidth is positive
-        const offsetX = currentWeekIndex * pageWidth;
-        scrollViewRef.current.scrollTo({ x: offsetX, animated: false });
+    if (scrollViewRef.current && weeks && weeks.length > currentWeekIndex && pageWidth > 0) {
+      // Clear any existing timeout
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
       }
+
+      // Don't scroll if we're already in the process of scrolling
+      if (isScrollingRef.current) return;
+
+      scrollTimeoutRef.current = setTimeout(() => {
+        if (scrollViewRef.current) {
+          isScrollingRef.current = true;
+          const offsetX = currentWeekIndex * pageWidth;
+          scrollViewRef.current.scrollTo({ x: offsetX, animated: false });
+
+          // Reset scrolling flag after a short delay
+          setTimeout(() => {
+            isScrollingRef.current = false;
+          }, 100);
+        }
+      }, 50); // 50ms debounce for smooth scrolling
     }
-  }, [currentWeekIndex, weeks, pageWidth]); // Added pageWidth to dependencies
+  }, [currentWeekIndex, weeks, pageWidth]);
+
+  // Cleanup timeout on unmount
+  useEffect(() => {
+    return () => {
+      if (scrollTimeoutRef.current) {
+        clearTimeout(scrollTimeoutRef.current);
+      }
+    };
+  }, []);
 
   // Helper function to get date string in local timezone (YYYY-MM-DD)
   const getLocalDateString = (date: Date) => {
@@ -126,16 +156,19 @@ export default function WeekView({
     return dateString === todayString;
   };
 
-  const handleScroll = (event: any) => {
+  const handleScroll = useCallback((event: any) => {
+    // Don't handle scroll events if we're programmatically scrolling
+    if (isScrollingRef.current) return;
+
     const contentOffset = event.nativeEvent.contentOffset.x;
 
     if (pageWidth > 0) { // Ensure pageWidth is positive before division
       const weekIndex = Math.round(contentOffset / pageWidth);
-      if (onWeekChange && weekIndex !== currentWeekIndex) {
+      if (onWeekChange && weekIndex !== currentWeekIndex && weekIndex >= 0 && weekIndex < weeks.length) {
         onWeekChange(weekIndex);
       }
     }
-  };
+  }, [pageWidth, onWeekChange, currentWeekIndex, weeks.length]);
 
   const getWeekTitle = (week: WeekData) => {
     const startDate = new Date(week.startDate);
