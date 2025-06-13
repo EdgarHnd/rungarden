@@ -290,7 +290,7 @@ export default function RestCelebrationModal({
         <View style={styles.contentSection}>
           <Reanimated.View style={[styles.rewardsGrid, rewardAnimatedStyle]}>
             <View style={styles.rewardCard}>
-              <Ionicons name="flash" size={24} color={Theme.colors.special.primary.exp} />
+              <Ionicons name="flash" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
               <Text style={[styles.rewardValue, styles.rewardExpValue]}>+{animatedXPValue}</Text>
               <Text style={styles.rewardLabel}>XP</Text>
             </View>

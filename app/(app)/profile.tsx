@@ -88,8 +88,13 @@ export default function ProfileScreen() {
   };
 
   const formatDistance = (meters: number) => {
-    const kilometers = meters / 1000;
-    return `${kilometers.toFixed(1)} km`;
+    if ((profile?.metricSystem ?? "metric") === "metric") {
+      const kilometers = meters / 1000;
+      return `${kilometers.toFixed(1)} km`;
+    } else {
+      const miles = meters * 0.000621371;
+      return `${miles.toFixed(1)} mi`;
+    }
   };
 
   const calculateStreak = () => {
@@ -203,8 +208,15 @@ export default function ProfileScreen() {
               <View style={styles.duolingoStatCard}>
                 <Text style={styles.duolingoStatIcon}>🛣️</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{Math.round(profileStats.totalDistance / 1000)}</Text>
-                  <Text style={styles.duolingoStatLabel}>Total Km</Text>
+                  <Text style={styles.duolingoStatNumber}>
+                    {(profile?.metricSystem ?? "metric") === "metric"
+                      ? Math.round(profileStats.totalDistance / 1000)
+                      : Math.round(profileStats.totalDistance * 0.000621371)
+                    }
+                  </Text>
+                  <Text style={styles.duolingoStatLabel}>
+                    Total {(profile?.metricSystem ?? "metric") === "metric" ? "Km" : "Mi"}
+                  </Text>
                 </View>
               </View>
 

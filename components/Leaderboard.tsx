@@ -44,6 +44,8 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
     period: selectedPeriod,
   });
 
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+
   const isLoading = leaderboard === undefined || userRank === undefined;
   const hasData = leaderboard !== undefined && userRank !== undefined;
 
@@ -74,8 +76,13 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
   }, [isLoading, hasData, fadeAnim, previousData.leaderboard]);
 
   const formatDistance = (meters: number) => {
-    const km = meters / 1000;
-    return `${km.toFixed(1)} km`;
+    if ((profile?.metricSystem ?? "metric") === "metric") {
+      const km = meters / 1000;
+      return `${km.toFixed(1)} km`;
+    } else {
+      const miles = meters * 0.000621371;
+      return `${miles.toFixed(1)} mi`;
+    }
   };
 
   const getPeriodTitle = (period: Period) => {

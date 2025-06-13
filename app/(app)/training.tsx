@@ -453,6 +453,7 @@ export default function TrainingPlanScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Your Plan</Text>
+        <Text style={styles.betaText}>Training Plan are still in BETA</Text>
         <TouchableOpacity onPress={handleActivitiesPress} style={styles.activitiesButton}>
           <Ionicons name="list" size={24} color={Theme.colors.text.primary} />
         </TouchableOpacity>
@@ -472,9 +473,6 @@ export default function TrainingPlanScreen() {
                   }).toUpperCase()}
                 </Text>
               )}
-            </View>
-            <View style={styles.planBadge}>
-              <Text style={styles.planBadgeText}>FIT</Text>
             </View>
           </View>
 
@@ -581,8 +579,9 @@ export default function TrainingPlanScreen() {
             </View>
           </TouchableOpacity>
         ))}
+        <View style={{ height: 200 }} />
 
-        <View style={styles.premiumCard}>
+        {/* <View style={styles.premiumCard}>
           <View style={styles.premiumHeader}>
             <Ionicons name="diamond" size={24} color={Theme.colors.accent.primary} />
             <Text style={styles.premiumTitle}>Edgar, join Koko Premium</Text>
@@ -598,7 +597,7 @@ export default function TrainingPlanScreen() {
               <Text style={styles.restoreButtonText}>RESTORE</Text>
             </TouchableOpacity>
           </View>
-        </View>
+        </View> */}
       </ScrollView>
     </View>
   );
@@ -621,6 +620,15 @@ const styles = StyleSheet.create({
     fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+  },
+  betaText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.background.tertiary,
+    paddingHorizontal: Theme.spacing.sm,
+    paddingVertical: Theme.spacing.xs,
+    borderRadius: Theme.borderRadius.small,
   },
   activitiesButton: {
     padding: Theme.spacing.sm,
@@ -726,7 +734,7 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.xs,
   },
   statValue: {
-    fontSize: 24,
+    fontSize: 20,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
