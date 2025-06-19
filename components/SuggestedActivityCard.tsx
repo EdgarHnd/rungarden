@@ -7,14 +7,29 @@ import { Dimensions, StyleSheet, Text, TouchableOpacity, View } from 'react-nati
 
 interface PlannedWorkout {
   scheduledDate: string;
-  type: string;
-  duration?: string;
-  description: string;
+  type?: string; // For backward compatibility
+  duration?: string; // For backward compatibility
+  description: string; // For backward compatibility
   target?: string;
   status: string;
   distance?: number;
   workoutId?: string | null;
   isDefault?: boolean;
+  // New structure from enriched queries
+  workout?: {
+    type: string;
+    description: string;
+    steps: Array<{
+      order: number;
+      label?: string;
+      duration?: string;
+      distance?: number;
+      pace?: number;
+      effort?: string;
+      target?: string;
+      notes?: string;
+    }>;
+  };
 }
 
 interface SuggestedActivityCardProps {
@@ -47,12 +62,15 @@ const getWorkoutEmoji = (type: string, isDefault?: boolean): string => {
     'run-walk': '🚶‍♂️🏃‍♂️',
     'easy': '🏃‍♂️',
     'tempo': '🔥',
+    'interval': '⚡',
     'intervals': '⚡',
     'long': '🏃‍♂️',
     'recovery': '🧘‍♀️',
     'cross-train': '🚴‍♂️',
+    'strength': '💪',
     'rest': '😴',
-    'race': '🏆'
+    'race': '🏆',
+    'run': '🏃‍♂️'
   };
   return emojiMap[type] || '🏃‍♂️';
 };
@@ -67,8 +85,11 @@ const getWorkoutIntensity = (type: string, isDefault?: boolean): 'Easy' | 'Mediu
     'recovery': 'Easy',
     'rest': 'Easy',
     'cross-train': 'Easy',
+    'run': 'Easy',
     'tempo': 'Medium',
     'long': 'Medium',
+    'strength': 'Medium',
+    'interval': 'Hard',
     'intervals': 'Hard',
     'race': 'Hard'
   };
@@ -81,19 +102,21 @@ const getWorkoutTitle = (plannedWorkout: PlannedWorkout): string => {
     return 'Rest & Recovery';
   }
 
-  const { type, description } = plannedWorkout;
+  // Use new structure first, fallback to old structure
+  const type = plannedWorkout.workout?.type || plannedWorkout.type;
+  const description = plannedWorkout.workout?.description || plannedWorkout.description;
 
   // For C25K workouts, extract the week info
   if (type === 'run-walk') {
-    if (description.includes('Week 1')) return 'C25K Week 1';
-    if (description.includes('Week 2')) return 'C25K Week 2';
-    if (description.includes('Week 3')) return 'C25K Week 3';
-    if (description.includes('Week 4')) return 'C25K Week 4';
-    if (description.includes('Week 5')) return 'C25K Week 5';
-    if (description.includes('Week 6')) return 'C25K Week 6';
-    if (description.includes('Week 7')) return 'C25K Week 7';
-    if (description.includes('Week 8')) return 'C25K Week 8';
-    if (description.includes('Week 9')) return 'C25K Week 9';
+    if (description?.includes('Week 1')) return 'C25K Week 1';
+    if (description?.includes('Week 2')) return 'C25K Week 2';
+    if (description?.includes('Week 3')) return 'C25K Week 3';
+    if (description?.includes('Week 4')) return 'C25K Week 4';
+    if (description?.includes('Week 5')) return 'C25K Week 5';
+    if (description?.includes('Week 6')) return 'C25K Week 6';
+    if (description?.includes('Week 7')) return 'C25K Week 7';
+    if (description?.includes('Week 8')) return 'C25K Week 8';
+    if (description?.includes('Week 9')) return 'C25K Week 9';
     return 'C25K Training';
   }
 
@@ -101,15 +124,18 @@ const getWorkoutTitle = (plannedWorkout: PlannedWorkout): string => {
   const titleMap: Record<string, string> = {
     'easy': 'Easy Run',
     'tempo': 'Tempo Run',
+    'interval': 'Interval Training',
     'intervals': 'Interval Training',
     'long': 'Long Run',
     'recovery': 'Recovery Run',
     'cross-train': 'Cross Training',
+    'strength': 'Strength Training',
     'rest': 'Rest Day',
-    'race': 'Race Day'
+    'race': 'Race Day',
+    'run': 'Run'
   };
 
-  return titleMap[type] || type.charAt(0).toUpperCase() + type.slice(1) + ' Run';
+  return (type && titleMap[type]) || (type ? type.charAt(0).toUpperCase() + type.slice(1) + ' Run' : 'Workout');
 };
 
 // Helper function to get workout subtitle
@@ -118,11 +144,47 @@ const getWorkoutSubtitle = (plannedWorkout: PlannedWorkout): string => {
     return 'Default rest day';
   }
 
-  if (plannedWorkout.type === 'run-walk') {
+  const type = plannedWorkout.workout?.type || plannedWorkout.type;
+  if (type === 'run-walk') {
     return 'C25K Program';
   }
 
   return 'From your training plan';
+};
+
+// Helper function to calculate total duration from workout steps
+const calculateDurationFromSteps = (steps?: Array<{
+  duration?: string;
+  [key: string]: any;
+}>): string | undefined => {
+  if (!steps || steps.length === 0) return undefined;
+
+  const durations = steps.map(step => step.duration).filter(Boolean);
+  if (durations.length === 0) return undefined;
+
+  // Sum up durations if they're all in minutes
+  const totalMinutes = durations.reduce((sum, duration) => {
+    const match = duration!.match(/(\d+)\s*min/);
+    return sum + (match ? parseInt(match[1]) : 0);
+  }, 0);
+
+  if (totalMinutes > 0) {
+    return `${totalMinutes} min`;
+  }
+
+  // If we can't sum them, return the first duration
+  return durations[0];
+};
+
+// Helper function to calculate total distance from workout steps
+const calculateDistanceFromSteps = (steps?: Array<{
+  distance?: number;
+  [key: string]: any;
+}>): number | undefined => {
+  if (!steps || steps.length === 0) return undefined;
+
+  const totalDistance = steps.reduce((sum, step) => sum + (step.distance || 0), 0);
+  return totalDistance > 0 ? totalDistance : undefined;
 };
 
 export default function SuggestedActivityCard({
@@ -157,12 +219,18 @@ export default function SuggestedActivityCard({
     }
   };
 
-  const isRestDay = plannedWorkout.type === 'rest';
+  // Extract workout data from new nested structure, with fallback to old structure
+  const workoutType = plannedWorkout.workout?.type || plannedWorkout.type || 'run';
+  const workoutDescription = plannedWorkout.workout?.description || plannedWorkout.description || '';
+  const workoutDuration = plannedWorkout.duration || calculateDurationFromSteps(plannedWorkout.workout?.steps);
+  const workoutDistance = plannedWorkout.distance || calculateDistanceFromSteps(plannedWorkout.workout?.steps);
+
+  const isRestDay = workoutType === 'rest';
   const isCompleted = isRestDay && isRestDayCompleted;
   const workoutTitle = getWorkoutTitle(plannedWorkout);
   const workoutSubtitle = getWorkoutSubtitle(plannedWorkout);
-  const workoutEmoji = getWorkoutEmoji(plannedWorkout.type, plannedWorkout.isDefault);
-  const workoutIntensity = getWorkoutIntensity(plannedWorkout.type, plannedWorkout.isDefault);
+  const workoutEmoji = getWorkoutEmoji(workoutType, plannedWorkout.isDefault);
+  const workoutIntensity = getWorkoutIntensity(workoutType, plannedWorkout.isDefault);
 
   return (
     <TouchableOpacity
@@ -180,28 +248,28 @@ export default function SuggestedActivityCard({
         <Text style={styles.emoji}>{workoutEmoji}</Text>
         <View style={styles.headerText}>
           <Text style={styles.title}>
-            {isToday && ((preferTimeOverDistance && plannedWorkout.duration) || (!preferTimeOverDistance && plannedWorkout.distance && plannedWorkout.distance > 0))
+            {isToday && ((preferTimeOverDistance && workoutDuration) || (!preferTimeOverDistance && workoutDistance && workoutDistance > 0))
               ? preferTimeOverDistance
-                ? `${workoutTitle} • ${plannedWorkout.duration || 'Flexible'}`
-                : `${workoutTitle} • ${formatDistance(plannedWorkout.distance!, isMetric)}`
+                ? `${workoutTitle} • ${workoutDuration || 'Flexible'}`
+                : `${workoutTitle} • ${formatDistance(workoutDistance!, isMetric)}`
               : workoutTitle
             }
           </Text>
           <Text style={styles.subtitle}>{workoutSubtitle}</Text>
         </View>
-        <View style={[styles.intensityBadge, { backgroundColor: getIntensityColor(workoutIntensity) }]}>
+        {/* <View style={[styles.intensityBadge, { backgroundColor: getIntensityColor(workoutIntensity) }]}>
           <Text style={styles.intensityText}>{workoutIntensity}</Text>
-        </View>
+        </View> */}
       </View>
 
-      <Text style={styles.description}>{plannedWorkout.description}</Text>
+      <Text style={styles.description}>{workoutDescription}</Text>
 
       {isToday ? (
         <View style={styles.startButtonContainer}>
           <TouchableOpacity
             style={[
               styles.startButton,
-              { backgroundColor: isRestDay ? Theme.colors.special.primary.coin : Theme.colors.accent.primary },
+              { backgroundColor: isRestDay ? Theme.colors.special.primary.coin : Theme.colors.special.primary.exp },
               isCompleted && styles.completedButton
             ]}
             onPress={handlePress}
@@ -212,27 +280,27 @@ export default function SuggestedActivityCard({
               {isRestDay
                 ? isCompleted
                   ? 'COMPLETED'
-                  : '🧘‍♂️ START REST DAY'
-                : '🏃‍♂️ START WORKOUT'}
+                  : 'COMPLETE REST DAY'
+                : 'START WORKOUT'}
             </Text>
           </TouchableOpacity>
         </View>
       ) : (
-        plannedWorkout.type !== 'rest' && (
+        workoutType !== 'rest' && (
           <View style={styles.detailsRow}>
-            {plannedWorkout.distance && plannedWorkout.distance > 0 ? (
+            {workoutDistance && workoutDistance > 0 ? (
               <>
                 {/* Show either distance OR duration based on user preference */}
                 {preferTimeOverDistance ? (
                   <>
                     <View style={styles.detail}>
                       <Text style={styles.detailLabel}>Duration</Text>
-                      <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
+                      <Text style={styles.detailValue}>{workoutDuration || 'Flexible'}</Text>
                     </View>
                     <View style={styles.detail}>
                       <Text style={styles.detailLabel}>Activity Type</Text>
                       <Text style={styles.detailValue}>
-                        {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+                        {plannedWorkout.isDefault ? 'Recovery' : (workoutType ? workoutType.charAt(0).toUpperCase() + workoutType.slice(1).replace('-', ' ') : 'Workout')}
                       </Text>
                     </View>
                   </>
@@ -240,12 +308,12 @@ export default function SuggestedActivityCard({
                   <>
                     <View style={styles.detail}>
                       <Text style={styles.detailLabel}>Distance</Text>
-                      <Text style={styles.detailValue}>{formatDistance(plannedWorkout.distance, isMetric)}</Text>
+                      <Text style={styles.detailValue}>{formatDistance(workoutDistance, isMetric)}</Text>
                     </View>
                     <View style={styles.detail}>
                       <Text style={styles.detailLabel}>Activity Type</Text>
                       <Text style={styles.detailValue}>
-                        {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+                        {plannedWorkout.isDefault ? 'Recovery' : (workoutType ? workoutType.charAt(0).toUpperCase() + workoutType.slice(1).replace('-', ' ') : 'Workout')}
                       </Text>
                     </View>
                   </>
@@ -255,12 +323,12 @@ export default function SuggestedActivityCard({
               <>
                 <View style={styles.detail}>
                   <Text style={styles.detailLabel}>Duration</Text>
-                  <Text style={styles.detailValue}>{plannedWorkout.duration || 'Flexible'}</Text>
+                  <Text style={styles.detailValue}>{workoutDuration || 'Flexible'}</Text>
                 </View>
                 <View style={styles.detail}>
                   <Text style={styles.detailLabel}>Activity Type</Text>
                   <Text style={styles.detailValue}>
-                    {plannedWorkout.isDefault ? 'Recovery' : plannedWorkout.type.charAt(0).toUpperCase() + plannedWorkout.type.slice(1).replace('-', ' ')}
+                    {plannedWorkout.isDefault ? 'Recovery' : (workoutType ? workoutType.charAt(0).toUpperCase() + workoutType.slice(1).replace('-', ' ') : 'Workout')}
                   </Text>
                 </View>
               </>
@@ -343,7 +411,7 @@ const styles = StyleSheet.create({
   },
   todayCard: {
     borderWidth: 2,
-    borderColor: Theme.colors.accent.primary,
+    borderColor: Theme.colors.special.primary.exp,
     backgroundColor: Theme.colors.background.secondary,
   },
   startButtonContainer: {

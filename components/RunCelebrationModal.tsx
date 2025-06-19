@@ -5,7 +5,7 @@ import LevelingService from '@/services/LevelingService';
 import RunFeelingService, { FeelingType } from '@/services/RunFeelingService';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
-import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   interpolate,
   default as Reanimated,
@@ -394,13 +394,14 @@ export default function RunCelebrationModal({
     stepOpacity.value = withTiming(0, {
       duration: 200,
     });
+    onClose();
 
     // Use setTimeout for cleanup instead of animation callback
-    setTimeout(() => {
-      setCurrentStep('stats');
-      setSelectedFeeling(null);
-      onClose();
-    }, 200);
+    // setTimeout(() => {
+    //   setCurrentStep('stats');
+    //   setSelectedFeeling(null);
+    //   onClose();
+    // }, 200);
   };
 
   const formatDistance = (meters: number) => {
@@ -474,7 +475,7 @@ export default function RunCelebrationModal({
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
-          <Text style={styles.headerEmoji}>{getRunEmoji()}</Text>
+          <Image source={require('@/assets/images/blaze/blazerunning.png')} style={styles.image} resizeMode="contain" />
           <Text style={styles.headerTitle}>Congrats on your run!</Text>
         </View>
 
@@ -485,25 +486,25 @@ export default function RunCelebrationModal({
                 label: 'Distance',
                 value: formatDistance(runData.distance),
                 icon: '🏃',
-                color: '#3B82F6'
+                color: Theme.colors.text.primary
               },
               {
                 label: 'Duration',
                 value: formatDuration(runData.duration),
                 icon: '⏱️',
-                color: '#10B981'
+                color: Theme.colors.text.primary
               },
               {
                 label: 'Pace',
                 value: formatPace(runData.duration, runData.distance),
                 icon: '⚡',
-                color: '#FFB800'
+                color: Theme.colors.text.primary
               },
               {
                 label: 'Calories',
                 value: Math.round(runData.calories).toString(),
                 icon: '🍦',
-                color: '#EF4444'
+                color: Theme.colors.text.primary
               }
             ]} />
           </View>
@@ -628,10 +629,10 @@ export default function RunCelebrationModal({
         <View style={styles.contentSection}>
           <View style={styles.centerContent}>
             <Reanimated.Image
-              source={require('@/assets/images/icons/eucaleaf.png')}
+              source={require('@/assets/images/icons/coal.png')}
               style={[styles.rewardIcon, rewardIconAnimatedStyle]}
             />
-            <Text style={styles.rewardMessage}>You earned {animatedCoinValue} leaves</Text>
+            <Text style={styles.rewardMessage}>You earned {animatedCoinValue} embers</Text>
             <Text style={styles.rewardSubtitle}>Spend them on new clothes and accessories for Koko!</Text>
           </View>
         </View>
@@ -715,6 +716,10 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.semibold,
     color: Theme.colors.text.primary,
     textAlign: 'center',
+  },
+  image: {
+    width: 250,
+    height: 250,
   },
 
   // Content Section

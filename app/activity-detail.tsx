@@ -21,17 +21,71 @@ import {
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
   const [activity, setActivity] = useState<RunningActivity | null>(null);
+  const [linkedPlannedWorkout, setLinkedPlannedWorkout] = useState<any | null>(null);
   const [scaleAnim] = useState(new Animated.Value(0));
 
   // Get user profile for metric system preference
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const isMetric = (profile?.metricSystem ?? 'metric') === 'metric';
 
+  // Helper functions for workout display
+  const getWorkoutEmoji = (type: string): string => {
+    const emojiMap: Record<string, string> = {
+      'easy': '🏃‍♂️',
+      'tempo': '🔥',
+      'interval': '⚡',
+      'intervals': '⚡',
+      'long': '🏃‍♂️',
+      'recovery': '🧘‍♀️',
+      'cross-train': '🚴‍♂️',
+      'strength': '💪',
+      'rest': '😴',
+      'race': '🏆',
+      'run': '🏃‍♂️'
+    };
+    return emojiMap[type] || '🏃‍♂️';
+  };
+
+  const getWorkoutDisplayName = (type: string): string => {
+    const displayNames: Record<string, string> = {
+      'easy': 'Easy Run',
+      'tempo': 'Tempo Run',
+      'interval': 'Interval Training',
+      'intervals': 'Interval Training',
+      'long': 'Long Run',
+      'recovery': 'Recovery Run',
+      'cross-train': 'Cross Training',
+      'strength': 'Strength Training',
+      'rest': 'Rest Day',
+      'race': 'Race Day',
+      'run': 'Run'
+    };
+    return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
+  };
+
+  // TODO: Re-enable achievements when achievements.ts is uncommented
+  // const achievementsForActivity = useQuery(
+  //   api.achievements.getAchievementsForActivityByUuid,
+  //   activity ? {
+  //     healthKitUuid: activity.uuid,
+  //     isMetric: isMetric,
+  //   } : "skip"
+  // );
+
+  // Placeholder for achievements - replace with actual query when achievements are enabled
+  const achievementsForActivity: Array<{
+    id: string;
+    name: string;
+    emoji: string;
+    reward: string;
+  }> = [];
+
   useEffect(() => {
     if (params.activity) {
       try {
         const activityData = JSON.parse(params.activity as string);
         setActivity(activityData);
+        setLinkedPlannedWorkout(activityData.plannedWorkout || null);
 
         // Entrance animation
         Animated.spring(scaleAnim, {
@@ -125,34 +179,6 @@ export default function ActivityDetailScreen() {
     return { rank: 'GOOD', color: '#F59E0B', emoji: '👍' };
   };
 
-  const getAchievements = () => {
-    if (!activity) return [];
-
-    const achievements = [];
-    const distance = activity.distance / 1000;
-    const pace = calculatePace(activity.duration, activity.distance);
-    const runDate = new Date(activity.startDate);
-
-    // Distance achievements
-    if (distance >= 21) achievements.push({ name: 'Marathon Hero', emoji: '🏆', color: '#FFD700' });
-    else if (distance >= 10) achievements.push({ name: '10K Champion', emoji: '🥇', color: '#FFD700' });
-    else if (distance >= 5) achievements.push({ name: '5K Star', emoji: '⭐', color: '#3B82F6' });
-    else if (distance >= 1) achievements.push({ name: 'Kilometer Club', emoji: '🎯', color: '#10B981' });
-
-    // Speed achievements
-    if (pace < 4) achievements.push({ name: 'Speed Demon', emoji: '⚡', color: '#9945FF' });
-    else if (pace < 5) achievements.push({ name: 'Fast Runner', emoji: '💨', color: '#3B82F6' });
-
-    // Time achievements
-    if (runDate.getHours() < 7) achievements.push({ name: 'Early Bird', emoji: '🐓', color: '#F59E0B' });
-    if (runDate.getHours() >= 20) achievements.push({ name: 'Night Owl', emoji: '🦉', color: '#6B46C1' });
-
-    // Endurance achievements
-    if (activity.duration >= 60) achievements.push({ name: 'Endurance Master', emoji: '💪', color: '#EF4444' });
-
-    return achievements;
-  };
-
   if (!activity) {
     return (
       <View style={styles.container}>
@@ -162,9 +188,7 @@ export default function ActivityDetailScreen() {
   }
 
   const runRank = getRunRank();
-  const achievements = getAchievements();
-  const xpGained = Math.floor(activity.distance / 100); // 1 XP per 100m
-  const coinsEarned = Math.floor(activity.distance / 1000); // 1 coin per km
+  const achievements = achievementsForActivity || [];
 
   return (
     <View style={styles.container}>
@@ -185,6 +209,7 @@ export default function ActivityDetailScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
+          <Image source={require('@/assets/images/blaze/blazerunning.png')} style={styles.heroImage} resizeMode="contain" />
           <Text style={styles.heroTitle}>{`${runRank.rank} Run!`}</Text>
         </Animated.View>
 
@@ -195,25 +220,25 @@ export default function ActivityDetailScreen() {
               label: 'Distance',
               value: `${formatDistance(activity.distance)} ${getDistanceUnit()}`,
               icon: '🛣️',
-              color: '#FFB800'
+              color: Theme.colors.text.primary
             },
             {
               label: 'Duration',
               value: formatDuration(activity.duration),
               icon: '🕒',
-              color: '#10B981'
+              color: Theme.colors.text.primary
             },
             {
               label: 'Pace',
               value: formatPace(calculatePace(activity.duration, activity.distance)),
               icon: '🏃',
-              color: '#3B82F6'
+              color: Theme.colors.text.primary
             },
             ...(activity.calories ? [{
               label: 'Calories',
               value: Math.round(activity.calories).toString(),
               icon: '🍦',
-              color: '#EF4444'
+              color: Theme.colors.text.primary
             }] : [])
           ]} />
         </View>
@@ -229,27 +254,61 @@ export default function ActivityDetailScreen() {
             </View>
             <View style={styles.rewardCard}>
               <Image
-                source={require('@/assets/images/icons/eucaleaf.png')}
+                source={require('@/assets/images/icons/coal.png')}
                 style={styles.rewardImage}
               />
               <Text style={[styles.rewardValue, { color: Theme.colors.special.primary.coin }]}>+{Math.floor(activity.distance / 100)}</Text>
-              <Text style={styles.rewardLabel}>Leaves</Text>
+              <Text style={styles.rewardLabel}>Embers</Text>
             </View>
           </View>
         </View>
 
-        {/* Achievements Section */}
+        {/* Achievements Section - Now using real data */}
         {achievements.length > 0 && (
           <View style={styles.achievementsSection}>
             <Text style={styles.sectionTitle}>🏆 Achievements Unlocked</Text>
             <View style={styles.achievementsGrid}>
               {achievements.map((achievement, index) => (
-                <View key={index} style={[styles.achievementCard, { borderColor: achievement.color }]}>
+                <View key={achievement.id} style={[styles.achievementCard, { borderColor: Theme.colors.accent.primary }]}>
                   <Text style={styles.achievementEmoji}>{achievement.emoji}</Text>
                   <Text style={styles.achievementName}>{achievement.name}</Text>
+                  <Text style={styles.achievementReward}>{achievement.reward}</Text>
                 </View>
               ))}
             </View>
+          </View>
+        )}
+
+        {/* Planned Workout Info Section */}
+        {linkedPlannedWorkout && (
+          <View style={styles.plannedWorkoutSection}>
+            <Text style={styles.sectionTitle}>📋 Training Plan Completed</Text>
+            <TouchableOpacity style={styles.plannedWorkoutCard} onPress={() => {
+              router.push({
+                pathname: '/training-detail',
+                params: {
+                  scheduleWorkoutId: linkedPlannedWorkout._id
+                }
+              });
+            }}>
+              <View style={styles.plannedWorkoutHeader}>
+                <Text style={styles.plannedWorkoutType}>
+                  {getWorkoutEmoji(linkedPlannedWorkout.workout?.type || linkedPlannedWorkout.type)}
+                  {' '}{getWorkoutDisplayName(linkedPlannedWorkout.workout?.type || linkedPlannedWorkout.type)}
+                </Text>
+                <View style={styles.completedBadge}>
+                  <Text style={styles.completedBadgeText}>COMPLETED</Text>
+                </View>
+              </View>
+              {linkedPlannedWorkout.workout?.description && (
+                <Text style={styles.plannedWorkoutDescription}>
+                  {linkedPlannedWorkout.workout.description}
+                </Text>
+              )}
+              <Text style={styles.plannedWorkoutDate}>
+                Scheduled: {new Date(linkedPlannedWorkout.scheduledDate).toLocaleDateString()}
+              </Text>
+            </TouchableOpacity>
           </View>
         )}
 
@@ -294,6 +353,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Theme.spacing.xl,
     paddingBottom: Theme.spacing.xxxl,
+  },
+  heroImage: {
+    width: 200,
+    height: 200,
   },
   rankBadge: {
     flexDirection: 'row',
@@ -527,15 +590,61 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     textAlign: 'center',
   },
+  achievementReward: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    marginTop: 4,
+  },
 
   // Planned Workout Styles
-  plannedWorkoutHeader: {
-    backgroundColor: Theme.colors.background.primary,
+  plannedWorkoutSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
   },
-  plannedWorkoutHeaderTitle: {
-    fontSize: 20,
+  plannedWorkoutCard: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    borderLeftWidth: 4,
+    borderLeftColor: Theme.colors.accent.primary,
+  },
+  plannedWorkoutHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Theme.spacing.md,
+  },
+  plannedWorkoutType: {
+    fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+    flex: 1,
+  },
+  completedBadge: {
+    backgroundColor: Theme.colors.status.success,
+    borderRadius: Theme.borderRadius.full,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.xs,
+  },
+  completedBadgeText: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.background.primary,
+    letterSpacing: 1,
+  },
+  plannedWorkoutDescription: {
+    fontSize: 14,
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.regular,
+    lineHeight: 20,
+    marginBottom: Theme.spacing.md,
+  },
+  plannedWorkoutDate: {
+    fontSize: 12,
+    color: Theme.colors.text.muted,
+    fontFamily: Theme.fonts.medium,
   },
   headerActions: {
     flexDirection: 'row',

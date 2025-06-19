@@ -4,7 +4,7 @@ import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
-import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   interpolate,
   default as Reanimated,
@@ -119,34 +119,6 @@ export default function RestCelebrationModal({
     }
   };
 
-  const handleRestCompletion = async () => {
-    if (isCompleting) return;
-
-    try {
-      setIsCompleting(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-
-      const today = new Date().toISOString().split('T')[0];
-      const result = await completeRestDay({ date: today });
-
-      if (result.success) {
-        setCompletionResult(result);
-        setCurrentStep('streak');
-      }
-    } catch (error: any) {
-      console.error('Failed to complete rest day:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-
-      // Show error and close modal
-      if (error.message?.includes('already completed')) {
-        // Already completed, just close
-        onClose();
-      }
-    } finally {
-      setIsCompleting(false);
-    }
-  };
-
   const handleContinue = async () => {
     if (currentStep === 'info') {
       // Prevent multiple attempts
@@ -224,10 +196,15 @@ export default function RestCelebrationModal({
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
-          <Text style={styles.headerEmoji}>🧘‍♂️</Text>
+          <Image
+            source={require('@/assets/images/blaze/blazeidle.png')}
+            style={styles.image}
+            resizeMode="contain"
+          />
           <Text style={styles.headerTitle}>Today is Rest Day</Text>
           <Text style={styles.headerSubtitle}>Recovery is part of training</Text>
         </View>
+
 
         <View style={styles.contentSection}>
           <View style={styles.infoCard}>
@@ -242,10 +219,11 @@ export default function RestCelebrationModal({
 
           <View style={styles.restActivities}>
             <Text style={styles.restTitle}>Perfect rest day activities:</Text>
-            <Text style={styles.restText}>
-              Gentle stretching • Light yoga • Meditation • Reading •
-              Quality sleep • Hydration • Healthy nutrition
-            </Text>
+            <View style={styles.infoList}>
+              <Text style={styles.infoItem}>• Gentle stretching</Text>
+              <Text style={styles.infoItem}>• Light yoga</Text>
+              <Text style={styles.infoItem}>• Meditation</Text>
+            </View>
           </View>
         </View>
       </View>
@@ -296,11 +274,11 @@ export default function RestCelebrationModal({
             </View>
             <View style={styles.rewardCard}>
               <Reanimated.Image
-                source={require('@/assets/images/icons/eucaleaf.png')}
+                source={require('@/assets/images/icons/coal.png')}
                 style={styles.leafIcon}
               />
               <Text style={[styles.rewardValue, styles.rewardLeavesValue]}>+10</Text>
-              <Text style={styles.rewardLabel}>Leaves</Text>
+              <Text style={styles.rewardLabel}>Embers</Text>
             </View>
           </Reanimated.View>
 
@@ -442,7 +420,14 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     lineHeight: 20,
   },
-
+  imageContainer: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.xl,
+  },
+  image: {
+    width: 250,
+    height: 250,
+  },
   // Rewards Section
   rewardsTitle: {
     fontSize: 28,

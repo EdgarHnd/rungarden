@@ -1,8 +1,9 @@
+import AchievementCelebrationModal from '@/components/AchievementCelebrationModal';
+import AchievementProgressModal from '@/components/AchievementProgressModal';
 import StreakDisplay from '@/components/StreakDisplay';
 import XPInfoModal from '@/components/XPInfoModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
-import ChallengeService from '@/services/ChallengeService';
 import LevelingService from '@/services/LevelingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -21,14 +22,29 @@ export default function ProfileScreen() {
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const profileStats = useQuery(api.activities.getProfileStats);
   const weekProgress = useQuery(api.userProfile.getCurrentWeekProgress);
-  const streakInfo = useQuery(api.userProfile.getStreakInfo);
   const updateWeeklyGoal = useMutation(api.userProfile.updateWeeklyGoal);
+
+  // Get latest completed challenges for profile display
+  // TODO: Re-enable when achievements API is implemented
+  // const latestChallenges = useQuery(api.achievements.getLatestCompletedChallenges, {
+  //   limit: 3,
+  //   isMetric: (profile?.metricSystem ?? "metric") === "metric"
+  // });
+  const latestChallenges: any[] = []; // Placeholder until achievements are implemented
+
+  // const claimReward = useMutation(api.achievements.claimAchievementReward);
+  const claimReward = async (challengeId: string) => { }; // Placeholder until achievements are implemented
 
   // State for goal editing
   const [showGoalModal, setShowGoalModal] = useState(false);
   const [newGoal, setNewGoal] = useState('');
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showLevelModal, setShowLevelModal] = useState(false);
+
+  // Achievement modal states
+  const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
+  const [showProgressModal, setShowProgressModal] = useState(false);
+  const [showCelebrationModal, setShowCelebrationModal] = useState(false);
 
   const isLoading = profile === undefined || profileStats === undefined;
 
@@ -99,15 +115,45 @@ export default function ProfileScreen() {
 
   const calculateStreak = () => {
     // Use real streak data from streakInfo
-    return streakInfo?.currentStreak || 0;
+    return profile?.currentStreak || 0;
   };
 
   // Debug log to see what streakInfo contains
   React.useEffect(() => {
-    if (streakInfo) {
-      console.log('Profile streakInfo:', JSON.stringify(streakInfo, null, 2));
+    if (profile) {
+      console.log('Profile streakInfo:', JSON.stringify(profile, null, 2));
     }
-  }, [streakInfo]);
+  }, [profile]);
+
+  const handleChallengePress = (challenge: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedChallenge(challenge);
+
+    if (challenge.isCompleted && challenge.isNew && !challenge.rewardClaimed) {
+      // Show celebration modal for newly completed challenges
+      setShowCelebrationModal(true);
+    } else {
+      // Show progress modal for other challenges
+      setShowProgressModal(true);
+    }
+  };
+
+  const handleClaimReward = async (challengeId: string) => {
+    try {
+      await claimReward(challengeId);
+      setShowCelebrationModal(false);
+      setSelectedChallenge(null);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (error) {
+      console.error('Error claiming reward:', error);
+    }
+  };
+
+  const handleCloseModals = () => {
+    setShowProgressModal(false);
+    setShowCelebrationModal(false);
+    setSelectedChallenge(null);
+  };
 
   if (isLoading || !profileStats) {
     return (
@@ -311,10 +357,10 @@ export default function ProfileScreen() {
         {showStreakModal && (
           <StreakDisplay
             visible={showStreakModal}
-            streakInfo={streakInfo ? {
-              currentStreak: streakInfo.currentStreak,
-              longestStreak: streakInfo.longestStreak,
-              lastStreakDate: streakInfo.lastStreakDate,
+            streakInfo={profile ? {
+              currentStreak: profile.currentStreak,
+              longestStreak: profile.longestStreak,
+              lastStreakDate: profile.lastStreakDate || null,
             } : null}
             onClose={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -326,7 +372,7 @@ export default function ProfileScreen() {
         {/* Challenges Section */}
         <View style={styles.achievementsSection}>
           <View style={styles.achievementsHeader}>
-            <Text style={styles.sectionTitle}>Challenges</Text>
+            <Text style={styles.sectionTitle}>Latest Achievements</Text>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => {
@@ -337,25 +383,42 @@ export default function ProfileScreen() {
               <Text style={styles.viewAllText}>VIEW ALL</Text>
             </TouchableOpacity>
           </View>
-          <View style={styles.achievementsRow}>
-            {ChallengeService.getAllChallenges().slice(0, 3).map((challenge, index) => (
-              <View key={challenge.id} style={styles.achievementBadge}>
-                <TouchableOpacity
-                  style={styles.challengeCard}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    Alert.alert(
-                      challenge.name,
-                      `${challenge.description}\n\nReward: ${challenge.reward}`,
-                      [{ text: 'Got it!', style: 'default' }]
-                    );
-                  }}
-                  activeOpacity={0.8}
-                >
-                  <Text style={styles.challengeEmoji}>{challenge.emoji}</Text>
-                </TouchableOpacity>
-              </View>
-            ))}
+          <View style={styles.achievementsGrid}>
+            {latestChallenges && latestChallenges.length > 0 ? (
+              latestChallenges
+                .filter((challenge): challenge is NonNullable<typeof challenge> => challenge !== null)
+                .map((challenge, index) => (
+                  <TouchableOpacity
+                    key={challenge.id}
+                    style={[
+                      styles.challengeCard,
+                      challenge.isCompleted && styles.challengeCardCompleted
+                    ]}
+                    onPress={() => handleChallengePress(challenge)}
+                    activeOpacity={0.7}
+                  >
+                    {/* NEW badge for recently completed challenges */}
+                    {challenge.isNew && challenge.isCompleted && (
+                      <View style={styles.newBadge}>
+                        <Text style={styles.newBadgeText}>NEW</Text>
+                      </View>
+                    )}
+                    <Text style={styles.challengeEmoji}>{challenge.emoji}</Text>
+                    <Text style={styles.challengeName}>{challenge.name}</Text>
+                    <Text style={styles.challengeProgress}>
+                      {challenge.progress} of {challenge.maxProgress}
+                    </Text>
+                  </TouchableOpacity>
+                ))
+            ) : (
+              // Loading state - show 3 placeholder cards
+              Array.from({ length: 3 }, (_, index) => (
+                <View key={`placeholder-${index}`} style={styles.challengeCard}>
+                  <Text style={styles.challengeEmoji}>⏳</Text>
+                  <Text style={styles.challengeProgress}>Loading...</Text>
+                </View>
+              ))
+            )}
           </View>
         </View>
 
@@ -396,6 +459,24 @@ export default function ProfileScreen() {
         {/* Bottom Spacing */}
         <View style={styles.bottomSpacer} />
       </ScrollView>
+
+      {/* Achievement Modals */}
+      {selectedChallenge && (
+        <>
+          <AchievementProgressModal
+            visible={showProgressModal}
+            challenge={selectedChallenge}
+            onClose={handleCloseModals}
+          />
+
+          <AchievementCelebrationModal
+            visible={showCelebrationModal}
+            challenge={selectedChallenge}
+            onClose={handleCloseModals}
+            onClaimReward={handleClaimReward}
+          />
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -629,34 +710,95 @@ const styles = StyleSheet.create({
     color: Theme.colors.accent.primary,
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
+    marginBottom: 16,
   },
-  achievementsRow: {
+  achievementsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  achievementBadge: {
+  challengeCard: {
+    width: '31%',
+    aspectRatio: 1,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.medium,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  challengeCardCompleted: {
+    backgroundColor: Theme.colors.accent.primary + '20',
+    borderWidth: 2,
+    borderColor: Theme.colors.accent.primary,
+  },
+  challengeEmoji: {
+    fontSize: 32,
+    marginBottom: Theme.spacing.sm,
+  },
+  challengeName: {
+    fontSize: 11,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    paddingHorizontal: 4,
+    marginBottom: 2,
+  },
+  challengeProgress: {
+    fontSize: 9,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+  },
+  // Duolingo Style Stats
+  duolingoStatsContainer: {
+    marginBottom: 20,
+  },
+  duolingoStatsRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginBottom: 12,
+  },
+  duolingoStatCard: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: 16,
+    padding: 16,
+    flexDirection: 'row',
     alignItems: 'center',
     flex: 1,
-    marginHorizontal: 8,
+    marginHorizontal: 6,
   },
-  achievementEarned: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Theme.colors.special.secondary.level,
-    justifyContent: 'center',
-    alignItems: 'center',
+  duolingoStatIcon: {
+    fontSize: 24,
+    marginRight: 16,
   },
-  achievementLocked: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Theme.colors.background.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
+  duolingoStatText: {
+    flex: 1,
   },
-  achievementIcon: {
-    fontSize: 32,
+  duolingoStatNumber: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: 2,
+  },
+  duolingoStatLabel: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
+  },
+  newBadge: {
+    position: 'absolute',
+    top: 4,
+    right: 4,
+    backgroundColor: Theme.colors.special.primary.exp,
+    borderRadius: 8,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    zIndex: 1,
+  },
+  newBadgeText: {
+    fontSize: 8,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.background.primary,
+    letterSpacing: 0.5,
   },
   goalModal: {
     position: 'absolute',
@@ -771,7 +913,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
     borderRadius: 4,
   },
   progressText: {
@@ -823,53 +965,5 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.regular,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
-  },
-  // Challenge Styles
-  challengeCard: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    backgroundColor: Theme.colors.background.secondary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  challengeEmoji: {
-    fontSize: 32,
-  },
-  // Duolingo Style Stats
-  duolingoStatsContainer: {
-    marginBottom: 20,
-  },
-  duolingoStatsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: 12,
-  },
-  duolingoStatCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: 16,
-    padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: 6,
-  },
-  duolingoStatIcon: {
-    fontSize: 24,
-    marginRight: 16,
-  },
-  duolingoStatText: {
-    flex: 1,
-  },
-  duolingoStatNumber: {
-    fontSize: 24,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 2,
-  },
-  duolingoStatLabel: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
   },
 }); 

@@ -29,9 +29,9 @@ function AuthenticatedApp() {
       <Stack.Screen
         name="challenges"
         options={{
-          presentation: 'modal',
+          presentation: 'card',
           gestureEnabled: true,
-          animation: 'slide_from_bottom',
+          animation: 'slide_from_right',
         }}
       />
       <Stack.Screen

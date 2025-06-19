@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { Id } from '@/convex/_generated/dataModel';
 import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
@@ -7,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Animated,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -38,8 +40,16 @@ interface WorkoutSection {
 
 export default function TrainingDetailScreen() {
   const params = useLocalSearchParams();
-  const [activity, setActivity] = useState<Activity | null>(null);
   const [scaleAnim] = useState(new Animated.Value(0));
+
+  // Get the scheduleWorkoutId from params
+  const scheduleWorkoutId = params.scheduleWorkoutId as Id<"plannedWorkouts"> | undefined;
+
+  // Fetch the planned workout data
+  const plannedWorkout = useQuery(
+    api.trainingPlan.getPlannedWorkoutById,
+    scheduleWorkoutId ? { plannedWorkoutId: scheduleWorkoutId } : "skip"
+  );
 
   // Get user profile for metric system preference
   const profile = useQuery(api.userProfile.getOrCreateProfile);
@@ -48,6 +58,102 @@ export default function TrainingDetailScreen() {
   // Get training profile for workout style preference
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const preferTimeOverDistance = trainingProfile?.preferTimeOverDistance ?? true;
+
+  // Check if this planned workout has linked activities
+  const linkedActivities = useQuery(
+    api.activities.getActivitiesForPlannedWorkout,
+    scheduleWorkoutId ? { plannedWorkoutId: scheduleWorkoutId } : "skip"
+  );
+
+  // Check if the current planned workout is completed
+  const isWorkoutCompleted = plannedWorkout?.status === 'completed' || (linkedActivities?.length ?? 0) > 0;
+
+  // Transform planned workout data to match the existing Activity interface
+  const activity: Activity | null = plannedWorkout ? {
+    type: plannedWorkout.workout?.subType || plannedWorkout.workout?.type || 'run',
+    title: plannedWorkout.workout?.name || 'Training Session',
+    description: plannedWorkout.workout?.description || '',
+    duration: extractDurationFromSteps(plannedWorkout.workout?.steps || []),
+    distance: extractDistanceFromSteps(plannedWorkout.workout?.steps || []),
+    emoji: getWorkoutEmoji(plannedWorkout.workout?.subType || plannedWorkout.workout?.type || 'run'),
+    date: plannedWorkout.scheduledDate,
+    workoutSections: transformStepsToSections(plannedWorkout.workout?.steps || [])
+  } : null;
+
+  // Debug logging
+  React.useEffect(() => {
+    if (plannedWorkout) {
+      console.log('Planned workout data:', JSON.stringify(plannedWorkout, null, 2));
+      console.log('Activity data:', JSON.stringify(activity, null, 2));
+    }
+  }, [plannedWorkout, activity]);
+
+  // Helper functions to extract data from workout steps
+  function extractDurationFromSteps(steps: any[]): string {
+    console.log('Extracting duration from steps:', steps);
+    const totalDuration = steps.reduce((total, step) => {
+      if (step.duration) {
+        const match = step.duration.match(/(\d+)\s*min/);
+        if (match) {
+          return total + parseInt(match[1]);
+        }
+      }
+      return total;
+    }, 0);
+    const result = totalDuration > 0 ? `${totalDuration} min` : '30 min';
+    console.log('Extracted duration:', result);
+    return result;
+  }
+
+  function extractDistanceFromSteps(steps: any[]): number {
+    console.log('Extracting distance from steps:', steps);
+    const totalDistance = steps.reduce((total, step) => {
+      if (step.distance) {
+        return total + step.distance;
+      }
+      return total;
+    }, 0);
+    const result = totalDistance > 0 ? totalDistance / 1000 : 3; // Convert to km, default to 3km
+    console.log('Extracted distance:', result);
+    return result;
+  }
+
+  function getWorkoutEmoji(type: string): string {
+    const emojiMap: Record<string, string> = {
+      'run': '🏃‍♂️',
+      'rest': '😴',
+      'cross-train': '🚴‍♂️',
+      'strength': '💪',
+    };
+    return emojiMap[type] || '🏃‍♂️';
+  }
+
+  function transformStepsToSections(steps: any[]): WorkoutSection[] {
+    return steps.map((step, index) => ({
+      id: index + 1,
+      type: getSectionType(step.label || ''),
+      title: step.label || `Step ${index + 1}`,
+      subtitle: step.notes || step.target || '',
+      duration: step.duration || '',
+      distance: step.distance ? `${(step.distance / 1000).toFixed(1)}km` : '',
+      pace: step.pace ? formatPace(step.pace) : '',
+    }));
+  }
+
+  function getSectionType(label: string): 'warmup' | 'run' | 'rest' | 'repeat' | 'cooldown' {
+    const lower = label.toLowerCase();
+    if (lower.includes('warm')) return 'warmup';
+    if (lower.includes('cool')) return 'cooldown';
+    if (lower.includes('rest')) return 'rest';
+    if (lower.includes('repeat')) return 'repeat';
+    return 'run';
+  }
+
+  function formatPace(paceSecondsPerKm: number): string {
+    const minutes = Math.floor(paceSecondsPerKm / 60);
+    const seconds = paceSecondsPerKm % 60;
+    return `${minutes}:${seconds.toString().padStart(2, '0')}/km`;
+  }
 
   // Helper function to format distance based on metric system preference
   const formatDistanceForDisplay = (distanceKm: number): string => {
@@ -60,50 +166,58 @@ export default function TrainingDetailScreen() {
   };
 
   useEffect(() => {
-    if (params.activity) {
-      try {
-        const activityData = JSON.parse(params.activity as string);
-        console.log('Activity data:', activityData); // Debug log
-        console.log('Activity date:', activityData.date); // Debug log
-        setActivity(activityData);
-
-        // Entrance animation
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 100,
-          friction: 8,
-          useNativeDriver: true,
-        }).start();
-      } catch (error) {
-        console.error('Error parsing training data:', error);
-        router.back();
-      }
+    if (!scheduleWorkoutId) {
+      console.error('No scheduleWorkoutId provided');
+      router.back();
+      return;
     }
-  }, [params.activity]);
+
+    // Entrance animation
+    Animated.spring(scaleAnim, {
+      toValue: 1,
+      tension: 100,
+      friction: 8,
+      useNativeDriver: true,
+    }).start();
+  }, [scheduleWorkoutId]);
 
   const getWorkoutTypeColor = (type: string) => {
     const colorMap: Record<string, string> = {
       'easy': '#4CAF50',          // Green
+      'tempo': '#FF9500',         // Orange
+      'interval': '#FF3B30',      // Red
+      'intervals': '#FF3B30',     // Red
       'long': '#9C27B0',          // Purple  
+      'recovery': '#10B981',      // Green
+      'cross-train': '#8B5CF6',   // Purple
+      'strength': '#9333EA',      // Purple
       'rest': '#757575',          // Gray
       'race': '#FF5722',          // Deep orange
+      'run': '#4CAF50',           // Green
     };
-    return colorMap[type] || colorMap['rest'];
+    return colorMap[type] || colorMap['run'];
   };
 
   const getWorkoutTypeInfo = (type: string) => {
     const infoMap: Record<string, { level: string; emoji: string; subtitle: string }> = {
       'easy': { level: 'EASY RUN', emoji: '🏃‍♂️', subtitle: 'Comfortable Pace' },
+      'tempo': { level: 'TEMPO RUN', emoji: '🔥', subtitle: 'Comfortably Hard' },
+      'interval': { level: 'INTERVAL TRAINING', emoji: '⚡', subtitle: 'Speed Work' },
+      'intervals': { level: 'INTERVAL TRAINING', emoji: '⚡', subtitle: 'Speed Work' },
       'long': { level: 'LONG RUN', emoji: '🏃‍♂️', subtitle: 'Endurance Building' },
+      'recovery': { level: 'RECOVERY RUN', emoji: '🧘‍♀️', subtitle: 'Active Recovery' },
+      'cross-train': { level: 'CROSS TRAINING', emoji: '🚴‍♂️', subtitle: 'Alternative Exercise' },
+      'strength': { level: 'STRENGTH TRAINING', emoji: '💪', subtitle: 'Build Power' },
       'rest': { level: 'REST DAY', emoji: '😴', subtitle: 'Recovery Time' },
       'race': { level: 'RACE DAY', emoji: '🏆', subtitle: 'Give Your Best' },
+      'run': { level: 'RUN', emoji: '🏃‍♂️', subtitle: 'Training Session' },
     };
     return infoMap[type] || { level: 'WORKOUT', emoji: '⭐', subtitle: 'Training Session' };
   };
 
   const getSimpleRewards = (activity: Activity) => {
     // Simple reward calculation based on workout type
-    const baseDistance = activity.distance ? Math.round(activity.distance / 1000 * 10) / 10 : 0;
+    const distanceKm = activity.distance || 3; // Use the activity distance directly in km
 
     // Rest days get minimal rewards, running days get full rewards
     if (activity.type === 'rest') {
@@ -115,11 +229,11 @@ export default function TrainingDetailScreen() {
       };
     }
 
-    const coins = Math.max(1, Math.floor(baseDistance * 10));  // 10 coins per km
-    const xp = Math.max(5, Math.floor(baseDistance * 1000));   // 1000 XP per km
+    const coins = Math.max(1, Math.floor(distanceKm * 10));  // 10 coins per km
+    const xp = Math.max(5, Math.floor(distanceKm * 100));    // 100 XP per km
 
     return {
-      distance: baseDistance,
+      distance: distanceKm,
       coins: coins,
       xp: xp,
       progress: 'Fitness',
@@ -134,11 +248,42 @@ export default function TrainingDetailScreen() {
           { icon: '🔥', tip: 'Start with a gentle 5-minute warm-up walk', category: 'Warm-up' },
           { icon: '💧', tip: 'Stay hydrated throughout your run', category: 'Hydration' },
         ];
+      case 'tempo':
+        return [
+          { icon: '🔥', tip: 'Run at a comfortably hard pace - you can speak 1-2 words', category: 'Pacing' },
+          { icon: '⏱️', tip: 'Maintain steady effort throughout the tempo portion', category: 'Effort' },
+          { icon: '🎯', tip: 'This improves your lactate threshold', category: 'Benefits' },
+        ];
+      case 'interval':
+      case 'intervals':
+        return [
+          { icon: '⚡', tip: 'Give maximum effort during work intervals', category: 'Intensity' },
+          { icon: '😤', tip: 'Use recovery intervals to catch your breath', category: 'Recovery' },
+          { icon: '🔁', tip: 'Focus on consistent pacing across all intervals', category: 'Consistency' },
+        ];
       case 'long':
         return [
           { icon: '🐌', tip: 'Start slower than you think you need to', category: 'Pacing' },
           { icon: '💪', tip: 'Focus on staying strong and steady', category: 'Form' },
           { icon: '🎯', tip: 'The goal is distance, not speed', category: 'Mindset' },
+        ];
+      case 'recovery':
+        return [
+          { icon: '🧘‍♀️', tip: 'Keep it very easy and comfortable', category: 'Effort' },
+          { icon: '🩹', tip: 'This helps your body recover from harder sessions', category: 'Purpose' },
+          { icon: '😌', tip: 'Focus on relaxed form and breathing', category: 'Technique' },
+        ];
+      case 'cross-train':
+        return [
+          { icon: '🚴‍♂️', tip: 'Choose activities you enjoy like cycling or swimming', category: 'Activity' },
+          { icon: '💪', tip: 'Maintain moderate effort without high impact', category: 'Intensity' },
+          { icon: '🔄', tip: 'Great for recovery while staying active', category: 'Benefits' },
+        ];
+      case 'strength':
+        return [
+          { icon: '💪', tip: 'Focus on proper form over heavy weights', category: 'Form' },
+          { icon: '🦵', tip: 'Emphasize exercises that support running', category: 'Focus' },
+          { icon: '⚖️', tip: 'Include both upper and lower body movements', category: 'Balance' },
         ];
       case 'rest':
         return [
@@ -152,8 +297,13 @@ export default function TrainingDetailScreen() {
           { icon: '😊', tip: 'Smile and enjoy the experience', category: 'Mindset' },
           { icon: '⚡', tip: 'Save energy for a strong finish', category: 'Pacing' },
         ];
+      case 'run':
       default:
-        return [];
+        return [
+          { icon: '🏃‍♂️', tip: 'Listen to your body and adjust as needed', category: 'Awareness' },
+          { icon: '🔥', tip: 'Start with a proper warm-up', category: 'Preparation' },
+          { icon: '💧', tip: 'Stay hydrated before, during, and after', category: 'Hydration' },
+        ];
     }
   };
 
@@ -323,10 +473,26 @@ export default function TrainingDetailScreen() {
     );
   };
 
-  if (!activity) {
+  if (!scheduleWorkoutId) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loading}>No workout ID provided...</Text>
+      </View>
+    );
+  }
+
+  if (plannedWorkout === undefined) {
     return (
       <View style={styles.container}>
         <Text style={styles.loading}>Loading workout...</Text>
+      </View>
+    );
+  }
+
+  if (!plannedWorkout || !activity) {
+    return (
+      <View style={styles.container}>
+        <Text style={styles.loading}>Workout not found...</Text>
       </View>
     );
   }
@@ -347,7 +513,7 @@ export default function TrainingDetailScreen() {
         </TouchableOpacity>
         <View style={styles.headerInfo}>
           <Text style={styles.headerDate}>
-            {activity.date ?
+            {activity?.date ?
               formatWorkoutDate(activity.date) :
               formatWorkoutDate()
             }
@@ -359,6 +525,11 @@ export default function TrainingDetailScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
+          {isWorkoutCompleted && (
+            <View style={styles.completedBanner}>
+              <Text style={styles.completedBannerText}>✅ WORKOUT COMPLETED</Text>
+            </View>
+          )}
           <View style={styles.workoutTypeContainer}>
             <Text style={styles.workoutType}>{activity.title.toUpperCase()}</Text>
             <Text style={styles.workoutSubtitle}>
@@ -375,7 +546,7 @@ export default function TrainingDetailScreen() {
         <View style={styles.mainInfoSection}>
           <Text style={styles.sectionTitle}>Training Details</Text>
           <View style={styles.mainInfoGrid}>
-            {/* Show either duration OR distance based on user preference */}
+            {/* Show based on user preference, but always show something */}
             {preferTimeOverDistance ? (
               <View style={styles.mainInfoCard}>
                 <View style={[styles.mainInfoIcon, { backgroundColor: Theme.colors.special.primary.level }]}>
@@ -385,38 +556,93 @@ export default function TrainingDetailScreen() {
                 <Text style={styles.mainInfoLabel}>Duration</Text>
               </View>
             ) : (
-              rewards.distance > 0 && (
-                <View style={styles.mainInfoCard}>
-                  <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
-                    <Ionicons name="location-outline" size={28} color="#fff" />
-                  </View>
-                  <Text style={styles.mainInfoValue}>{formatDistanceForDisplay(rewards.distance)}</Text>
-                  <Text style={styles.mainInfoLabel}>Distance</Text>
+              <View style={styles.mainInfoCard}>
+                <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
+                  <Ionicons name="location-outline" size={28} color="#fff" />
                 </View>
-              )
+                <Text style={styles.mainInfoValue}>{formatDistanceForDisplay(activity.distance || 3)}</Text>
+                <Text style={styles.mainInfoLabel}>Distance</Text>
+              </View>
             )}
+
+            {/* Show secondary info */}
+            <View style={styles.mainInfoCard}>
+              <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
+                <Ionicons name="fitness-outline" size={28} color="#fff" />
+              </View>
+              <Text style={styles.mainInfoValue}>{activity.type.toUpperCase()}</Text>
+              <Text style={styles.mainInfoLabel}>Workout Type</Text>
+            </View>
           </View>
         </View>
+
+        {/* Debug Section - remove this later */}
+        {/* <View style={styles.mainInfoSection}>
+          <Text style={styles.sectionTitle}>Debug Info</Text>
+          <View style={styles.descriptionCard}>
+            <Text style={styles.descriptionText}>
+              Workout Type: {plannedWorkout?.workout?.type || 'N/A'}{'\n'}
+              Workout SubType: {plannedWorkout?.workout?.subType || 'N/A'}{'\n'}
+              Steps Count: {plannedWorkout?.workout?.steps?.length || 0}{'\n'}
+              Steps: {JSON.stringify(plannedWorkout?.workout?.steps || [], null, 2)}{'\n'}
+              Activity Duration: {activity?.duration}{'\n'}
+              Activity Distance: {activity?.distance}{'\n'}
+              Rewards Distance: {rewards.distance}{'\n'}
+              Prefer Time: {preferTimeOverDistance ? 'Yes' : 'No'}
+            </Text>
+          </View>
+        </View> */}
 
         {/* Workout Description/Breakdown */}
         {renderWorkoutBreakdown()}
 
         {/* Expected Rewards */}
-        <View style={styles.rewardsSection}>
-          <Text style={styles.sectionTitle}>Expected Rewards</Text>
-          <View style={styles.rewardsGrid}>
-            <View style={styles.rewardCard}>
-              <Text style={styles.rewardEmoji}>⚡</Text>
-              <Text style={styles.rewardExpValue}>+{rewards.xp}</Text>
-              <Text style={styles.rewardLabel}>XP</Text>
-            </View>
-            <View style={styles.rewardCard}>
-              <Text style={styles.rewardEmoji}>🍃</Text>
-              <Text style={styles.rewardLeavesValue}>+{rewards.coins}</Text>
-              <Text style={styles.rewardLabel}>Leaves</Text>
+        {isWorkoutCompleted ? (
+          <View style={styles.completedActivitiesSection}>
+            <Text style={styles.sectionTitle}>🎉 Completed Activities</Text>
+            {linkedActivities?.map((completedActivity, index) => (
+              <View key={index} style={styles.completedActivityCard}>
+                <View style={styles.activityInfo}>
+                  <Text style={styles.activityTitle}>
+                    {completedActivity.workoutName || 'Running Activity'}
+                  </Text>
+                  <Text style={styles.activityStats}>
+                    {(completedActivity.distance / 1000).toFixed(2)}km • {completedActivity.duration}min
+                  </Text>
+                </View>
+                <TouchableOpacity
+                  onPress={() => {
+                    router.push({
+                      pathname: '/activity-detail',
+                      params: {
+                        activity: JSON.stringify(completedActivity)
+                      }
+                    });
+                  }}
+                  style={styles.viewActivityButton}
+                >
+                  <Text style={styles.viewActivityButtonText}>View</Text>
+                </TouchableOpacity>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.rewardsSection}>
+            <Text style={styles.sectionTitle}>Expected Rewards</Text>
+            <View style={styles.rewardsGrid}>
+              <View style={styles.rewardCard}>
+                <Ionicons name="flash" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
+                <Text style={styles.rewardExpValue}>+{rewards.xp}</Text>
+                <Text style={styles.rewardLabel}>XP</Text>
+              </View>
+              <View style={styles.rewardCard}>
+                <Image source={require('@/assets/images/icons/coal.png')} style={styles.rewardImage} />
+                <Text style={styles.rewardLeavesValue}>+{rewards.coins}</Text>
+                <Text style={styles.rewardLabel}>Embers</Text>
+              </View>
             </View>
           </View>
-        </View>
+        )}
 
         {/* Helpful Tips */}
         <View style={styles.tipsSection}>
@@ -435,7 +661,7 @@ export default function TrainingDetailScreen() {
         </View>
 
         {/* Start Workout Button */}
-        <View style={styles.actionSection}>
+        {/* <View style={styles.actionSection}>
           <TouchableOpacity
             style={styles.startButton}
             onPress={() => {
@@ -448,7 +674,7 @@ export default function TrainingDetailScreen() {
               {activity.type === 'rest' ? '😴 TAKE REST' : '🏃‍♂️ START WORKOUT'}
             </Text>
           </TouchableOpacity>
-        </View>
+        </View> */}
       </ScrollView>
     </View>
   );
@@ -579,7 +805,12 @@ const styles = StyleSheet.create({
     marginHorizontal: 4,
   },
   rewardEmoji: {
-    fontSize: 32,
+    marginTop: Theme.spacing.xs,
+    marginBottom: Theme.spacing.lg,
+  },
+  rewardImage: {
+    width: 32,
+    height: 32,
     marginBottom: Theme.spacing.md,
   },
   rewardExpValue: {
@@ -778,5 +1009,59 @@ const styles = StyleSheet.create({
     marginTop: 4,
     textAlign: 'center',
     textTransform: 'uppercase',
+  },
+  completedBanner: {
+    backgroundColor: Theme.colors.status.success,
+    borderRadius: Theme.borderRadius.full,
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.sm,
+    marginBottom: Theme.spacing.lg,
+    alignSelf: 'center',
+  },
+  completedBannerText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.background.primary,
+    textAlign: 'center',
+    letterSpacing: 1,
+  },
+  completedActivitiesSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
+  },
+  completedActivityCard: {
+    flexDirection: 'row',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.lg,
+    marginBottom: Theme.spacing.md,
+    alignItems: 'center',
+    borderLeftWidth: 4,
+    borderLeftColor: Theme.colors.status.success,
+  },
+  activityInfo: {
+    flex: 1,
+  },
+  activityTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.xs,
+  },
+  activityStats: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  viewActivityButton: {
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: Theme.borderRadius.medium,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+  },
+  viewActivityButtonText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.background.primary,
   },
 }); 

@@ -50,5 +50,5 @@ export function useOnboardingSync() {
     };
 
     syncPendingOnboardingData();
-  }, [trainingProfile, saveTrainingProfile, generateTrainingPlan]);
+  }, [trainingProfile]);
 } 

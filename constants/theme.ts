@@ -18,7 +18,7 @@ export const Theme = {
 
     // Accent colors
     accent: {
-      primary: '#F97316',      // Orange - main accent color
+      primary: '#FE580F',      // Orange - main accent color
       secondary: '#EA580C',    // Darker orange
       light: '#FDBA74',        // Light orange
     },
@@ -42,7 +42,7 @@ export const Theme = {
     special: {
       primary:{
         exp: '#48C1F7',         // Blue
-        coin: '#10B981',         // Gold
+        coin: '#FE580F',         // Orange
         level: '#10B981',        // Green for level progress
         shadow: '#000000',       // Shadow color
         heart: '#EF4444',        // Red for heart
@@ -50,7 +50,7 @@ export const Theme = {
       },
       secondary:{
         exp: '#3AA9DD',         // Darker blue
-        coin: '#0EA472',        // Darker gold
+        coin: '#EA4F0E',        // Darker orange
         level: '#0EA472',       // Darker green
         shadow: '#000000',       // Shadow color
         heart: '#E60000',       // Darker red

@@ -79,6 +79,88 @@ function getWorkoutPattern(daysPerWeek: number): string[] {
   return patterns[daysPerWeek] || patterns[3];
 }
 
+// Create or get workout template
+async function createOrGetWorkout(
+  ctx: any,
+  userId: string,
+  type: string,
+  distance: number,
+  description: string
+) {
+  const now = new Date().toISOString();
+  
+  // Create structured workout with steps
+  const steps = [];
+  
+  if (type === "easy") {
+    steps.push({
+      order: 1,
+      label: "Warm-up",
+      duration: "5 min",
+      effort: "very easy",
+      notes: "Start with a gentle walking warm-up"
+    });
+    steps.push({
+      order: 2,
+      label: "Main Run",
+      distance: distance,
+      effort: "easy",
+      target: "Conversational pace - you should be able to talk while running",
+      notes: "Maintain a comfortable, sustainable pace throughout"
+    });
+    steps.push({
+      order: 3,
+      label: "Cool-down",
+      duration: "5 min",
+      effort: "very easy",
+      notes: "Walk and stretch to cool down"
+    });
+  } else if (type === "long") {
+    steps.push({
+      order: 1,
+      label: "Warm-up",
+      duration: "10 min",
+      effort: "very easy",
+      notes: "Start slowly to prepare for longer effort"
+    });
+    steps.push({
+      order: 2,
+      label: "Long Run",
+      distance: distance,
+      effort: "easy",
+      target: "Steady comfortable effort - build endurance",
+      notes: "Focus on maintaining consistent effort rather than speed"
+    });
+    steps.push({
+      order: 3,
+      label: "Cool-down",
+      duration: "10 min",
+      effort: "very easy",
+      notes: "Extended cool-down with walking and stretching"
+    });
+  } else if (type === "rest") {
+    steps.push({
+      order: 1,
+      label: "Rest Day",
+      duration: "20 min",
+      effort: "very easy",
+      notes: "Light stretching, foam rolling, or complete rest"
+    });
+  }
+
+  const workoutId = await ctx.db.insert("workouts", {
+    userId: undefined, // System template (undefined for optional field)
+    name: WORKOUT_TYPES[type as keyof typeof WORKOUT_TYPES]?.name || "Training Run",
+    type: type === "rest" ? "rest" : "run", // Map all running workouts to "run", keep "rest" as "rest"
+    subType: type === "rest" ? undefined : type as "easy" | "tempo" | "interval" | "long" | "recovery" | "race",
+    description: description,
+    steps: steps,
+    updatedAt: now
+  });
+
+  return workoutId;
+}
+
 // Generate a simple training plan
 export const generateTrainingPlan = mutation({
   args: {},
@@ -88,158 +170,7 @@ export const generateTrainingPlan = mutation({
       throw new Error("Not authenticated");
     }
 
-    // Get user's training profile
-    const profile = await ctx.db
-      .query("trainingProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!profile) {
-      throw new Error("Training profile not found. Complete onboarding first.");
-    }
-
-    // Get user's week start preference
-    const userProfile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    const weekStartDay = userProfile?.weekStartDay ?? 1;
-    const now = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0];
-
-    // Calculate plan parameters
-    const weeksToGoal = calculateWeeksToGoal(today, profile.goalDate, weekStartDay);
-    const goalConfig = GOAL_DISTANCES[profile.goalDistance as keyof typeof GOAL_DISTANCES];
-    const weeks = Math.max(weeksToGoal, goalConfig.weeks);
-
-    // Deactivate any existing plans
-    const existingPlans = await ctx.db
-      .query("trainingPlans")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-
-    for (const plan of existingPlans) {
-      await ctx.db.patch(plan._id, { isActive: false });
-    }
-
-    // Generate simple plan
-    const planWeeks = [];
-    const pattern = getWorkoutPattern(profile.daysPerWeek);
-    
-    // Start from next week
-    const startDate = new Date();
-    const thisWeekStart = getWeekStart(startDate, weekStartDay);
-    const nextWeekStart = new Date(thisWeekStart);
-    nextWeekStart.setDate(thisWeekStart.getDate() + 7);
-
-    const dayNameToNumber: Record<string, number> = {
-      'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
-    };
-
-    for (let weekNum = 1; weekNum <= weeks; weekNum++) {
-      const weekStartDate = new Date(nextWeekStart);
-      weekStartDate.setDate(nextWeekStart.getDate() + ((weekNum - 1) * 7));
-      
-      const dayWorkouts = [];
-      
-      // Simple progression: start at 2km and gradually increase
-      const baseDistance = 2000; // 2km
-      const weeklyIncrease = 500; // 500m per week
-      const currentWeekDistance = baseDistance + (weekNum - 1) * weeklyIncrease;
-
-      // Schedule workouts on preferred days
-      const preferredDays = profile.preferredDays || ['Mon', 'Wed', 'Fri'];
-      
-      for (let workoutIndex = 0; workoutIndex < pattern.length; workoutIndex++) {
-        const workoutType = pattern[workoutIndex];
-        const preferredDay = preferredDays[workoutIndex % preferredDays.length];
-        const dayNumber = dayNameToNumber[preferredDay];
-        
-        const workoutDate = new Date(weekStartDate);
-        const daysFromMonday = (dayNumber - 1 + 7) % 7;
-        workoutDate.setDate(weekStartDate.getDate() + daysFromMonday);
-        
-        // Spread workouts if more workouts than preferred days
-        if (workoutIndex > 0 && preferredDays.length < pattern.length) {
-          const daySpacing = Math.floor(7 / pattern.length);
-          const adjustedDay = (dayNumber + (workoutIndex * daySpacing)) % 7;
-          const adjustedDaysFromMonday = (adjustedDay - 1 + 7) % 7;
-          workoutDate.setDate(weekStartDate.getDate() + adjustedDaysFromMonday);
-        }
-        
-        const dateString = workoutDate.toISOString().split('T')[0];
-        
-        // Calculate distance for this workout
-        let distance = currentWeekDistance;
-        if (workoutType === "long") {
-          distance = Math.round(currentWeekDistance * 1.5); // Long runs are 50% longer
-        }
-        
-        // Estimate duration (assuming 6 min/km pace)
-        const estimatedMinutes = Math.round((distance / 1000) * 6);
-
-        dayWorkouts.push({
-          date: dateString,
-          type: workoutType,
-          distance: distance,
-          duration: `${estimatedMinutes} min`,
-          description: WORKOUT_TYPES[workoutType as keyof typeof WORKOUT_TYPES]?.description || "Training workout",
-          target: workoutType === "easy" ? "Conversational pace" : workoutType === "long" ? "Steady comfortable effort" : "Easy effort"
-        });
-      }
-      
-      planWeeks.push({
-        week: weekNum,
-        microCycle: weekNum <= weeks * 0.7 ? "base" : "peak" as "base" | "build" | "peak" | "taper",
-        days: dayWorkouts
-      });
-    }
-
-    // Add race day if goal date is set and not "just-run-more"
-    if (profile.goalDistance !== 'just-run-more' && weeks > 0) {
-      const lastWeek = planWeeks[planWeeks.length - 1];
-      const goalDate = new Date(profile.goalDate);
-      const goalDateString = goalDate.toISOString().split('T')[0];
-      
-      // Check if race day already has a workout
-      const hasRaceDay = lastWeek.days.some((day: any) => day.date === goalDateString);
-      
-      if (!hasRaceDay) {
-        const targetDistance = goalConfig.target;
-        const estimatedMinutes = Math.round((targetDistance / 1000) * 6);
-        
-        lastWeek.days.push({
-          date: goalDateString,
-          type: "race",
-          distance: targetDistance,
-          duration: `${estimatedMinutes} min`,
-          description: `${profile.goalDistance} Race Day - You've got this!`,
-          target: "Race pace"
-        });
-      }
-    }
-
-    // Create the training plan
-    const planId = await ctx.db.insert("trainingPlans", {
-      userId,
-      meta: {
-        goal: profile.goalDistance,
-        weeks,
-        level: profile.fitnessLevel,
-        daysPerWeek: profile.daysPerWeek,
-        createdAt: now,
-      },
-      isActive: true,
-      plan: planWeeks,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Generate planned workouts for the first 4 weeks
-    await generatePlannedWorkouts(ctx, planId, userId, planWeeks.slice(0, 4));
-
-    return { planId, weeks, message: "Simple training plan generated successfully" };
+    return await generateTrainingPlanInternal(ctx, userId);
   },
 });
 
@@ -248,29 +179,48 @@ async function generatePlannedWorkouts(
   ctx: any,
   planId: any,
   userId: any,
-  planWeeks: any[]
+  planWeeks: any[],
+  workoutTemplates: Map<string, any>
 ) {
-  for (let weekIndex = 0; weekIndex < planWeeks.length; weekIndex++) {
-    const planWeek = planWeeks[weekIndex];
-    
-    for (let dayIndex = 0; dayIndex < planWeek.days.length; dayIndex++) {
-      const day = planWeek.days[dayIndex];
+  // Create workout templates first
+  const createdWorkouts = new Map();
+  
+  for (const [workoutKey, workoutInfo] of workoutTemplates) {
+    const workoutId = await createOrGetWorkout(
+      ctx,
+      userId,
+      workoutInfo.type,
+      workoutInfo.distance,
+      workoutInfo.description
+    );
+    createdWorkouts.set(workoutKey, workoutId);
+  }
 
-      await ctx.db.insert("plannedWorkouts", {
-        userId,
-        trainingPlanId: planId,
-        planWeek: planWeek.week,
-        planDay: dayIndex,
-        scheduledDate: day.date,
-        type: day.type,
-        workoutId: undefined,
-        duration: day.duration,
-        distance: day.distance,
-        description: day.description,
-        target: day.target,
-        status: "scheduled",
-        createdAt: new Date().toISOString(),
-      });
+  // Create planned workouts
+  for (const planWeek of planWeeks) {
+    for (const day of planWeek.days) {
+      // Calculate distance for workout key lookup
+      const baseDistance = 2000;
+      const weeklyIncrease = 500;
+      const currentWeekDistance = baseDistance + (planWeek.week - 1) * weeklyIncrease;
+      
+      let distance = currentWeekDistance;
+      if (day.type === "long") {
+        distance = Math.round(currentWeekDistance * 1.5);
+      }
+      
+      const workoutKey = `${day.type}-${distance}`;
+      const workoutId = createdWorkouts.get(workoutKey);
+      
+      if (workoutId) {
+        await ctx.db.insert("plannedWorkouts", {
+          userId,
+          trainingPlanId: planId,
+          workoutId: workoutId,
+          scheduledDate: day.date,
+          status: "scheduled",
+        });
+      }
     }
   }
 }
@@ -303,7 +253,7 @@ export const getPlannedWorkouts = query({
       throw new Error("Not authenticated");
     }
 
-    return await ctx.db
+    const plannedWorkouts = await ctx.db
       .query("plannedWorkouts")
       .withIndex("by_user_date", (q: any) => 
         q.eq("userId", userId)
@@ -311,6 +261,17 @@ export const getPlannedWorkouts = query({
          .lte("scheduledDate", args.endDate)
       )
       .collect();
+
+    // Enrich with workout details
+    return await Promise.all(
+      plannedWorkouts.map(async (pw) => {
+        const workout = await ctx.db.get(pw.workoutId);
+        return {
+          ...pw,
+          workout: workout
+        };
+      })
+    );
   },
 });
 
@@ -325,32 +286,29 @@ export const getTodaysWorkout = query({
 
     const today = new Date().toISOString().split('T')[0];
 
-    return await ctx.db
+    const plannedWorkout = await ctx.db
       .query("plannedWorkouts")
       .withIndex("by_user_date", (q: any) => q.eq("userId", userId).eq("scheduledDate", today))
       .first();
+
+    if (!plannedWorkout) {
+      return null;
+    }
+
+    // Get workout details
+    const workout = await ctx.db.get(plannedWorkout.workoutId);
+    
+    return {
+      ...plannedWorkout,
+      workout: workout
+    };
   },
 });
 
-// Mark workout as completed
-export const completeWorkout = mutation({
+// Get planned workout by ID
+export const getPlannedWorkoutById = query({
   args: {
     plannedWorkoutId: v.id("plannedWorkouts"),
-    actualDuration: v.optional(v.number()),
-    actualDistance: v.optional(v.number()),
-    averagePace: v.optional(v.number()),
-    averageHeartRate: v.optional(v.number()),
-    calories: v.optional(v.number()),
-    perceivedEffort: v.optional(v.number()),
-    feeling: v.optional(v.union(
-      v.literal("amazing"),
-      v.literal("good"),
-      v.literal("okay"),
-      v.literal("tough"),
-      v.literal("struggled")
-    )),
-    notes: v.optional(v.string()),
-    activityId: v.optional(v.id("activities")),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -358,33 +316,24 @@ export const completeWorkout = mutation({
       throw new Error("Not authenticated");
     }
 
-    const now = new Date().toISOString();
+    const plannedWorkout = await ctx.db.get(args.plannedWorkoutId);
+    
+    if (!plannedWorkout) {
+      throw new Error("Planned workout not found");
+    }
 
-    // Create workout completion record
-    const completionId = await ctx.db.insert("workoutCompletions", {
-      userId,
-      plannedWorkoutId: args.plannedWorkoutId,
-      activityId: args.activityId,
-      completedAt: now,
-      actualDuration: args.actualDuration,
-      actualDistance: args.actualDistance,
-      averagePace: args.averagePace,
-      averageHeartRate: args.averageHeartRate,
-      calories: args.calories,
-      perceivedEffort: args.perceivedEffort,
-      feeling: args.feeling,
-      notes: args.notes,
-      createdAt: now,
-    });
+    // Verify ownership
+    if (plannedWorkout.userId !== userId) {
+      throw new Error("Unauthorized access to planned workout");
+    }
 
-    // Update planned workout status
-    await ctx.db.patch(args.plannedWorkoutId, {
-      status: "completed",
-      completedAt: now,
-      completionId,
-    });
-
-    return completionId;
+    // Get workout details
+    const workout = await ctx.db.get(plannedWorkout.workoutId);
+    
+    return {
+      ...plannedWorkout,
+      workout: workout
+    };
   },
 });
 
@@ -400,27 +349,6 @@ export const skipWorkout = mutation({
     });
 
     return { message: "Workout skipped" };
-  },
-});
-
-// Get workout completion history
-export const getWorkoutHistory = query({
-  args: {
-    limit: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const limit = args.limit || 20;
-
-    return await ctx.db
-      .query("workoutCompletions")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .order("desc")
-      .take(limit);
   },
 });
 
@@ -443,157 +371,173 @@ export const regenerateTrainingPlan = mutation({
       await ctx.db.delete(workout._id);
     }
 
-    // Generate a new training plan by directly calling the generation logic
-    const profile = await ctx.db
-      .query("trainingProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!profile) {
-      throw new Error("Training profile not found. Complete onboarding first.");
-    }
-
-    // Get user's week start preference
-    const userProfile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    const weekStartDay = userProfile?.weekStartDay ?? 1;
-    const now = new Date().toISOString();
-    const today = new Date().toISOString().split('T')[0];
-
-    // Calculate plan parameters
-    const weeksToGoal = calculateWeeksToGoal(today, profile.goalDate, weekStartDay);
-    const goalConfig = GOAL_DISTANCES[profile.goalDistance as keyof typeof GOAL_DISTANCES];
-    const weeks = Math.max(weeksToGoal, goalConfig.weeks);
-
-    // Deactivate any existing plans
-    const existingPlans = await ctx.db
-      .query("trainingPlans")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-
-    for (const plan of existingPlans) {
-      await ctx.db.patch(plan._id, { isActive: false });
-    }
-
-    // Generate simple plan
-    const planWeeks = [];
-    const pattern = getWorkoutPattern(profile.daysPerWeek);
-    
-    // Start from next week
-    const startDate = new Date();
-    const thisWeekStart = getWeekStart(startDate, weekStartDay);
-    const nextWeekStart = new Date(thisWeekStart);
-    nextWeekStart.setDate(thisWeekStart.getDate() + 7);
-
-    const dayNameToNumber: Record<string, number> = {
-      'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
-    };
-
-    for (let weekNum = 1; weekNum <= weeks; weekNum++) {
-      const weekStartDate = new Date(nextWeekStart);
-      weekStartDate.setDate(nextWeekStart.getDate() + ((weekNum - 1) * 7));
-      
-      const dayWorkouts = [];
-      
-      // Simple progression: start at 2km and gradually increase
-      const baseDistance = 2000; // 2km
-      const weeklyIncrease = 500; // 500m per week
-      const currentWeekDistance = baseDistance + (weekNum - 1) * weeklyIncrease;
-
-      // Schedule workouts on preferred days
-      const preferredDays = profile.preferredDays || ['Mon', 'Wed', 'Fri'];
-      
-      for (let workoutIndex = 0; workoutIndex < pattern.length; workoutIndex++) {
-        const workoutType = pattern[workoutIndex];
-        const preferredDay = preferredDays[workoutIndex % preferredDays.length];
-        const dayNumber = dayNameToNumber[preferredDay];
-        
-        const workoutDate = new Date(weekStartDate);
-        const daysFromMonday = (dayNumber - 1 + 7) % 7;
-        workoutDate.setDate(weekStartDate.getDate() + daysFromMonday);
-        
-        // Spread workouts if more workouts than preferred days
-        if (workoutIndex > 0 && preferredDays.length < pattern.length) {
-          const daySpacing = Math.floor(7 / pattern.length);
-          const adjustedDay = (dayNumber + (workoutIndex * daySpacing)) % 7;
-          const adjustedDaysFromMonday = (adjustedDay - 1 + 7) % 7;
-          workoutDate.setDate(weekStartDate.getDate() + adjustedDaysFromMonday);
-        }
-        
-        const dateString = workoutDate.toISOString().split('T')[0];
-        
-        // Calculate distance for this workout
-        let distance = currentWeekDistance;
-        if (workoutType === "long") {
-          distance = Math.round(currentWeekDistance * 1.5); // Long runs are 50% longer
-        }
-        
-        // Estimate duration (assuming 6 min/km pace)
-        const estimatedMinutes = Math.round((distance / 1000) * 6);
-
-        dayWorkouts.push({
-          date: dateString,
-          type: workoutType,
-          distance: distance,
-          duration: `${estimatedMinutes} min`,
-          description: WORKOUT_TYPES[workoutType as keyof typeof WORKOUT_TYPES]?.description || "Training workout",
-          target: workoutType === "easy" ? "Conversational pace" : workoutType === "long" ? "Steady comfortable effort" : "Easy effort"
-        });
-      }
-      
-      planWeeks.push({
-        week: weekNum,
-        microCycle: weekNum <= weeks * 0.7 ? "base" : "peak" as "base" | "build" | "peak" | "taper",
-        days: dayWorkouts
-      });
-    }
-
-    // Add race day if goal date is set and not "just-run-more"
-    if (profile.goalDistance !== 'just-run-more' && weeks > 0) {
-      const lastWeek = planWeeks[planWeeks.length - 1];
-      const goalDate = new Date(profile.goalDate);
-      const goalDateString = goalDate.toISOString().split('T')[0];
-      
-      // Check if race day already has a workout
-      const hasRaceDay = lastWeek.days.some((day: any) => day.date === goalDateString);
-      
-      if (!hasRaceDay) {
-        const targetDistance = goalConfig.target;
-        const estimatedMinutes = Math.round((targetDistance / 1000) * 6);
-        
-        lastWeek.days.push({
-          date: goalDateString,
-          type: "race",
-          distance: targetDistance,
-          duration: `${estimatedMinutes} min`,
-          description: `${profile.goalDistance} Race Day - You've got this!`,
-          target: "Race pace"
-        });
-      }
-    }
-
-    // Create the training plan
-    const planId = await ctx.db.insert("trainingPlans", {
-      userId,
-      meta: {
-        goal: profile.goalDistance,
-        weeks,
-        level: profile.fitnessLevel,
-        daysPerWeek: profile.daysPerWeek,
-        createdAt: now,
-      },
-      isActive: true,
-      plan: planWeeks,
-      createdAt: now,
-      updatedAt: now,
-    });
-
-    // Generate planned workouts for the first 4 weeks
-    await generatePlannedWorkouts(ctx, planId, userId, planWeeks.slice(0, 4));
-
-    return { planId, weeks, message: "Simple training plan regenerated successfully" };
+    // Generate a new plan using the same logic
+    return await generateTrainingPlanInternal(ctx, userId);
   },
-}); 
+});
+
+// Shared training plan generation logic
+async function generateTrainingPlanInternal(ctx: any, userId: string) {
+  // Get user's training profile
+  const profile = await ctx.db
+    .query("trainingProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+
+  if (!profile) {
+    throw new Error("Training profile not found. Complete onboarding first.");
+  }
+
+  // Get user's week start preference
+  const userProfile = await ctx.db
+    .query("userProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+
+  const weekStartDay = userProfile?.weekStartDay ?? 1;
+  const now = new Date().toISOString();
+  const today = new Date().toISOString().split('T')[0];
+
+  // Calculate plan parameters
+  const weeksToGoal = calculateWeeksToGoal(today, profile.goalDate, weekStartDay);
+  const goalConfig = GOAL_DISTANCES[profile.goalDistance as keyof typeof GOAL_DISTANCES];
+  const weeks = Math.max(weeksToGoal, goalConfig.weeks);
+
+  // Deactivate any existing plans
+  const existingPlans = await ctx.db
+    .query("trainingPlans")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .collect();
+
+  for (const plan of existingPlans) {
+    await ctx.db.patch(plan._id, { isActive: false });
+  }
+
+  // Generate simple plan
+  const planWeeks = [];
+  const pattern = getWorkoutPattern(profile.daysPerWeek);
+  
+  // Start from this week, but find the closest preferred day from today
+  const startDate = new Date();
+  const thisWeekStart = getWeekStart(startDate, weekStartDay);
+  const currentDate = new Date();
+  const todayDayOfWeek = currentDate.getDay();
+  
+  // Find the closest preferred day from today
+  const preferredDays = profile.preferredDays || ['Mon', 'Wed', 'Fri'];
+  const dayNameToNumber: Record<string, number> = {
+    'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+  };
+  
+  const preferredDayNumbers = preferredDays.map((day: string) => dayNameToNumber[day]);
+  
+  // Find next preferred day (today or later this week)
+  let nextPreferredDay = preferredDayNumbers.find((dayNum: number) => dayNum >= todayDayOfWeek);
+  let planStartWeek = new Date(thisWeekStart);
+  
+  // If no preferred days left this week, start next week
+  if (nextPreferredDay === undefined) {
+    planStartWeek.setDate(thisWeekStart.getDate() + 7);
+  }
+
+  // Create workout templates and plan structure
+  const workoutTemplates = new Map();
+
+  for (let weekNum = 1; weekNum <= weeks; weekNum++) {
+    const weekStartDate = new Date(planStartWeek);
+    weekStartDate.setDate(planStartWeek.getDate() + ((weekNum - 1) * 7));
+    
+    const dayWorkouts = [];
+    
+    // Simple progression: start at 2km and gradually increase
+    const baseDistance = 2000; // 2km
+    const weeklyIncrease = 500; // 500m per week
+    const currentWeekDistance = baseDistance + (weekNum - 1) * weeklyIncrease;
+
+    // Schedule workouts on preferred days
+    const currentPreferredDays = profile.preferredDays || ['Mon', 'Wed', 'Fri'];
+    
+    for (let workoutIndex = 0; workoutIndex < pattern.length; workoutIndex++) {
+      const workoutType = pattern[workoutIndex];
+      const preferredDay = currentPreferredDays[workoutIndex % currentPreferredDays.length];
+      const dayNumber = dayNameToNumber[preferredDay];
+      
+      const workoutDate = new Date(weekStartDate);
+      const daysFromMonday = (dayNumber - 1 + 7) % 7;
+      workoutDate.setDate(weekStartDate.getDate() + daysFromMonday);
+      
+      // For the first week, skip days that have already passed
+      if (weekNum === 1) {
+        const today = new Date().toISOString().split('T')[0];
+        const workoutDateString = workoutDate.toISOString().split('T')[0];
+        if (workoutDateString < today) {
+          continue; // Skip this workout as the day has already passed
+        }
+      }
+      
+      // Spread workouts if more workouts than preferred days
+      if (workoutIndex > 0 && currentPreferredDays.length < pattern.length) {
+        const daySpacing = Math.floor(7 / pattern.length);
+        const adjustedDay = (dayNumber + (workoutIndex * daySpacing)) % 7;
+        const adjustedDaysFromMonday = (adjustedDay - 1 + 7) % 7;
+        workoutDate.setDate(weekStartDate.getDate() + adjustedDaysFromMonday);
+        
+        // Check again for first week
+        if (weekNum === 1) {
+          const today = new Date().toISOString().split('T')[0];
+          const workoutDateString = workoutDate.toISOString().split('T')[0];
+          if (workoutDateString < today) {
+            continue;
+          }
+        }
+      }
+      
+      const dateString = workoutDate.toISOString().split('T')[0];
+      
+      // Calculate distance for this workout
+      let distance = currentWeekDistance;
+      if (workoutType === "long") {
+        distance = Math.round(currentWeekDistance * 1.5); // Long runs are 50% longer
+      }
+      
+      const description = WORKOUT_TYPES[workoutType as keyof typeof WORKOUT_TYPES]?.description || "Training workout";
+
+      dayWorkouts.push({
+        date: dateString,
+        type: workoutType as "easy" | "tempo" | "interval" | "long" | "rest" | "cross-train",
+        description: description
+      });
+
+      // Store workout info for later template creation
+      const workoutKey = `${workoutType}-${distance}`;
+      if (!workoutTemplates.has(workoutKey)) {
+        workoutTemplates.set(workoutKey, { type: workoutType, distance, description });
+      }
+    }
+    
+    planWeeks.push({
+      week: weekNum,
+      microCycle: weekNum <= weeks * 0.7 ? "base" : "peak" as "base" | "build" | "peak" | "taper",
+      days: dayWorkouts
+    });
+  }
+
+  // Create the training plan
+  const planId = await ctx.db.insert("trainingPlans", {
+    userId,
+    meta: {
+      goal: profile.goalDistance,
+      weeks,
+      level: profile.fitnessLevel,
+      daysPerWeek: profile.daysPerWeek,
+    },
+    isActive: true,
+    plan: planWeeks,
+    updatedAt: now,
+  });
+
+  // Generate planned workouts for the first 4 weeks with workout templates
+  await generatePlannedWorkouts(ctx, planId, userId, planWeeks.slice(0, 4), workoutTemplates);
+
+  return { planId, weeks, message: "Training plan generated successfully" };
+} 

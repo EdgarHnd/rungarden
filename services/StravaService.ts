@@ -335,7 +335,7 @@ class StravaService {
   /**
    * Refresh access token using refresh token
    */
-  private static async refreshAccessToken(): Promise<boolean> {
+  static async refreshAccessToken(): Promise<boolean> {
     try {
       const refreshToken = await SecureStore.getItemAsync(this.SECURE_STORE_KEYS.REFRESH_TOKEN);
       

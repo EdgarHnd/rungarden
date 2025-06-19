@@ -58,6 +58,11 @@ interface WeekViewProps {
   weeks: WeekData[];
   onWeekChange?: (weekIndex: number) => void;
   weekStartDay: number; // 0 = Sunday, 1 = Monday
+  streakInfo?: {
+    currentStreak: number;
+    longestStreak: number;
+    lastStreakDate: string | null;
+  };
 }
 
 const screenWidth = Dimensions.get('window').width; // This is the full window width
@@ -70,7 +75,8 @@ export default function WeekView({
   currentWeekIndex,
   weeks,
   onWeekChange,
-  weekStartDay
+  weekStartDay,
+  streakInfo
 }: WeekViewProps) {
   const scrollViewRef = useRef<ScrollView>(null);
   const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
@@ -224,6 +230,31 @@ export default function WeekView({
     return `${kilometers.toFixed(1)}`;
   };
 
+  const isPartOfStreak = (dateString: string, activities: DatabaseActivity[]) => {
+    if (!streakInfo || streakInfo.currentStreak === 0 || !streakInfo.lastStreakDate) {
+      return false;
+    }
+
+    const currentDate = new Date(dateString);
+    const lastStreakDate = new Date(streakInfo.lastStreakDate);
+    const daysDiff = Math.floor((lastStreakDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+
+    // This day is part of the streak if it's within the streak range and has activity
+    return daysDiff >= 0 && daysDiff < streakInfo.currentStreak;
+  };
+
+  const shouldShowStreakConnection = (dayIndex: number, week: WeekData) => {
+    if (!streakInfo || streakInfo.currentStreak === 0) return false;
+
+    const currentDay = week.days[dayIndex];
+    const nextDay = week.days[dayIndex + 1];
+
+    if (!nextDay) return false;
+
+    return isPartOfStreak(currentDay.date, currentDay.activities) &&
+      isPartOfStreak(nextDay.date, nextDay.activities);
+  };
+
   return (
     <View style={styles.container}>
       {/* Level Progress Section */}
@@ -267,77 +298,70 @@ export default function WeekView({
               const isTodayDay = isToday(day.date);
               const hasPlannedWorkout = day.plannedWorkout && day.plannedWorkout.type !== 'rest';
               const isRestDayCompleted = day.plannedWorkout?.type === 'rest' && day.isRestDayCompleted;
+              const isStreakDay = isPartOfStreak(day.date, day.activities);
+              const showStreakConnection = shouldShowStreakConnection(dayIndex, week);
 
               return (
-                <TouchableOpacity
-                  key={day.date}
-                  style={[
-                    styles.dayContainer,
-                    isSelected && styles.selectedDayContainer
-                  ]}
-                  onPress={() => {
-                    Haptics.selectionAsync();
-                    onDaySelect(globalDayIndex);
-                  }}
-                  activeOpacity={0.7}
-                >
-                  <Text style={[
-                    styles.dayLabel,
-                    isSelected && styles.selectedDayLabel
-                  ]}>
-                    {formatDayLabel(day.date)}
-                  </Text>
-
-                  <View style={[
-                    styles.dayCircle,
-                    isSelected && styles.selectedDayCircle,
-                    isTodayDay && !isSelected && styles.todayCircle
-                  ]}>
+                <View key={day.date} style={styles.dayWrapper}>
+                  <TouchableOpacity
+                    style={[
+                      styles.dayContainer,
+                      isSelected && styles.selectedDayContainer
+                    ]}
+                    onPress={() => {
+                      Haptics.selectionAsync();
+                      onDaySelect(globalDayIndex);
+                    }}
+                    activeOpacity={1}
+                  >
                     <Text style={[
-                      styles.dayNumber,
-                      isSelected && styles.selectedDayNumber,
-                      isTodayDay && !isSelected && styles.todayDayNumber
+                      styles.dayLabel,
+                      isSelected && styles.selectedDayLabel
                     ]}>
-                      {getDayNumber(day.date)}
+                      {formatDayLabel(day.date)}
                     </Text>
 
-                    {hasRun && (
-                      <View style={[
-                        styles.checkmark,
-                        isSelected && styles.selectedCheckmark
+                    <View style={[
+                      styles.dayCircle,
+                      isSelected && styles.selectedDayCircle,
+                      isTodayDay && !isSelected && styles.todayCircle,
+                      isStreakDay && styles.streakDayCircle,
+                      isStreakDay && isSelected && styles.selectedStreakDayCircle
+                    ]}>
+                      <Text style={[
+                        styles.dayNumber,
+                        isSelected && styles.selectedDayNumber,
+                        isTodayDay && !isSelected && styles.todayDayNumber
                       ]}>
-                        <Ionicons name="flash" size={10} color={isSelected ? Theme.colors.special.primary.coin : Theme.colors.text.primary} />
-                      </View>
-                    )}
+                        {getDayNumber(day.date)}
+                      </Text>
 
-                    {isRestDayCompleted && (
-                      <View style={[
-                        styles.checkmark,
-                        styles.restDayIconContainer,
-                        isSelected && styles.selectedCheckmark
-                      ]}>
-                        <Ionicons name="bed" size={10} color={isSelected ? Theme.colors.special.primary.coin : Theme.colors.text.primary} />
-                      </View>
-                    )}
+                      {hasRun && (
+                        <View style={[
+                          styles.checkmark,
+                          isSelected && styles.selectedCheckmark,
+                        ]}>
+                          <Ionicons name="flash" size={10} color={isSelected ? Theme.colors.special.primary.coin : Theme.colors.text.primary} />
+                        </View>
+                      )}
 
-                    {hasPlannedWorkout && !hasRun && (
-                      <View style={[
-                        styles.plannedWorkoutIndicator,
-                        isSelected && styles.selectedPlannedWorkoutIndicator
-                      ]}>
-                        <Ionicons name="flash" size={10} color={isSelected ? Theme.colors.accent.primary : Theme.colors.text.primary} />
-                      </View>
-                    )}
-                  </View>
+                      {hasPlannedWorkout && !hasRun && (
+                        <View style={[
+                          styles.plannedWorkoutIndicator,
+                          isSelected && styles.selectedPlannedWorkoutIndicator
+                        ]}>
+                          <Ionicons name="flash" size={10} color={isSelected ? Theme.colors.special.primary.exp : Theme.colors.text.primary} />
+                        </View>
+                      )}
 
-                  {/* Activity type indicator */}
-                  {/* <Text style={[
-                    styles.activityIndicator,
-                    isSelected && styles.selectedActivityIndicator
-                  ]}>
-                    {day.suggestedActivity.emoji}
-                  </Text> */}
-                </TouchableOpacity>
+                    </View>
+                  </TouchableOpacity>
+
+                  {/* Streak connection line */}
+                  {showStreakConnection && (
+                    <View style={styles.streakConnection} />
+                  )}
+                </View>
               );
             })}
           </View>
@@ -391,7 +415,7 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
     borderRadius: Theme.borderRadius.small,
   },
   weekTitle: {
@@ -409,9 +433,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     width: screenWidth - 40,
   },
+  dayWrapper: {
+    flex: 1,
+    position: 'relative',
+    alignItems: 'center',
+  },
   dayContainer: {
     alignItems: 'center',
-    flex: 1,
     paddingVertical: Theme.spacing.sm,
   },
   selectedDayContainer: {
@@ -423,7 +451,7 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.sm,
   },
   selectedDayLabel: {
-    color: Theme.colors.accent.primary,
+    color: Theme.colors.text.primary,
     fontFamily: Theme.fonts.semibold,
   },
   dayCircle: {
@@ -436,12 +464,12 @@ const styles = StyleSheet.create({
     position: 'relative',
   },
   selectedDayCircle: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
   },
   todayCircle: {
     backgroundColor: Theme.colors.background.secondary,
     borderWidth: 2,
-    borderColor: Theme.colors.accent.primary,
+    borderColor: Theme.colors.text.primary,
   },
   dayNumber: {
     fontSize: 16,
@@ -451,14 +479,17 @@ const styles = StyleSheet.create({
   selectedDayNumber: {
     color: Theme.colors.text.primary,
   },
+  selectedStreakDayCircle: {
+    backgroundColor: Theme.colors.special.primary.coin,
+  },
   todayDayNumber: {
-    color: Theme.colors.accent.primary,
+    // color: Theme.colors.text.primary,
   },
   checkmark: {
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: Theme.colors.status.success,
+    backgroundColor: Theme.colors.special.primary.coin,
     borderRadius: Theme.borderRadius.small,
     width: 16,
     height: 16,
@@ -483,7 +514,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: -4,
     right: -4,
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
     borderRadius: Theme.borderRadius.small,
     width: 16,
     height: 16,
@@ -492,6 +523,7 @@ const styles = StyleSheet.create({
   },
   selectedPlannedWorkoutIndicator: {
     backgroundColor: Theme.colors.text.primary,
+    color: Theme.colors.special.primary.exp,
   },
   plannedWorkoutText: {
     fontSize: 10,
@@ -507,5 +539,18 @@ const styles = StyleSheet.create({
   },
   selectedActivityIndicator: {
     opacity: 1,
+  },
+  streakDayCircle: {
+    borderWidth: 2,
+    borderColor: Theme.colors.special.primary.coin,
+  },
+  streakConnection: {
+    position: 'absolute',
+    top: 45,
+    left: '50%',
+    width: 50,
+    height: 2,
+    backgroundColor: Theme.colors.special.primary.coin,
+    zIndex: -1,
   },
 }); 

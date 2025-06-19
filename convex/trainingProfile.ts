@@ -118,7 +118,6 @@ export const saveOnboardingData = mutation({
         userId,
         ...trainingProfileData,
         fitnessLevel,
-        createdAt: now,
         updatedAt: now,
       });
     }

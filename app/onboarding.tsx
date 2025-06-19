@@ -126,20 +126,6 @@ export default function OnboardingScreen() {
     }
   };
 
-  const handleAnonymousSignIn = async () => {
-    try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      // Save onboarding data to storage first
-      await saveOnboardingDataToStorage();
-      await signIn("anonymous");
-      router.replace('/(app)');
-    } catch (error) {
-      console.error("Sign in error:", error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", "Failed to sign in anonymously");
-    }
-  };
-
   const handleGoogleSignIn = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -730,10 +716,6 @@ export default function OnboardingScreen() {
 
         <TouchableOpacity style={[styles.authButton, styles.appleButton]} onPress={handleAppleSignIn}>
           <Text style={styles.authButtonText}>Continue with Apple</Text>
-        </TouchableOpacity>
-
-        <TouchableOpacity style={[styles.authButton, styles.guestButton]} onPress={handleAnonymousSignIn}>
-          <Text style={styles.authButtonText}>Continue as Guest</Text>
         </TouchableOpacity>
       </View>
     </View>

@@ -7,17 +7,16 @@ import WeekView from '@/components/WeekView';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useOnboardingSync } from '@/hooks/useOnboardingSync';
-import ChallengeService from '@/services/ChallengeService';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
-import { PushNotificationService } from '@/services/PushNotificationService';
-import { Ionicons } from '@expo/vector-icons';
+import Ionicons from '@expo/vector-icons/build/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Rive, { RiveRef } from 'rive-react-native';
+import { RiveRef } from 'rive-react-native';
 
 // Constants for scrolling background
 const SCROLLING_BG_LOOP_WIDTH = 2000;
@@ -74,28 +73,32 @@ export default function HomeScreen() {
   const activities = useQuery(api.activities.getUserActivities, { days: 21, limit: 100 });
   const activitiesNeedingCelebration = useQuery(api.activities.getActivitiesNeedingCelebration);
   const trainingPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
-  const plannedWorkouts = useQuery(api.plannedWorkouts.getPlannedWorkouts, { days: 21 });
-  const streakInfo = useQuery(api.userProfile.getStreakInfo);
-  const syncActivities = useMutation(api.activities.syncActivitiesFromHealthKit);
-  const syncStravaActivities = useMutation(api.activities.syncActivitiesFromStrava);
+  const plannedWorkouts = useQuery(api.trainingPlan.getPlannedWorkouts, {
+    startDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 20 days ago
+    endDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]    // 20 days ahead
+  });
   const createProfile = useMutation(api.userProfile.createProfile);
   const markCelebrationShown = useMutation(api.activities.markCelebrationShown);
+  const refreshStreak = useMutation(api.streak.refreshStreak);
+  // const processAchievements = useMutation(api.achievements.processAchievementsForActivity);
 
   // Proper state management for week navigation
   const [currentWeekIndex, setCurrentWeekIndex] = useState(1); // 0=last week, 1=this week, 2=next week
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
   const scrollX = useRef(new Animated.Value(0)).current;
-  const [riveUrl, setRiveUrl] = useState<string | null>(null);
+  const [currentAnimationType, setCurrentAnimationType] = useState<'running' | 'idle'>('idle');
   const [showPuff, setShowPuff] = useState(false);
   const [isBgAnimationRunning, setIsBgAnimationRunning] = useState(false);
   const bgAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
   const isTransitioningRef = useRef(false);
+  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   // Add debounce ref to prevent cascading updates
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  // Add Rive ref for controlling the animation
-  const riveRef = useRef<RiveRef>(null);
+  // Add Rive refs for controlling the animations
+  const runningRiveRef = useRef<RiveRef>(null);
+  const idleRiveRef = useRef<RiveRef>(null);
 
   // Run celebration state
   const [showRunCelebrationModal, setShowRunCelebrationModal] = useState(false);
@@ -124,13 +127,33 @@ export default function HomeScreen() {
   const [tapCount, setTapCount] = useState(0);
   const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
+  // Refresh streak on first app load of the day
+  const [streakRefreshed, setStreakRefreshed] = useState(false);
+  useEffect(() => {
+    const runRefresh = async () => {
+      if (!isAuthenticated || !profile || streakRefreshed) return;
+
+      try {
+        await refreshStreak({});
+        setStreakRefreshed(true);
+      } catch (err) {
+        console.error("Failed to refresh streak:", err);
+      }
+    };
+
+    runRefresh();
+  }, [isAuthenticated, profile, streakRefreshed, refreshStreak]);
+
   // Derived values from queries
   const weekStartDay = profile?.weekStartDay ?? 1; // Default to Monday
 
-  const RIVE_URL_IDDLE = "https://fast-dragon-309.convex.cloud/api/storage/43099ea6-083b-43a8-b845-ed7d2431b719";
+  const RIVE_URL_IDDLE = "https://fast-dragon-309.convex.cloud/api/storage/ef5f29cd-b5d6-4fb2-9288-0edb260744c6";
   const RIVE_URL_ANGRY = "https://fast-dragon-309.convex.cloud/api/storage/04bf0340-7d79-4865-8dd6-2966b4befaff";
   const RIVE_URL_RUNNING = "https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a";
   const RIVE_URL_CYCLE = "https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e";
+
+  const BG_IMAGE_STADIUM = require("@/assets/images/bg/bgstadium.jpg");
+  const BG_IMAGE_PARIS = require("@/assets/images/bg/bgparis.jpg");
 
   const RIVE_URLS = [
     RIVE_URL_RUNNING,
@@ -175,9 +198,9 @@ export default function HomeScreen() {
   // Add jump trigger function
   const handleJump = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Trigger the jump in the Rive animation
-    // You may need to adjust the state machine name and input name based on your Rive file
-    riveRef.current?.fireState('State Machine 1', 'jump');
+    // Trigger the jump in the active Rive animation
+    const activeRef = currentAnimationType === 'running' ? runningRiveRef : idleRiveRef;
+    activeRef.current?.fireState('State Machine 1', 'jump');
   };
 
   // Handle triple tap on title for debug modal
@@ -255,33 +278,46 @@ export default function HomeScreen() {
     if (!activities || !plannedWorkouts) return { weeks: [], allDays: [], todayIndex: 0 };
 
     const today = new Date();
-    today.setHours(0, 0, 0, 0); // Set to midnight to compare dates correctly
+    today.setHours(0, 0, 0, 0);
     const thisWeekStart = getWeekStart(new Date(), weekStartDay);
+    const todayString = getLocalDateString(today);
+
     const weeks: WeekData[] = [];
     const allDays: DayData[] = [];
     let todayIndex = 0;
+
+    // Create activity lookup map for better performance
+    const activityMap = new Map<string, any[]>();
+    activities.forEach((activity: any) => {
+      const activityDate = getLocalDateString(new Date(activity.startDate));
+      if (!activityMap.has(activityDate)) {
+        activityMap.set(activityDate, []);
+      }
+      activityMap.get(activityDate)!.push(activity);
+    });
+
+    // Create planned workout lookup map
+    const plannedWorkoutMap = new Map<string, any>();
+    plannedWorkouts?.forEach(workout => {
+      plannedWorkoutMap.set(workout.scheduledDate, workout);
+    });
 
     // Generate 3 weeks: last week, this week, next week
     for (let weekOffset = -1; weekOffset <= 1; weekOffset++) {
       const weekStart = new Date(thisWeekStart);
       weekStart.setDate(thisWeekStart.getDate() + (weekOffset * 7));
-
       const days: DayData[] = [];
+
       for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
         const date = new Date(weekStart);
         date.setDate(weekStart.getDate() + dayOffset);
         const dateString = getLocalDateString(date);
 
-        // Get activities for this day
-        const dayActivities = activities.filter((activity: any) => {
-          const activityDate = new Date(activity.startDate);
-          return getLocalDateString(activityDate) === dateString;
-        });
+        // Get activities and planned workout for this day
+        const dayActivities = activityMap.get(dateString) || [];
+        const plannedWorkout = plannedWorkoutMap.get(dateString);
 
-        // Get planned workout for this day
-        const plannedWorkout = plannedWorkouts?.find(workout => workout.scheduledDate === dateString);
-
-        // Create a default rest activity if no planned workout exists
+        // Create workout data (planned or default rest)
         const finalPlannedWorkout = plannedWorkout || {
           scheduledDate: dateString,
           type: "rest",
@@ -291,25 +327,25 @@ export default function HomeScreen() {
           status: "scheduled",
           distance: 0,
           workoutId: null,
-          isDefault: true // Flag to indicate this is a default rest day
+          workout: { type: "rest" },
+          isDefault: true
         };
 
+        // Determine if rest day is completed
         let isRestDayCompleted = false;
-        if (finalPlannedWorkout.type === 'rest') {
+        const workoutType = plannedWorkout?.workout?.type || "rest";
+
+        if (workoutType === 'rest') {
           if (finalPlannedWorkout.status === 'completed') {
             isRestDayCompleted = true;
           } else {
-            const todayString = getLocalDateString(new Date());
             const isPastDay = dateString < todayString;
+            const isToday = dateString === todayString;
 
             if (isPastDay) {
-              // A default rest day in the past is considered "completed" if no activity was logged.
               isRestDayCompleted = dayActivities.length === 0;
-            } else if (dateString === todayString) {
-              // For today, it's completed if the last streak update was today, and no running activity was logged.
-              if (streakInfo && streakInfo.lastStreakDate === dateString && dayActivities.length === 0) {
-                isRestDayCompleted = true;
-              }
+            } else if (isToday && profile?.lastStreakDate === dateString) {
+              isRestDayCompleted = dayActivities.length === 0;
             }
           }
         }
@@ -325,8 +361,8 @@ export default function HomeScreen() {
         days.push(dayData);
         allDays.push(dayData);
 
-        // Check if this is today
-        if (date.toDateString() === today.toDateString()) {
+        // Mark today's index
+        if (dateString === todayString) {
           todayIndex = allDays.length - 1;
         }
       }
@@ -335,7 +371,9 @@ export default function HomeScreen() {
         weekIndex: weekOffset + 1,
         startDate: getLocalDateString(weekStart),
         days,
-        weeklyProgress: days.reduce((sum, day) => sum + day.activities.reduce((daySum, act) => daySum + act.distance, 0), 0) / 1000
+        weeklyProgress: days.reduce((sum, day) =>
+          sum + day.activities.reduce((daySum, act) => daySum + act.distance, 0), 0
+        ) / 1000
       });
     }
 
@@ -408,42 +446,48 @@ export default function HomeScreen() {
   }, [isAuthenticated, profile]);
 
   useEffect(() => {
-    const performAutoSync = async () => {
-      // Only auto-sync if:
-      // 1. User is authenticated
-      // 2. Strava sync is enabled
-      // 3. We haven't performed initial sync in this session
+    const performInitialSync = async () => {
+      // Only perform initial connection sync for new Strava users
       if (!isAuthenticated || !profile?.stravaSyncEnabled || hasPerformedInitialSync) {
         return;
       }
 
-      // Check for pending webhook syncs first (priority)
-      const pendingSyncs = await convex.query(api.stravaWebhooks.getPendingStravaSyncs, {
-        userId: profile.userId
-      });
+      // Check if this is the initial connection (no previous sync and no recent activities)
+      const lastSync = profile.lastStravaSync;
+      const isInitialConnection = !lastSync;
 
-      if (pendingSyncs && pendingSyncs.length > 0) {
-        console.log(`[HomeScreen] Found ${pendingSyncs.length} pending webhook syncs - performing immediate sync`);
+      if (isInitialConnection) {
+        console.log('[HomeScreen] Performing initial connection sync for Strava activities...');
 
         try {
+          setHasPerformedInitialSync(true);
+
           const { default: DatabaseStravaService } = await import('@/services/DatabaseStravaService');
           const stravaService = new DatabaseStravaService(convex);
 
-          const syncResult = await stravaService.syncActivitiesFromStrava(7); // Last week for webhook events
+          const syncResult = await stravaService.syncActivitiesFromStrava(30); // Sync last 30 days for initial connection
 
           if (syncResult && syncResult.created > 0) {
-            console.log(`[HomeScreen] Webhook sync completed: ${syncResult.created} new activities`);
+            console.log(`[HomeScreen] Initial sync completed: ${syncResult.created} new activities`);
 
-            // Mark syncs as completed
-            for (const sync of pendingSyncs) {
-              await convex.mutation(api.stravaWebhooks.markSyncCompleted, { syncId: sync._id });
+            // Show modal for first-time sync with significant results
+            if (syncResult.created >= 5 || (syncResult.distanceGained && syncResult.distanceGained > 10000)) {
+              setInitialSyncResult({
+                created: syncResult.created,
+                updated: syncResult.updated || 0,
+                skipped: syncResult.skipped || 0,
+                distanceGained: syncResult.distanceGained || 0,
+                leveledUp: syncResult.leveledUp,
+                newLevel: syncResult.newLevel,
+                oldLevel: syncResult.oldLevel,
+              });
+              setInitialSyncModalVisible(true);
             }
+          } else {
+            console.log('[HomeScreen] Initial sync completed: no new activities found');
           }
-
-          setHasPerformedInitialSync(true);
-          return;
         } catch (error) {
-          console.error('[HomeScreen] Webhook sync failed:', error);
+          console.error('[HomeScreen] Initial sync failed:', error);
           // Show alert if authentication error
           if (error instanceof Error && error.message.includes('Not authenticated with Strava')) {
             Alert.alert(
@@ -459,118 +503,18 @@ export default function HomeScreen() {
             );
           }
         }
-      }
-
-      // Regular auto-sync check (only if no recent sync)
-      const lastSync = profile.lastStravaSync;
-      if (lastSync) {
-        const lastSyncTime = new Date(lastSync).getTime();
-        const oneHourAgo = Date.now() - (60 * 60 * 1000);
-        if (lastSyncTime > oneHourAgo) {
-          console.log('[HomeScreen] Skipping auto-sync - recent sync detected');
-          setHasPerformedInitialSync(true);
-          return;
-        }
-      }
-
-      try {
-        console.log('[HomeScreen] Performing regular auto-sync for Strava activities...');
+      } else {
+        // Already connected - webhooks handle new activities automatically
+        console.log('[HomeScreen] Strava already connected, webhooks handle new activities');
         setHasPerformedInitialSync(true);
-
-        const { default: DatabaseStravaService } = await import('@/services/DatabaseStravaService');
-        const stravaService = new DatabaseStravaService(convex);
-
-        const syncResult = await stravaService.syncActivitiesFromStrava(30);
-
-        if (syncResult && syncResult.created > 0) {
-          console.log(`[HomeScreen] Auto-sync completed: ${syncResult.created} new activities`);
-
-          // Show modal for first-time sync with significant results
-          if (syncResult.created >= 5 || (syncResult.distanceGained && syncResult.distanceGained > 10000)) {
-            setInitialSyncResult({
-              created: syncResult.created,
-              updated: syncResult.updated || 0,
-              skipped: syncResult.skipped || 0,
-              distanceGained: syncResult.distanceGained || 0,
-              leveledUp: syncResult.leveledUp,
-              newLevel: syncResult.newLevel,
-              oldLevel: syncResult.oldLevel,
-            });
-            setInitialSyncModalVisible(true);
-          }
-        }
-      } catch (error) {
-        console.error('[HomeScreen] Auto-sync failed:', error);
-        // Show alert if authentication error
-        if (error instanceof Error && error.message.includes('Not authenticated with Strava')) {
-          Alert.alert(
-            'Strava Connection Required',
-            'Please connect to Strava in Settings to enable activity syncing.',
-            [
-              { text: 'Cancel', style: 'cancel' },
-              {
-                text: 'Open Settings',
-                onPress: () => router.push('/settings')
-              }
-            ]
-          );
-        }
       }
     };
 
-    // Check more frequently for webhook syncs, less frequently for regular syncs
-    const checkInterval = profile?.stravaSyncEnabled ? 3000 : 10000; // 3s vs 10s
-    const timeoutId = setTimeout(performAutoSync, checkInterval);
+    const timeoutId = setTimeout(performInitialSync, 1000); // Small delay to ensure profile is loaded
     return () => clearTimeout(timeoutId);
-  }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.lastStravaSync, profile?.userId, hasPerformedInitialSync, convex]);
+  }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.lastStravaSync, hasPerformedInitialSync, convex]);
 
-  // Push notification handler
-  const handleNotificationTap = (data: any) => {
-    if (data?.action === 'open_celebration' && data?.activityData) {
-      const { activityData } = data;
 
-      // Create mock run celebration data from notification
-      const mockRunData = {
-        _id: 'notification-activity',
-        startDate: new Date().toISOString(),
-        endDate: new Date().toISOString(),
-        duration: activityData.duration || 25,
-        distance: activityData.distance || 5000,
-        calories: Math.round((activityData.distance || 5000) * 0.065), // Rough calorie estimate
-        workoutName: activityData.workoutName || 'Test Run',
-      };
-
-      const mockRewards = {
-        distanceGained: activityData.distance || 5000,
-        coinsGained: Math.floor((activityData.distance || 5000) / 1000),
-        leveledUp: false,
-        challengesUnlocked: [],
-      };
-
-      setRunCelebrationData({
-        runData: mockRunData,
-        rewards: mockRewards,
-        isInitialSync: false // Not an initial sync for notification
-      });
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowRunCelebrationModal(true);
-    }
-  };
-
-  // Setup push notification listeners
-  useEffect(() => {
-    if (isAuthenticated && convex) {
-      const pushService = new PushNotificationService(convex);
-      const listeners = pushService.setupNotificationListeners(handleNotificationTap);
-
-      return () => {
-        // Cleanup listeners when component unmounts
-        listeners.notificationListener?.remove();
-        listeners.responseListener?.remove();
-      };
-    }
-  }, [isAuthenticated, convex]);
 
   // Check for activities needing celebration
   useEffect(() => {
@@ -643,16 +587,24 @@ export default function HomeScreen() {
     updateTimeoutRef.current = setTimeout(() => {
       setCurrentWeekIndex(weekIndex);
 
-      // Auto-select the first day of the new week if current day is not in this week
-      const currentWeek = Math.floor(currentDayIndex / 7);
-      if (currentWeek !== weekIndex) {
-        const firstDayOfWeek = weekIndex * 7;
-        setCurrentDayIndex(firstDayOfWeek);
+      // Auto-select today if it's in the selected week, otherwise select first day
+      const today = new Date();
+      const todayIndex = allDays.findIndex(day =>
+        new Date(day.date).toDateString() === today.toDateString()
+      );
+
+      const weekStartIndex = weekIndex * 7;
+      const weekEndIndex = weekStartIndex + 6;
+
+      if (todayIndex >= weekStartIndex && todayIndex <= weekEndIndex) {
+        setCurrentDayIndex(todayIndex);
+      } else {
+        setCurrentDayIndex(weekStartIndex);
       }
     }, 0);
-  }, [currentDayIndex]);
+  }, [allDays]);
 
-  // Debounced effect for Rive URL and background animation changes
+  // Debounced effect for animation type and background animation changes
   useEffect(() => {
     if (allDays.length === 0 || isTransitioningRef.current) return;
 
@@ -666,31 +618,50 @@ export default function HomeScreen() {
       const selectedDayData = allDays[currentDayIndex];
       if (selectedDayData) {
         const workoutType = selectedDayData.plannedWorkout?.type;
-        const newUrl = workoutType === 'rest' ? RIVE_URL_IDDLE : RIVE_URL_RUNNING;
+        const newAnimationType: 'running' | 'idle' = workoutType === 'rest' ? 'idle' : 'running';
 
-        if (newUrl === RIVE_URL_RUNNING) {
+        if (newAnimationType === 'running') {
           startBgAnimation();
         } else {
           stopBgAnimation();
         }
 
-        if (riveUrl !== newUrl) {
-          if (riveUrl !== null) { // Don't show puff on first load
-            isTransitioningRef.current = true;
-            setShowPuff(true);
-            setRiveUrl(newUrl);
+        if (currentAnimationType !== newAnimationType) {
+          isTransitioningRef.current = true;
+          setShowPuff(true);
+          // Scale down animation with smooth easing
+          Animated.timing(scaleAnim, {
+            toValue: 0,
+            duration: 150,
+            easing: Easing.out(Easing.cubic),
+            useNativeDriver: true,
+          }).start(() => {
+            // Change animation type at scale 0
+            setCurrentAnimationType(newAnimationType);
 
-            setTimeout(() => {
+            // Scale back up with bouncy easing
+            Animated.sequence([
+              Animated.timing(scaleAnim, {
+                toValue: 1,
+                duration: 80,
+                easing: Easing.out(Easing.back(1.2)),
+                useNativeDriver: true,
+              }),
+              Animated.timing(scaleAnim, {
+                toValue: 1,
+                duration: 100,
+                easing: Easing.out(Easing.quad),
+                useNativeDriver: true,
+              })
+            ]).start(() => {
               setShowPuff(false);
               isTransitioningRef.current = false;
-            }, 800);
-          } else {
-            setRiveUrl(newUrl);
-          }
+            });
+          });
         }
       }
     }, 100); // 100ms debounce to prevent rapid changes
-  }, [allDays, currentDayIndex, riveUrl]);
+  }, [allDays, currentDayIndex, currentAnimationType]);
 
   // Cleanup timeout on unmount
   useEffect(() => {
@@ -736,38 +707,41 @@ export default function HomeScreen() {
   try {
     return (
       <SafeAreaView style={styles.container}>
-        <Animated.View
+        <LinearGradient
+          colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.tertiary]}
+          style={styles.solidBackground}
+        />
+        {/* <Animated.View
           style={[
             styles.scrollingBackgroundContainer,
             { transform: [{ translateX: scrollX }] }
           ]}
         >
-          <Image source={require('@/assets/images/bg/bgstadium.jpg')} style={styles.scrollingBackgroundImage} />
-          <Image source={require('@/assets/images/bg/bgstadium.jpg')} style={styles.scrollingBackgroundImage} />
-        </Animated.View>
-
+          <Image source={BG_IMAGE_STADIUM} style={styles.scrollingBackgroundImage} />
+          <Image source={BG_IMAGE_STADIUM} style={styles.scrollingBackgroundImage} />
+        </Animated.View> */}
         <View style={styles.headerContainer}>
           <View style={styles.leftHeaderSection}>
             <TouchableOpacity onPress={handleTitlePress}>
-              <Text style={styles.title}>Koko</Text>
+              <Text style={styles.title}>Blaze</Text>
             </TouchableOpacity>
             <View style={styles.livesRowContainer}>
               {[...Array(4)].map((_, index) => {
-                const currentLives = 4; // TODO: Get from user profile/state
+                const currentLives = 3; // TODO: Get from user profile/state
                 const isAlive = index < currentLives;
                 return (
                   <Ionicons
                     key={index}
                     name={isAlive ? "flash" : "flash-outline"}
                     size={25}
-                    color={isAlive ? Theme.colors.special.primary.energy : Theme.colors.text.primary}
+                    color={isAlive ? Theme.colors.special.primary.coin : Theme.colors.text.primary}
                   />
                 );
               })}
             </View>
           </View>
           <View style={styles.rightHeaderSection}>
-            <TouchableOpacity
+            {/* <TouchableOpacity
               style={styles.streakContainer}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -775,14 +749,9 @@ export default function HomeScreen() {
               }}
               activeOpacity={0.7}
             >
-              <Ionicons
-                name="flame"
-                size={24}
-                color={Theme.colors.accent.primary}
-                style={styles.streakIcon}
-              />
-              <Text style={styles.streakText}>{streakInfo?.currentStreak || 0}</Text>
-            </TouchableOpacity>
+              <Text style={styles.streakEmoji}>🔥</Text>
+              <Text style={styles.streakText}>{profile?.currentStreak || 0}</Text>
+            </TouchableOpacity> */}
             <TouchableOpacity
               onPress={() => Alert.alert(
                 "Coming Soon",
@@ -792,7 +761,7 @@ export default function HomeScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.coinContainer}>
-                <Image source={require('@/assets/images/icons/eucaleaf.png')} style={styles.coinIcon} />
+                <Image source={require('@/assets/images/icons/coal.png')} style={styles.coinIcon} />
                 <Text style={styles.coinText}>{profile?.coins || 0}</Text>
               </View>
             </TouchableOpacity>
@@ -800,20 +769,41 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.animationContainer}>
-          {riveUrl && (
+          {/* <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
             <Rive
-              ref={riveRef}
-              url={riveUrl}
-              style={styles.animation}
+              ref={runningRiveRef}
+              url={RIVE_URL_RUNNING}
+              style={{
+                ...styles.animation,
+                opacity: currentAnimationType === 'running' ? 1 : 0
+              }}
               autoplay={true}
             />
-          )}
-          {showPuff && (
+
+            <Rive
+              ref={idleRiveRef}
+              url={RIVE_URL_IDDLE}
+              style={{
+                ...styles.animation,
+                position: 'absolute',
+                opacity: currentAnimationType === 'idle' ? 1 : 0
+              }}
+              autoplay={true}
+            />
+          </Animated.View> */}
+
+          {/* {showPuff && (
             <Image
               source={require('@/assets/images/bg/puff.gif')}
               style={styles.puffImage}
             />
-          )}
+          )} */}
+          <View style={styles.shadowDisc} />
+          <Image
+            source={require('@/assets/images/blaze/blazetr.gif')}
+            style={styles.blazeImage}
+            resizeMode="contain"
+          />
         </View>
 
         <ScrollView
@@ -834,6 +824,11 @@ export default function HomeScreen() {
             weeks={weeks}
             onWeekChange={handleWeekChange}
             weekStartDay={weekStartDay}
+            streakInfo={profile ? {
+              currentStreak: profile.currentStreak,
+              longestStreak: profile.longestStreak,
+              lastStreakDate: profile.lastStreakDate || null,
+            } : undefined}
           />
 
           {/* Day Card */}
@@ -847,8 +842,8 @@ export default function HomeScreen() {
                 formatDistance={formatDistance}
                 formatPace={formatPace}
                 streakInfo={{
-                  currentStreak: streakInfo?.currentStreak || 0,
-                  longestStreak: streakInfo?.longestStreak || 0,
+                  currentStreak: profile?.currentStreak || 0,
+                  longestStreak: profile?.longestStreak || 0,
                 }}
                 isRestDayCompleted={selectedDayData.isRestDayCompleted}
               />
@@ -866,11 +861,23 @@ export default function HomeScreen() {
           }}
           metricSystem={profile?.metricSystem || 'metric'}
           streakInfo={{
-            currentStreak: streakInfo?.currentStreak || 0,
-            longestStreak: streakInfo?.longestStreak || 0,
+            currentStreak: profile?.currentStreak || 0,
+            longestStreak: profile?.longestStreak || 0,
           }}
           isInitialSync={runCelebrationData?.isInitialSync || false}
           onClose={async () => {
+            // Process achievements for this activity
+            if (runCelebrationData?.runData?._id) {
+              try {
+                // const achievementResult = await processAchievements({
+                //   activityId: runCelebrationData.runData._id
+                // });
+                // console.log('Achievements processed:', achievementResult);
+              } catch (error) {
+                console.error('Failed to process achievements:', error);
+              }
+            }
+
             // Mark celebration as shown if this was for a new activity
             if (runCelebrationData?.runData?._id) {
               try {
@@ -898,18 +905,18 @@ export default function HomeScreen() {
           visible={showRestCelebrationModal}
           onClose={() => setShowRestCelebrationModal(false)}
           streakInfo={{
-            currentStreak: streakInfo?.currentStreak || 0,
-            longestStreak: streakInfo?.longestStreak || 0,
+            currentStreak: profile?.currentStreak || 0,
+            longestStreak: profile?.longestStreak || 0,
           }}
         />
 
         {/* Streak Modal */}
         <StreakDisplay
           visible={showStreakModal}
-          streakInfo={streakInfo ? {
-            currentStreak: streakInfo.currentStreak,
-            longestStreak: streakInfo.longestStreak,
-            lastStreakDate: streakInfo.lastStreakDate,
+          streakInfo={profile ? {
+            currentStreak: profile.currentStreak,
+            longestStreak: profile.longestStreak,
+            lastStreakDate: profile.lastStreakDate || null,
           } : null}
           onClose={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -946,7 +953,7 @@ export default function HomeScreen() {
                   const planInfo = trainingPlan ? `Active plan: ${trainingPlan.meta.goal} (${trainingPlan.meta.weeks} weeks)` : 'No active plan';
                   const workoutsInfo = `Planned workouts: ${plannedWorkouts?.length || 0}`;
                   const todaysWorkout = plannedWorkouts?.find(w => w.scheduledDate === new Date().toISOString().split('T')[0]);
-                  const todayInfo = todaysWorkout ? `Today: ${todaysWorkout.description}` : 'No workout today';
+                  const todayInfo = todaysWorkout ? `Today: Planned workout (${todaysWorkout.status})` : 'No workout today';
 
                   Alert.alert(
                     'Training Plan Status',
@@ -967,15 +974,11 @@ export default function HomeScreen() {
                     // Mock some rewards data for testing
                     const mockRewards = {
                       distanceGained: lastActivity.distance,
-                      coinsGained: Math.floor(lastActivity.distance / 1000),
+                      coinsGained: Math.floor(lastActivity.distance / 100),
                       leveledUp: Math.random() > 0.7, // 30% chance of level up for demo
                       newLevel: (profile?.level || 1) + 1,
                       oldLevel: profile?.level || 1,
-                      challengesUnlocked: ChallengeService.checkChallengesForRun(lastActivity, {
-                        totalRuns: profile?.totalWorkouts || 0,
-                        totalDistance: profile?.totalDistance || 0,
-                        isFirstRun: false
-                      }).map(c => c.name),
+                      challengesUnlocked: [],
                     };
 
                     setRunCelebrationData({
@@ -1004,6 +1007,76 @@ export default function HomeScreen() {
                 }}
               >
                 <Text style={styles.debugButtonText}>🧘‍♂️ Test Rest Celebration</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={async () => {
+                  try {
+                    const { default: DatabaseStravaService } = await import('@/services/DatabaseStravaService');
+                    const stravaService = new DatabaseStravaService(convex);
+
+                    const debugInfo = await stravaService.debugAuthenticationStatus();
+
+                    Alert.alert(
+                      'Strava Auth Debug',
+                      `Local Auth: ${debugInfo.localAuth}\n` +
+                      `Local Tokens Expired: ${debugInfo.localTokens.isExpired}\n` +
+                      `Local Time Until Expiry: ${debugInfo.localTokens.timeUntilExpiry}s\n\n` +
+                      `DB Auth: ${debugInfo.dbAuth}\n` +
+                      `DB Strava Sync Enabled: ${debugInfo.dbTokens.stravaSyncEnabled}\n` +
+                      `DB Tokens Expired: ${debugInfo.dbTokens.isExpired}\n` +
+                      `DB Time Until Expiry: ${debugInfo.dbTokens.timeUntilExpiry}s\n` +
+                      `DB Athlete ID: ${debugInfo.dbTokens.stravaAthleteId}`,
+                      [{ text: 'OK' }]
+                    );
+                  } catch (error) {
+                    Alert.alert('Debug Error', `Failed to get auth info: ${error}`);
+                  }
+                }}
+              >
+                <Text style={styles.debugButtonText}>🔍 Debug Strava Auth</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={async () => {
+                  Alert.alert(
+                    'Reset Strava Auth',
+                    'This will clear all Strava authentication data. You will need to reconnect to Strava. Continue?',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'Reset',
+                        style: 'destructive',
+                        onPress: async () => {
+                          try {
+                            const { default: DatabaseStravaService } = await import('@/services/DatabaseStravaService');
+                            const stravaService = new DatabaseStravaService(convex);
+
+                            await stravaService.resetAuthentication();
+
+                            Alert.alert(
+                              'Reset Complete',
+                              'Strava authentication has been reset. Please go to Settings to reconnect.',
+                              [
+                                { text: 'OK' },
+                                {
+                                  text: 'Open Settings',
+                                  onPress: () => router.push('/settings')
+                                }
+                              ]
+                            );
+                          } catch (error) {
+                            Alert.alert('Reset Failed', `Failed to reset auth: ${error}`);
+                          }
+                        }
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.debugButtonText}>🔄 Reset Strava Auth</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1051,7 +1124,7 @@ const styles = StyleSheet.create({
     left: 0,
     height: '100%',
     width: '100%',
-    backgroundColor: Theme.colors.background.tertiary
+    backgroundColor: '#0D0C0F'
   },
   scrollingBackgroundContainer: {
     position: 'absolute',
@@ -1095,6 +1168,12 @@ const styles = StyleSheet.create({
     alignItems: 'center',
   },
   streakIcon: {
+    width: 24,
+    height: 24,
+    marginRight: 2,
+  },
+  streakEmoji: {
+    fontSize: 20,
     marginRight: 2,
   },
   streakText: {
@@ -1140,7 +1219,6 @@ const styles = StyleSheet.create({
   animation: {
     width: 300,
     height: 300,
-    textAlign: 'center',
     margin: Theme.spacing.xl,
   },
   selectedDayCardContainer: {
@@ -1214,8 +1292,23 @@ const styles = StyleSheet.create({
   },
   puffImage: {
     position: 'absolute',
-    width: 200,
-    height: 200,
+    width: 250,
+    height: 250,
     zIndex: 10,
+  },
+  blazeImage: {
+    position: 'absolute',
+    width: 350,
+    height: 350,
+    zIndex: 10,
+  },
+  shadowDisc: {
+    position: 'absolute',
+    width: 500,
+    height: 30,
+    backgroundColor: 'rgba(0, 0, 0, 0.2)',
+    borderRadius: '100%',
+    bottom: 40,
+    zIndex: 5,
   },
 });

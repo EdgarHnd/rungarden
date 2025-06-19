@@ -166,7 +166,6 @@ async function markUserForStravaSync(ctx: any, userId: string, activityId?: numb
       userId,
       activityIds: activityId ? [activityId] : [],
       status: "pending",
-      createdAt: now,
       updatedAt: now,
     });
   }
@@ -202,7 +201,7 @@ async function deleteActivityByStravaId(ctx: any, stravaId: number) {
 // Get pending Strava syncs for a user
 export const getPendingStravaSyncs = query({
   args: {
-    userId: v.string(),
+    userId: v.id("users"),
   },
   handler: async (ctx, args) => {
     return await ctx.db

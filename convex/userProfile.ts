@@ -1,34 +1,12 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import {
+  calculateLevelFromXP,
+  distanceToXP
+} from "./utils/gamification";
 
-// Calculate level from total XP
-function calculateLevelFromXP(totalXP: number): number {
-  let level = 1;
-  
-  // Progressive XP requirements: level^2 * 250 XP
-  while (getXPForLevel(level + 1) <= totalXP) {
-    level++;
-  }
-  
-  return level;
-}
-
-// XP required for each level (cumulative)
-function getXPForLevel(level: number): number {
-  if (level <= 1) return 0;
-  return Math.floor(Math.pow(level - 1, 2) * 250);
-}
-
-// Convert distance to XP (1km = 100 XP)
-function distanceToXP(distanceMeters: number): number {
-  return Math.floor(distanceMeters * 0.1);
-}
-
-// Calculate coins from total distance (10 coins per km)
-function calculateCoinsFromDistance(totalDistance: number): number {
-  return Math.floor(totalDistance / 100); // 10 coins per kilometer
-}
+// Gamification functions moved to ./utils/gamification.ts
 
 // Get user profile
 export const getOrCreateProfile = query({
@@ -93,7 +71,6 @@ export const createProfile = mutation({
       healthKitSyncEnabled: false,
       stravaSyncEnabled: false,
       autoSyncEnabled: false,
-      createdAt: now,
       updatedAt: now,
     });
 
@@ -108,7 +85,6 @@ export const updateProfile = mutation({
     totalDistance: v.optional(v.number()),
     totalWorkouts: v.optional(v.number()),
     totalCalories: v.optional(v.number()),
-    lastSyncDate: v.optional(v.string()),
     level: v.optional(v.number()),
     totalXP: v.optional(v.number()),
     coins: v.optional(v.number()),
@@ -173,12 +149,13 @@ export const updateProfile = mutation({
         totalDistance: args.totalDistance ?? 0,
         totalWorkouts: args.totalWorkouts ?? 0,
         totalCalories: args.totalCalories ?? 0,
-        lastSyncDate: args.lastSyncDate,
         level: calculatedLevel ?? 1,
         totalXP: calculatedTotalXP ?? 0,
         coins: calculatedCoins ?? 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        streakFreezeAvailable: 0,
         metricSystem: args.metricSystem ?? "metric",
-        createdAt: now,
         updatedAt: now,
       });
     }
@@ -318,12 +295,15 @@ export const updateSyncPreferences = mutation({
         totalWorkouts: 0,
         totalCalories: 0,
         level: 1,
+        totalXP: 0,
         coins: 0,
+        currentStreak: 0,
+        longestStreak: 0,
+        streakFreezeAvailable: 0,
         healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
         stravaSyncEnabled: args.stravaSyncEnabled ?? false,
         lastHealthKitSync: args.lastHealthKitSync === null ? undefined : args.lastHealthKitSync,
         lastStravaSync: args.lastStravaSync === null ? undefined : args.lastStravaSync,
-        createdAt: now,
         updatedAt: now,
       });
     }
@@ -363,18 +343,6 @@ export const getCurrentWeekProgress = query({
     weekStart.setHours(0, 0, 0, 0);
     const weekStartISO = weekStart.toISOString();
 
-    const weekProgress = await ctx.db
-      .query("weeklyProgress")
-      .withIndex("by_user_and_week", (q) => 
-        q.eq("userId", userId).eq("weekStart", weekStartISO)
-      )
-      .first();
-
-    if (weekProgress) {
-      return weekProgress;
-    }
-
-    // Calculate progress from activities if no weekly progress entry exists
     const endOfWeek = new Date(weekStart);
     endOfWeek.setDate(weekStart.getDate() + 7);
     
@@ -512,51 +480,6 @@ export const getPushNotificationSettings = query({
     return {
       enabled: profile?.pushNotificationsEnabled ?? false,
       token: profile?.pushNotificationToken ?? null,
-    };
-  },
-});
-
-// Get user's streak information
-export const getStreakInfo = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      return null;
-    }
-
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!profile) {
-      return null;
-    }
-
-    // Get recent planned workouts for streak calculation
-    const today = new Date();
-    const thirtyDaysAgo = new Date(today);
-    thirtyDaysAgo.setDate(today.getDate() - 30);
-
-    const plannedWorkouts = await ctx.db
-      .query("plannedWorkouts")
-      .withIndex("by_user_date", (q) => 
-        q.eq("userId", userId)
-         .gte("scheduledDate", thirtyDaysAgo.toISOString().split('T')[0])
-      )
-      .collect();
-
-    return {
-      currentStreak: profile.currentStreak || 0,
-      longestStreak: profile.longestStreak || 0,
-      lastStreakDate: profile.lastStreakDate || null,
-      streakFreezeAvailable: profile.streakFreezeAvailable || 0,
-      plannedWorkouts: plannedWorkouts.map(workout => ({
-        scheduledDate: workout.scheduledDate,
-        type: workout.type,
-        status: workout.status
-      }))
     };
   },
 });
@@ -704,8 +627,12 @@ export const handleMissedWorkouts = mutation({
 
     // Mark overdue workouts as missed
     for (const workout of overdueWorkouts) {
+      // Get workout details to check type
+      const workoutDetails = await ctx.db.get(workout.workoutId);
+      const workoutType = workoutDetails?.type || "run";
+      
       // Only training days can break streak
-      if (workout.type !== 'rest' && workout.type !== 'cross-train') {
+      if (workoutType !== 'rest' && workoutType !== 'cross-train') {
         streakBroken = true;
         brokenBy.push(workout.scheduledDate);
       }
@@ -827,7 +754,7 @@ export const completeRestDay = mutation({
           message: "Rest day already completed for today",
           rewards: {
             xpGained: 1000,
-            coinsGained: 1,
+            coinsGained: 10,
             leveledUp: false,
             oldLevel: profile.level || 1,
             newLevel: profile.level || 1,
@@ -1017,7 +944,9 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
       totalXP,
       level,
       coins,
-      createdAt: now,
+      currentStreak: 0,
+      longestStreak: 0,
+      streakFreezeAvailable: 0,
       updatedAt: now,
     });
   }

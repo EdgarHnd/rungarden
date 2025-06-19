@@ -33,29 +33,50 @@ interface WeekSummary {
 const getWorkoutTypeColor = (type: string): string => {
   const colorMap: Record<string, string> = {
     'easy': '#4CAF50',          // Green
+    'tempo': '#FF9500',         // Orange
+    'interval': '#FF3B30',      // Red
+    'intervals': '#FF3B30',     // Red
     'long': '#9C27B0',          // Purple
+    'recovery': '#10B981',      // Green
+    'cross-train': '#8B5CF6',   // Purple
+    'strength': '#9333EA',      // Purple
     'rest': '#757575',          // Gray
     'race': '#FF5722',          // Deep orange
+    'run': '#4CAF50',           // Green
   };
-  return colorMap[type] || colorMap['rest'];
+  return colorMap[type] || colorMap['run'];
 };
 
 const getWorkoutEmoji = (type: string): string => {
   const emojiMap: Record<string, string> = {
     'easy': '🏃‍♂️',
+    'tempo': '🔥',
+    'interval': '⚡',
+    'intervals': '⚡',
     'long': '🏃‍♂️',
+    'recovery': '🧘‍♀️',
+    'cross-train': '🚴‍♂️',
+    'strength': '💪',
     'rest': '😴',
     'race': '🏆',
+    'run': '🏃‍♂️'
   };
-  return emojiMap[type] || '😴';
+  return emojiMap[type] || '🏃‍♂️';
 };
 
 const getWorkoutDisplayName = (type: string): string => {
   const displayNames: Record<string, string> = {
     'easy': 'Easy Run',
+    'tempo': 'Tempo Run',
+    'interval': 'Interval Training',
+    'intervals': 'Interval Training',
     'long': 'Long Run',
+    'recovery': 'Recovery Run',
+    'cross-train': 'Cross Training',
+    'strength': 'Strength Training',
     'rest': 'Rest Day',
     'race': 'Race Day',
+    'run': 'Run'
   };
   return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
 };
@@ -128,8 +149,12 @@ export default function TrainingPlanScreen() {
   const [selectedWeek, setSelectedWeek] = useState<number | null>(null);
   const trainingPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
-  const plannedWorkouts = useQuery(api.plannedWorkouts.getPlannedWorkouts, { days: 365 });
-  const completedWorkouts = useQuery(api.workoutCompletions.getUserCompletions, { days: 365 });
+  const plannedWorkouts = useQuery(api.trainingPlan.getPlannedWorkouts, {
+    startDate: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 6 months ago
+    endDate: new Date(Date.now() + 185 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]    // 6 months ahead
+  });
+  // const completedWorkouts = useQuery(api.workoutCompletions.getUserCompletions, { days: 365 });
+  const completedWorkouts: any[] = [];
   const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
   const regenerateTrainingPlan = useMutation(api.trainingPlan.regenerateTrainingPlan);
 
@@ -161,15 +186,40 @@ export default function TrainingPlanScreen() {
     return `${startFormatted.toUpperCase()} - ${endFormatted.toUpperCase()}`;
   };
 
+  // Helper function to calculate duration from workout steps
+  const calculateDurationFromSteps = (steps?: Array<{ duration?: string;[key: string]: any; }>): number => {
+    if (!steps || steps.length === 0) return 30;
+
+    const durations = steps.map(step => step.duration).filter(Boolean);
+    if (durations.length === 0) return 30;
+
+    // Sum up durations if they're all in minutes
+    const totalMinutes = durations.reduce((sum, duration) => {
+      const match = duration!.match(/(\d+)\s*min/);
+      return sum + (match ? parseInt(match[1]) : 0);
+    }, 0);
+
+    return totalMinutes > 0 ? totalMinutes : 30;
+  };
+
+  // Helper function to calculate distance from workout steps
+  const calculateDistanceFromSteps = (steps?: Array<{ distance?: number;[key: string]: any; }>): number => {
+    if (!steps || steps.length === 0) return 0;
+
+    const totalDistance = steps.reduce((sum, step) => sum + (step.distance || 0), 0);
+    return totalDistance / 1000; // Convert meters to km
+  };
+
   const calculateWeekSummaries = (): WeekSummary[] => {
     if (!trainingPlan?.plan || !plannedWorkouts) return [];
 
     const weekSummaries: WeekSummary[] = [];
 
     trainingPlan.plan.forEach((planWeek) => {
-      const weekWorkouts = plannedWorkouts.filter(workout =>
-        workout.planWeek === planWeek.week
-      );
+      // Filter workouts by date range
+      const weekWorkouts = plannedWorkouts.filter(workout => {
+        return planWeek.days.some(day => day.date === workout.scheduledDate);
+      });
 
       const firstWorkoutDate = weekWorkouts.length > 0
         ? new Date(weekWorkouts[0].scheduledDate)
@@ -190,20 +240,36 @@ export default function TrainingPlanScreen() {
           );
 
           const workoutDate = new Date(`${day.date}T00:00:00`);
-          const distance = day.distance ? Math.round(day.distance / 1000 * 10) / 10 : 0;
-          const estimatedMinutes = day.duration ? parseInt(day.duration.replace(/\D/g, '')) : 30;
-          const duration = `${estimatedMinutes}m`;
+
+          // Extract workout data from the enriched planned workout, with fallback to plan day data
+          let workoutType, workoutDescription, distance, duration;
+
+          if (scheduledWorkout && (scheduledWorkout as any).workout) {
+            // Use enriched workout data
+            const enrichedWorkout = (scheduledWorkout as any).workout;
+            workoutType = enrichedWorkout.type || day.type;
+            workoutDescription = enrichedWorkout.description || day.description;
+            distance = calculateDistanceFromSteps(enrichedWorkout.steps);
+            duration = calculateDurationFromSteps(enrichedWorkout.steps);
+          } else {
+            // Fallback to plan day data
+            workoutType = day.type;
+            workoutDescription = day.description;
+            // Estimate distance and duration based on workout type
+            distance = day.type === 'long' ? 5.0 : day.type === 'easy' ? 3.0 : day.type === 'tempo' ? 4.0 : 0;
+            duration = day.type === 'long' ? 45 : day.type === 'easy' ? 30 : day.type === 'tempo' ? 35 : day.type === 'interval' ? 40 : 20;
+          }
 
           return {
             day: dayNames[workoutDate.getDay()],
             date: day.date,
             displayDate: workoutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-            type: day.type,
+            type: workoutType,
             distance,
-            duration: duration,
-            description: scheduledWorkout?.description || day.description,
+            duration: `${duration}m`,
+            description: workoutDescription,
             completed: completedWorkouts?.some(c =>
-              new Date(c.completedAt).toDateString() === workoutDate.toDateString()
+              new Date(c._creationTime).toDateString() === workoutDate.toDateString()
             )
           };
         })
@@ -229,7 +295,7 @@ export default function TrainingPlanScreen() {
 
     const totalWeeks = trainingPlan.plan.length;
     const currentWeek = Math.min(
-      Math.floor((Date.now() - new Date(trainingPlan.meta.createdAt).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1,
+      Math.floor((Date.now() - new Date(trainingPlan._creationTime).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1,
       totalWeeks
     );
 
@@ -383,21 +449,16 @@ export default function TrainingPlanScreen() {
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-                  // Transform workout data for training-detail screen
-                  const trainingActivity = {
-                    type: workout.type,
-                    title: getWorkoutDisplayName(workout.type),
-                    description: workout.description,
-                    duration: workout.duration,
-                    distance: workout.distance * 1000, // Convert km back to meters for reward calculation
-                    emoji: getWorkoutEmoji(workout.type),
-                    date: workout.date // Add the actual scheduled date
-                  };
+                  // Find the corresponding planned workout for enriched data
+                  const correspondingPlannedWorkout = plannedWorkouts?.find(pw =>
+                    pw.scheduledDate === workout.date
+                  );
 
+                  // Navigate to training detail with the planned workout ID
                   router.push({
                     pathname: '/training-detail',
                     params: {
-                      activity: JSON.stringify(trainingActivity)
+                      scheduleWorkoutId: correspondingPlannedWorkout?._id
                     }
                   });
                 }}
@@ -453,7 +514,7 @@ export default function TrainingPlanScreen() {
     <View style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Your Plan</Text>
-        <Text style={styles.betaText}>Training Plan are still in BETA</Text>
+        <Text style={styles.betaText}>Training Plans are still in BETA</Text>
         <TouchableOpacity onPress={handleActivitiesPress} style={styles.activitiesButton}>
           <Ionicons name="list" size={24} color={Theme.colors.text.primary} />
         </TouchableOpacity>

@@ -1,16 +1,16 @@
 {
   "expo": {
-    "name": "Koko",
-    "slug": "koko",
+    "name": "Blaze",
+    "slug": "blaze",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "koko",
+    "scheme": "blaze",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "supportsTablet": false,
-      "bundleIdentifier": "com.edgarhnd.koko",
+      "bundleIdentifier": "com.edgarhnd.blaze",
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "aps-environment": "development"
@@ -28,10 +28,10 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#D9D9D9"
+        "backgroundColor": "#000000"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.edgarhnd.koko",
+      "package": "com.edgarhnd.blaze",
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",

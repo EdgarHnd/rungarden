@@ -17,7 +17,6 @@ export interface DatabaseActivity {
   workoutName?: string;
   pace?: number;
   syncedAt: string;
-  createdAt: string;
 }
 
 export interface UserProfile {
@@ -36,7 +35,6 @@ export interface UserProfile {
   stravaSyncEnabled?: boolean; // Whether Strava sync is enabled
   lastHealthKitSync?: string; // Last HealthKit sync timestamp
   lastStravaSync?: string; // Last Strava sync timestamp
-  createdAt: string;
   updatedAt: string;
 }
 
