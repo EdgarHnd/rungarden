@@ -99,10 +99,20 @@ export default function OnboardingScreen() {
   };
 
   const saveOnboardingDataToStorage = async () => {
+    console.log('[Onboarding] Saving onboarding data to storage...', data);
+
     if (!data.goalDistance || !data.targetDate || !data.currentAbility ||
       !data.longestDistance || data.hasTreadmill === null ||
       data.preferTimeOverDistance === null || data.pushNotificationsEnabled === null) {
-      console.error('Missing required onboarding data');
+      console.error('[Onboarding] Missing required onboarding data:', {
+        goalDistance: data.goalDistance,
+        targetDate: data.targetDate,
+        currentAbility: data.currentAbility,
+        longestDistance: data.longestDistance,
+        hasTreadmill: data.hasTreadmill,
+        preferTimeOverDistance: data.preferTimeOverDistance,
+        pushNotificationsEnabled: data.pushNotificationsEnabled,
+      });
       return;
     }
 
@@ -120,16 +130,18 @@ export default function OnboardingScreen() {
       };
 
       await AsyncStorage.setItem('pendingOnboardingData', JSON.stringify(onboardingData));
-      console.log('Onboarding data saved to storage');
+      console.log('[Onboarding] Onboarding data saved to storage successfully:', onboardingData);
     } catch (error) {
-      console.error('Failed to save onboarding data to storage:', error);
+      console.error('[Onboarding] Failed to save onboarding data to storage:', error);
     }
   };
 
   const handleGoogleSignIn = async () => {
     try {
+      console.log('[Onboarding] Google sign-in triggered');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       // Save onboarding data to storage first
+      console.log('[Onboarding] About to save onboarding data...');
       await saveOnboardingDataToStorage();
       const { redirect } = await signIn("google", { redirectTo });
 
@@ -154,8 +166,10 @@ export default function OnboardingScreen() {
 
   const handleAppleSignIn = async () => {
     try {
+      console.log('[Onboarding] Apple sign-in triggered');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       // Save onboarding data to storage first
+      console.log('[Onboarding] About to save onboarding data...');
       await saveOnboardingDataToStorage();
       await signIn("apple");
       router.replace('/(app)');

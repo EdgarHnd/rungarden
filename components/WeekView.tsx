@@ -1,35 +1,18 @@
+import StreakDisplay from '@/components/StreakDisplay';
 import XPInfoModal from '@/components/XPInfoModal';
 import Theme from '@/constants/theme';
+import { SuggestedActivity, getActivityType, isDefaultActivity } from '@/constants/types';
+import { Doc } from '@/convex/_generated/dataModel';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-interface Activity {
-  type: 'run' | 'rest';
-  title: string;
-  description: string;
-  duration: string;
-  intensity: 'Easy' | 'Medium' | 'Hard';
-  emoji: string;
-}
-
-interface DatabaseActivity {
-  startDate: string;
-  endDate: string;
-  duration: number;
-  distance: number;
-  calories: number;
-  averageHeartRate?: number;
-  workoutName?: string;
-  healthKitUuid: string;
-}
-
 interface DayData {
   date: string;
-  activities: DatabaseActivity[];
-  plannedWorkout: any; // Direct planned workout data from the training plan
+  activities: Doc<"activities">[];
+  plannedWorkout?: SuggestedActivity | null;
   weekIndex: number;
   isRestDayCompleted?: boolean;
 }
@@ -61,8 +44,18 @@ interface WeekViewProps {
   streakInfo?: {
     currentStreak: number;
     longestStreak: number;
-    lastStreakDate: string | null;
+    lastStreakWeek: string | null;
   };
+  simpleSchedule?: {
+    runsPerWeek: number;
+    preferredDays: string[];
+    isActive: boolean;
+  } | null;
+  todaysRunStatus?: {
+    runsThisWeek: number;
+    runsNeeded: number;
+    weeklyGoalMet: boolean;
+  } | null;
 }
 
 const screenWidth = Dimensions.get('window').width; // This is the full window width
@@ -76,12 +69,14 @@ export default function WeekView({
   weeks,
   onWeekChange,
   weekStartDay,
-  streakInfo
+  streakInfo,
+  simpleSchedule,
+  todaysRunStatus
 }: WeekViewProps) {
   const scrollViewRef = useRef<ScrollView>(null);
   const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
   const [showXPInfoModal, setShowXPInfoModal] = useState(false);
-
+  const [showStreakModal, setShowStreakModal] = useState(false);
   // Add ref to track if we're already scrolling to prevent feedback loops
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -149,7 +144,7 @@ export default function WeekView({
     return date.getDate();
   };
 
-  const hasRunActivity = (activities: DatabaseActivity[]) => {
+  const hasRunActivity = (activities: Doc<"activities">[]) => {
     return activities.some(activity =>
       activity.workoutName?.toLowerCase().includes('run') ||
       activity.distance > 0
@@ -176,68 +171,14 @@ export default function WeekView({
     }
   }, [pageWidth, onWeekChange, currentWeekIndex, weeks.length]);
 
-  const getWeekTitle = (week: WeekData) => {
-    const startDate = new Date(week.startDate);
-    const endDate = new Date(startDate);
-    endDate.setDate(startDate.getDate() + 6);
-
-    const today = new Date();
-    const thisWeekStart = getWeekStart(today, weekStartDay);
-
-    if (week.startDate === getLocalDateString(thisWeekStart)) {
-      return 'This Week';
-    }
-
-    const nextWeekStart = new Date(thisWeekStart);
-    nextWeekStart.setDate(thisWeekStart.getDate() + 7);
-    const lastWeekStart = new Date(thisWeekStart);
-    lastWeekStart.setDate(thisWeekStart.getDate() - 7);
-
-    const isNextWeek = week.startDate === getLocalDateString(nextWeekStart);
-    const isLastWeek = week.startDate === getLocalDateString(lastWeekStart);
-
-    if (isNextWeek) return 'Next Week';
-    if (isLastWeek) return 'Last Week';
-
-    return `${startDate.getDate()} - ${endDate.getDate()} ${endDate.toLocaleDateString('en-US', { month: 'short' })}`;
-  };
-
-  const getWeekStart = (date: Date, weekStartDay: number) => {
-    // Create a new date in local timezone
-    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-    const day = d.getDay(); // 0 = Sunday, 1 = Monday, etc.
-
-    let diff;
-    if (weekStartDay === 1) { // Monday start
-      // For Monday start: Sunday=6 days back, Monday=0 days back, Tuesday=1 day back, etc.
-      diff = day === 0 ? 6 : day - 1;
-    } else { // Sunday start
-      // For Sunday start: Sunday=0 days back, Monday=1 day back, Tuesday=2 days back, etc.
-      diff = day;
-    }
-
-    const weekStart = new Date(d);
-    weekStart.setDate(d.getDate() - diff);
-    weekStart.setHours(0, 0, 0, 0);
-    return weekStart;
-  };
-
-  const formatDistance = (meters: number, showKm: boolean = true) => {
-    const kilometers = meters / 1000;
-    if (showKm) {
-      return `${kilometers.toFixed(1)}km`;
-    }
-    return `${kilometers.toFixed(1)}`;
-  };
-
-  const isPartOfStreak = (dateString: string, activities: DatabaseActivity[]) => {
-    if (!streakInfo || streakInfo.currentStreak === 0 || !streakInfo.lastStreakDate) {
+  const isPartOfStreak = (dateString: string, activities: Doc<"activities">[]) => {
+    if (!streakInfo || streakInfo.currentStreak === 0 || !streakInfo.lastStreakWeek) {
       return false;
     }
 
     const currentDate = new Date(dateString);
-    const lastStreakDate = new Date(streakInfo.lastStreakDate);
-    const daysDiff = Math.floor((lastStreakDate.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
+    const lastStreakWeek = new Date(streakInfo.lastStreakWeek);
+    const daysDiff = Math.floor((lastStreakWeek.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
 
     // This day is part of the streak if it's within the streak range and has activity
     return daysDiff >= 0 && daysDiff < streakInfo.currentStreak;
@@ -249,34 +190,120 @@ export default function WeekView({
     const currentDay = week.days[dayIndex];
     const nextDay = week.days[dayIndex + 1];
 
-    if (!nextDay) return false;
+    if (!currentDay || !nextDay) return false;
 
-    return isPartOfStreak(currentDay.date, currentDay.activities) &&
+    const currentHasActivity = hasRunActivity(currentDay.activities);
+    const nextHasActivity = hasRunActivity(nextDay.activities);
+
+    return currentHasActivity && nextHasActivity &&
+      isPartOfStreak(currentDay.date, currentDay.activities) &&
       isPartOfStreak(nextDay.date, nextDay.activities);
+  };
+
+  const isPreferredRunDay = (dateString: string) => {
+    if (!simpleSchedule?.isActive || !simpleSchedule.preferredDays) return false;
+
+    const date = new Date(dateString);
+    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
+    return simpleSchedule.preferredDays.includes(dayName);
+  };
+
+  const shouldShowSimpleScheduleIndicators = (day: DayData) => {
+    if (!simpleSchedule?.isActive) return false;
+
+    // Only show for rest days that are defaults 
+    return day.plannedWorkout && isDefaultActivity(day.plannedWorkout) &&
+      getActivityType(day.plannedWorkout) === 'rest';
+  };
+
+  const isMissedDay = (day: DayData) => {
+    if (!day.plannedWorkout) return false;
+
+    // Check if this day is in the past
+    const workoutDate = new Date(day.date);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    workoutDate.setHours(0, 0, 0, 0);
+
+    const isPastDay = workoutDate < today;
+    const workoutType = getActivityType(day.plannedWorkout);
+    const hasNoActivity = day.activities.length === 0;
+
+    // A day is missed if it's in the past, it's not a rest day, and has no activities
+    return isPastDay && workoutType !== 'rest' && hasNoActivity;
   };
 
   return (
     <View style={styles.container}>
-      {/* Level Progress Section */}
-      {levelInfo && (
+      {/* Weekly Progress & Streak Section */}
+      {(simpleSchedule?.isActive && todaysRunStatus) ? (
         <TouchableOpacity
           style={styles.progressContainer}
           onPress={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowXPInfoModal(true);
+            setShowStreakModal(true);
           }}
           activeOpacity={0.8}
         >
           <View style={styles.progressHeader}>
-            <Text style={styles.progressLabel}>Lvl {levelInfo.level} - {LevelingService.getLevelTitle(levelInfo.level)}</Text>
-            <Text style={styles.progressText}>
-              {LevelingService.formatXP(levelInfo.remainingXPForNextLevel, true)} to Lvl {levelInfo.level + 1}
-            </Text>
+            <View style={styles.progressTextContainer}>
+              <Text style={styles.progressLabel}>
+                {todaysRunStatus.weeklyGoalMet ? 'Weekly Goal Complete!' : `Weekly Progress`}
+              </Text>
+              <Text style={styles.progressText}>
+                {todaysRunStatus.runsThisWeek}/{todaysRunStatus.runsNeeded} runs
+              </Text>
+            </View>
+
+            {streakInfo && (
+              <Text style={styles.streakText}>
+                🔥 {streakInfo.currentStreak}
+              </Text>)}
           </View>
           <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
+            <View style={[
+              styles.progressFill,
+              {
+                width: `${Math.min(100, (todaysRunStatus.runsThisWeek / todaysRunStatus.runsNeeded) * 100)}%`,
+                backgroundColor: todaysRunStatus.weeklyGoalMet ? Theme.colors.accent.primary : Theme.colors.special.primary.exp
+              }
+            ]} />
           </View>
+          {/* {streakInfo && (
+            <View style={styles.streakInfo}>
+              <Text style={styles.streakText}>
+                🔥 {streakInfo.currentStreak} week{streakInfo.currentStreak !== 1 ? 's' : ''} streak
+              </Text>
+              {streakInfo.longestStreak > streakInfo.currentStreak && (
+                <Text style={styles.streakSubtext}>
+                  Best: {streakInfo.longestStreak} week{streakInfo.longestStreak !== 1 ? 's' : ''}
+                </Text>
+              )}
+            </View>
+          )} */}
         </TouchableOpacity>
+      ) : (
+        // Fallback to level progress for non-simple schedule users
+        levelInfo && (
+          <TouchableOpacity
+            style={styles.progressContainer}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowXPInfoModal(true);
+            }}
+            activeOpacity={0.8}
+          >
+            <View style={styles.progressHeader}>
+              <Text style={styles.progressLabel}>Lvl {levelInfo.level} - {LevelingService.getLevelTitle(levelInfo.level)}</Text>
+              <Text style={styles.progressText}>
+                {LevelingService.formatXP(levelInfo.remainingXPForNextLevel, true)} to Lvl {levelInfo.level + 1}
+              </Text>
+            </View>
+            <View style={styles.progressBar}>
+              <View style={[styles.progressFill, { width: `${progressPercentage}%` }]} />
+            </View>
+          </TouchableOpacity>
+        )
       )}
 
       {/* Swipable Week Calendar */}
@@ -296,10 +323,16 @@ export default function WeekView({
               const isSelected = globalDayIndex === currentDayIndex;
               const hasRun = hasRunActivity(day.activities);
               const isTodayDay = isToday(day.date);
-              const hasPlannedWorkout = day.plannedWorkout && day.plannedWorkout.type !== 'rest';
-              const isRestDayCompleted = day.plannedWorkout?.type === 'rest' && day.isRestDayCompleted;
+              const hasPlannedWorkout = day.plannedWorkout && getActivityType(day.plannedWorkout) !== 'rest';
+              const isRestDayCompleted = getActivityType(day.plannedWorkout) === 'rest' && day.isRestDayCompleted;
               const isStreakDay = isPartOfStreak(day.date, day.activities);
               const showStreakConnection = shouldShowStreakConnection(dayIndex, week);
+
+              // Simple schedule logic
+              const showSimpleIndicators = shouldShowSimpleScheduleIndicators(day);
+              const isPreferredDay = showSimpleIndicators && isPreferredRunDay(day.date);
+              const isSimpleRestDay = showSimpleIndicators && !isPreferredDay;
+              const isDayMissed = isMissedDay(day);
 
               return (
                 <View key={day.date} style={styles.dayWrapper}>
@@ -345,15 +378,25 @@ export default function WeekView({
                         </View>
                       )}
 
-                      {hasPlannedWorkout && !hasRun && (
+                      {(hasPlannedWorkout || (isPreferredDay && getActivityType(day.plannedWorkout) !== 'rest')) && !hasRun && (
                         <View style={[
                           styles.plannedWorkoutIndicator,
-                          isSelected && styles.selectedPlannedWorkoutIndicator
+                          isSelected && styles.selectedPlannedWorkoutIndicator,
+                          isDayMissed && styles.missedWorkoutIndicator
                         ]}>
-                          <Ionicons name="flash" size={10} color={isSelected ? Theme.colors.special.primary.exp : Theme.colors.text.primary} />
+                          <Ionicons
+                            name="flash"
+                            size={10}
+                            color={
+                              isDayMissed
+                                ? Theme.colors.background.primary
+                                : isSelected
+                                  ? Theme.colors.special.primary.exp
+                                  : Theme.colors.text.primary
+                            }
+                          />
                         </View>
                       )}
-
                     </View>
                   </TouchableOpacity>
 
@@ -373,6 +416,13 @@ export default function WeekView({
         visible={showXPInfoModal}
         onClose={() => setShowXPInfoModal(false)}
         levelInfo={levelInfo}
+      />
+
+      {/* Streak Modal */}
+      <StreakDisplay
+        visible={showStreakModal}
+        onClose={() => setShowStreakModal(false)}
+        streakInfo={streakInfo || null}
       />
     </View>
   );
@@ -552,5 +602,46 @@ const styles = StyleSheet.create({
     height: 2,
     backgroundColor: Theme.colors.special.primary.coin,
     zIndex: -1,
+  },
+  preferredDayIndicator: {
+    position: 'absolute',
+    top: -4,
+    right: -4,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.small,
+    width: 16,
+    height: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderWidth: 1,
+    borderColor: Theme.colors.text.muted,
+  },
+  selectedPreferredDayIndicator: {
+    backgroundColor: Theme.colors.special.primary.coin,
+    borderColor: Theme.colors.text.primary,
+  },
+  streakInfo: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginTop: Theme.spacing.sm,
+  },
+  streakText: {
+    fontSize: 14,
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.semibold,
+  },
+  streakSubtext: {
+    fontSize: 12,
+    color: Theme.colors.text.muted,
+    fontFamily: Theme.fonts.medium,
+  },
+  missedWorkoutIndicator: {
+    backgroundColor: Theme.colors.text.muted,
+  },
+  progressTextContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
   },
 }); 

@@ -1,4 +1,5 @@
 import Theme from '@/constants/theme';
+import { UserRankInfo } from '@/convex/leaderboard';
 import LevelingService from '@/services/LevelingService';
 import { useQuery } from "convex/react";
 import React, { useEffect, useState } from 'react';
@@ -18,12 +19,6 @@ interface LeaderboardEntry {
   totalDistance: number;
   level: number;
   totalWorkouts: number;
-}
-
-interface UserRankInfo {
-  rank: number | null;
-  totalUsers: number;
-  userStats: LeaderboardEntry | null;
 }
 
 export default function Leaderboard({ onError }: LeaderboardProps) {

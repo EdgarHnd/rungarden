@@ -20,11 +20,14 @@ const schema = defineSchema({
     totalXP: v.number(),             // start at 0 in first mutation
     coins: v.number(),
 
-    // Streak
-    currentStreak: v.number(),
+    // Streak (weekly-based)
+    currentStreak: v.number(),       // consecutive weeks hitting goal
     longestStreak: v.number(),
-    lastStreakDate: v.optional(v.string()),
+    lastStreakWeek: v.optional(v.string()), // YYYY-MM-DD of week start
     streakFreezeAvailable: v.number(),
+
+    // Mascot health system
+    mascotHealth: v.number(),        // 0-4, loses 1 per missed week
 
     // Preferences
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
@@ -73,7 +76,7 @@ const schema = defineSchema({
 
     daysPerWeek: v.number(),                 // 2-6
     preferredDays: v.array(v.string()),      // ["Mon","Wed",…]
-    hasTreadmill: v.boolean(),
+    hasTreadmill: v.optional(v.boolean()),
     preferTimeOverDistance: v.boolean(),
 
     fitnessLevel: v.union(
@@ -83,6 +86,25 @@ const schema = defineSchema({
 
     updatedAt: v.string()
   }).index("by_user", ["userId"]),
+
+  /* ────────────────────────────── simple training schedule */
+  simpleTrainingSchedule: defineTable({
+    userId: v.id("users"),
+    runsPerWeek: v.number(),           // Weekly minimum for streak (1-7)
+    preferredDays: v.array(v.string()), // ["Mon", "Wed", "Fri"] - for daily motivation
+    isActive: v.boolean(),
+    startDate: v.string(),             // YYYY-MM-DD when they started this schedule
+    updatedAt: v.string()
+  }).index("by_user", ["userId"]),
+
+  // Track schedule changes - new requirements apply to next week
+  scheduleHistory: defineTable({
+    userId: v.id("users"),
+    runsPerWeek: v.number(),
+    preferredDays: v.array(v.string()),
+    effectiveFromDate: v.string(),     // YYYY-MM-DD week start when this became active
+    createdAt: v.string()
+  }).index("by_user_date", ["userId", "effectiveFromDate"]),
 
   /* ────────────────────────────── structured workouts */
   workouts: defineTable({
@@ -198,6 +220,21 @@ const schema = defineSchema({
     .index("by_healthkit_uuid", ["healthKitUuid"])
     .index("by_strava_id", ["stravaId"])
     .index("by_source", ["source"]),
+
+  /* ────────────────────────────── rest activities */
+  restActivities: defineTable({
+    userId: v.id("users"),
+    date: v.string(),                    // YYYY-MM-DD format
+    completedAt: v.string(),             // ISO timestamp when completed
+    xpGained: v.number(),                // XP gained from rest day
+    coinsGained: v.number(),             // Coins gained from rest day
+    plannedWorkoutId: v.optional(v.id("plannedWorkouts")), // Link to planned workout if applicable
+    notes: v.optional(v.string()),       // Optional notes about the rest day
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_date", ["userId", "date"])
+    .index("by_date", ["date"])
+    .index("by_planned", ["plannedWorkoutId"]),
 
   /* ────────────────────────────── achievements */
   challenges: defineTable({

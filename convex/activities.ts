@@ -274,8 +274,6 @@ export const syncActivitiesFromStravaServer = mutation({
     const { userId, activities } = args;
     const now = new Date().toISOString();
     
-    console.log(`[syncActivitiesFromStravaServer] Syncing ${activities.length} activities for user ${userId}`);
-
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -318,10 +316,8 @@ export const syncActivitiesFromStravaServer = mutation({
               syncedAt: now,
             });
             updated++;
-            console.log(`[syncActivitiesFromStravaServer] Updated existing activity: ${activity.stravaId}`);
           } else {
             skipped++;
-            console.log(`[syncActivitiesFromStravaServer] Skipped unchanged activity: ${activity.stravaId}`);
           }
         } else {
           // Create new activity
@@ -353,7 +349,6 @@ export const syncActivitiesFromStravaServer = mutation({
           }
           
           created++;
-          console.log(`[syncActivitiesFromStravaServer] Created new activity: ${activity.stravaId}`);
         }
       } catch (error) {
         console.error(`[syncActivitiesFromStravaServer] Error processing activity ${activity.stravaId}:`, error);
@@ -367,7 +362,6 @@ export const syncActivitiesFromStravaServer = mutation({
       // Recalculate streak after new activities
       try {
         await recalcStreak(ctx.db, userId, new Date().toISOString().split('T')[0]);
-        console.log(`[syncActivitiesFromStravaServer] Recalculated streak after adding ${created} activities`);
       } catch (error) {
         console.error('[syncActivitiesFromStravaServer] Failed to recalculate streak:', error);
       }
@@ -394,7 +388,6 @@ export const syncActivitiesFromStravaServer = mutation({
       newRuns,
     };
 
-    console.log(`[syncActivitiesFromStravaServer] Sync completed:`, result);
     return result;
   },
 });
@@ -746,8 +739,6 @@ export const fetchStravaActivityFromServer = action({
       const now = Math.floor(Date.now() / 1000);
       
       if (userProfile.stravaTokenExpiresAt && userProfile.stravaTokenExpiresAt <= now) {
-        console.log(`[fetchStravaActivityFromServer] Access token expired, refreshing...`);
-        
         if (!userProfile.stravaRefreshToken) {
           return { success: false, error: "Access token expired and no refresh token available" };
         }
@@ -778,7 +769,6 @@ export const fetchStravaActivityFromServer = action({
 
       // Check if it's a running activity
       if (!['Run', 'TrailRun', 'Treadmill'].includes(activityData.type)) {
-        console.log(`[fetchStravaActivityFromServer] Activity ${stravaActivityId} is not a running activity (${activityData.type})`);
         return { success: false, error: "Not a running activity" };
       }
 
@@ -799,8 +789,6 @@ export const fetchStravaActivityFromServer = action({
         userId,
         activities: [activityForDb]
       });
-
-      console.log(`[fetchStravaActivityFromServer] Successfully synced activity ${stravaActivityId}:`, syncResult);
 
       return { 
         success: true, 
@@ -914,8 +902,6 @@ export const syncActivitiesFromStrava = mutation({
     const { activities } = args;
     const now = new Date().toISOString();
     
-    console.log(`[syncActivitiesFromStrava] Syncing ${activities.length} activities for user ${userId}`);
-
     let created = 0;
     let updated = 0;
     let skipped = 0;
@@ -965,10 +951,8 @@ export const syncActivitiesFromStrava = mutation({
               syncedAt: now,
             });
             updated++;
-            console.log(`[syncActivitiesFromStrava] Updated existing activity: ${activity.stravaId}`);
           } else {
             skipped++;
-            console.log(`[syncActivitiesFromStrava] Skipped unchanged activity: ${activity.stravaId}`);
           }
         } else {
           // Create new activity
@@ -1001,7 +985,6 @@ export const syncActivitiesFromStrava = mutation({
           
           created++;
           totalDistanceGained += activity.distance;
-          console.log(`[syncActivitiesFromStrava] Created new activity: ${activity.stravaId}`);
         }
       } catch (error) {
         console.error(`[syncActivitiesFromStrava] Error processing activity ${activity.stravaId}:`, error);
@@ -1027,7 +1010,6 @@ export const syncActivitiesFromStrava = mutation({
       // Recalculate streak after new activities
       try {
         await recalcStreak(ctx.db, userId, new Date().toISOString().split('T')[0]);
-        console.log(`[syncActivitiesFromStrava] Recalculated streak after adding ${created} activities`);
       } catch (error) {
         console.error('[syncActivitiesFromStrava] Failed to recalculate streak:', error);
       }
@@ -1063,7 +1045,6 @@ export const syncActivitiesFromStrava = mutation({
       newRuns,
     };
 
-    console.log(`[syncActivitiesFromStrava] Sync completed:`, result);
     return result;
   },
 });
@@ -1095,7 +1076,6 @@ async function linkActivityToPlannedWorkout(
       completedAt: new Date().toISOString(),
     });
 
-    console.log(`[linkActivityToPlannedWorkout] Linked activity ${activityId} to planned workout ${plannedWorkout._id} for ${activityDate}`);
     return plannedWorkout._id;
   }
 

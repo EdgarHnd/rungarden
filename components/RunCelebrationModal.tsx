@@ -1,6 +1,6 @@
 import StatsBadges from '@/components/StatsBadges';
 import Theme from '@/constants/theme';
-import { DatabaseActivity } from '@/services/DatabaseHealthService';
+import { Doc } from '@/convex/_generated/dataModel';
 import LevelingService from '@/services/LevelingService';
 import RunFeelingService, { FeelingType } from '@/services/RunFeelingService';
 import * as Haptics from 'expo-haptics';
@@ -19,7 +19,7 @@ import {
 
 interface RunCelebrationModalProps {
   visible: boolean;
-  runData: DatabaseActivity | null;
+  runData: Doc<"activities"> | null;
   rewards: {
     distanceGained: number;
     coinsGained: number;
@@ -475,7 +475,7 @@ export default function RunCelebrationModal({
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
-          <Image source={require('@/assets/images/blaze/blazerunning.png')} style={styles.image} resizeMode="contain" />
+          <Image source={require('@/assets/images/blaze/blazelove.png')} style={styles.image} resizeMode="contain" />
           <Text style={styles.headerTitle}>Congrats on your run!</Text>
         </View>
 

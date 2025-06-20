@@ -1,3 +1,5 @@
+import { SuggestedActivity } from '@/constants/types';
+
 export interface StreakInfo {
   currentStreak: number;
   longestStreak: number;
@@ -7,170 +9,75 @@ export interface StreakInfo {
   streakStatus: 'active' | 'at_risk' | 'broken';
 }
 
-export interface PlannedWorkout {
-  scheduledDate: string;
-  type: string;
-  status: 'scheduled' | 'completed' | 'skipped' | 'missed';
+export interface WeeklyStreakInfo {
+  currentStreak: number;
+  longestStreak: number;
+  lastStreakWeek: string | null;
+  isOnStreak: boolean;
+  weeksUntilStreakBreak: number;
+  streakStatus: 'active' | 'at_risk' | 'broken';
+  mascotHealth: number;
 }
 
 class StreakService {
   /**
-   * Calculate comprehensive streak information for a user
+   * @deprecated Use weekly streak calculation instead - calculateWeeklyStreakInfo()
+   * Calculate comprehensive streak information for a user (DAILY - DEPRECATED)
    */
   static calculateStreakInfo(
-    plannedWorkouts: PlannedWorkout[],
+    plannedWorkouts: SuggestedActivity[],
     currentStreak: number = 0,
     longestStreak: number = 0,
     lastStreakDate: string | null = null
   ): StreakInfo {
-    // Filter out rest days - only training days count toward streak
-    const trainingWorkouts = plannedWorkouts.filter(workout => 
-      workout.type !== 'cross-train' // Also exclude cross-training from streak
-    );
-
-    // Sort by date (oldest first)
-    const sortedWorkouts = trainingWorkouts.sort((a, b) => 
-      new Date(a.scheduledDate).getTime() - new Date(b.scheduledDate).getTime()
-    );
-
-    // Calculate current streak from the data
-    const calculatedStreak = this.calculateCurrentStreakFromWorkouts(sortedWorkouts);
+    console.warn('Daily streak calculation is deprecated. Use weekly streak calculation instead.');
     
-    // Use the higher of calculated or stored streak (in case of data inconsistencies)
-    const actualCurrentStreak = Math.max(calculatedStreak.currentStreak, currentStreak);
-    const actualLongestStreak = Math.max(actualCurrentStreak, longestStreak);
-
-    // Determine streak status
-    const today = new Date().toISOString().split('T')[0];
-    const recentWorkouts = sortedWorkouts.filter(workout => {
-      const workoutDate = new Date(workout.scheduledDate);
-      const daysDiff = Math.floor((new Date(today).getTime() - workoutDate.getTime()) / (1000 * 60 * 60 * 24));
-      return daysDiff <= 7; // Look at last 7 days
-    });
-
-    const streakStatus = this.determineStreakStatus(recentWorkouts, today);
-    const daysUntilBreak = this.calculateDaysUntilStreakBreak(recentWorkouts, today);
-
+    // Minimal implementation for backward compatibility
     return {
-      currentStreak: actualCurrentStreak,
-      longestStreak: actualLongestStreak,
-      lastStreakDate: calculatedStreak.lastStreakDate || lastStreakDate,
-      isOnStreak: actualCurrentStreak > 0 && streakStatus === 'active',
-      daysUntilStreakBreak: daysUntilBreak,
-      streakStatus
+      currentStreak: 0,
+      longestStreak: 0,
+      lastStreakDate: null,
+      isOnStreak: false,
+      daysUntilStreakBreak: 0,
+      streakStatus: 'broken'
     };
   }
 
   /**
-   * Calculate current streak from workout data
+   * @deprecated Use weekly streak calculation instead
    */
-  private static calculateCurrentStreakFromWorkouts(sortedTrainingWorkouts: PlannedWorkout[]): {
+  private static calculateCurrentStreakFromWorkouts(sortedTrainingWorkouts: SuggestedActivity[]): {
     currentStreak: number;
     lastStreakDate: string | null;
   } {
-    if (sortedTrainingWorkouts.length === 0) {
-      return { currentStreak: 0, lastStreakDate: null };
-    }
-
-    let currentStreak = 0;
-    let lastStreakDate: string | null = null;
-    const today = new Date().toISOString().split('T')[0];
-
-    // Work backwards from today to find consecutive completed training days
-    for (let i = sortedTrainingWorkouts.length - 1; i >= 0; i--) {
-      const workout = sortedTrainingWorkouts[i];
-      const workoutDate = workout.scheduledDate;
-      
-      // Only count workouts up to today
-      if (workoutDate > today) {
-        continue;
-      }
-
-      if (workout.status === 'completed') {
-        currentStreak++;
-        lastStreakDate = workoutDate;
-      } else if (workout.status === 'missed' || workout.status === 'skipped') {
-        // Only break streak if this was a planned/scheduled training day that was missed
-        // This ensures only missing planned workouts breaks the streak
-        break;
-      }
-      // 'scheduled' workouts in the past should break the streak too
-      else if (workout.status === 'scheduled' && workoutDate < today) {
-        // This was a planned workout that wasn't completed - breaks streak
-        break;
-      }
-    }
-
-    return { currentStreak, lastStreakDate };
+    console.warn('Daily streak calculation is deprecated.');
+    return { currentStreak: 0, lastStreakDate: null };
   }
 
   /**
-   * Determine the current status of the streak
+   * @deprecated Use weekly streak calculation instead
    */
   private static determineStreakStatus(
-    recentWorkouts: PlannedWorkout[],
+    recentWorkouts: SuggestedActivity[],
     today: string
   ): 'active' | 'at_risk' | 'broken' {
-    const todayWorkout = recentWorkouts.find(w => w.scheduledDate === today);
-    const yesterdayWorkout = recentWorkouts.find(w => {
-      const yesterday = new Date();
-      yesterday.setDate(yesterday.getDate() - 1);
-      return w.scheduledDate === yesterday.toISOString().split('T')[0];
-    });
-
-    // If today has a completed workout, streak is active
-    if (todayWorkout?.status === 'completed') {
-      return 'active';
-    }
-
-    // If today has a scheduled workout, check yesterday
-    if (todayWorkout?.status === 'scheduled') {
-      // If yesterday was completed or was a rest day, we're still good
-      if (yesterdayWorkout?.status === 'completed' || !yesterdayWorkout) {
-        return 'at_risk'; // Need to complete today to maintain streak
-      }
-    }
-
-    // If we have missed or skipped recent training days, streak might be broken
-    const hasMissedRecent = recentWorkouts.some(w => 
-      (w.status === 'missed' || w.status === 'skipped') && 
-      w.scheduledDate <= today
-    );
-
-    return hasMissedRecent ? 'broken' : 'at_risk';
+    console.warn('Daily streak calculation is deprecated.');
+    return 'broken';
   }
 
   /**
-   * Calculate how many days until streak breaks (if at risk)
+   * @deprecated Use weekly streak calculation instead
    */
   private static calculateDaysUntilStreakBreak(
-    recentWorkouts: PlannedWorkout[],
+    recentWorkouts: SuggestedActivity[],
     today: string
   ): number {
-    const todayWorkout = recentWorkouts.find(w => w.scheduledDate === today);
-    
-    // If today has a scheduled training workout, user has until end of day
-    if (todayWorkout?.status === 'scheduled') {
-      return 1;
-    }
-
-    // Look for next training day
-    const futureWorkouts = recentWorkouts.filter(w => w.scheduledDate > today);
-    const nextTrainingDay = futureWorkouts.find(w => w.status === 'scheduled');
-    
-    if (nextTrainingDay) {
-      const daysDiff = Math.floor(
-        (new Date(nextTrainingDay.scheduledDate).getTime() - new Date(today).getTime()) / 
-        (1000 * 60 * 60 * 24)
-      );
-      return daysDiff + 1;
-    }
-
-    return 0; // No upcoming training days found
+    console.warn('Daily streak calculation is deprecated.');
+    return 0;
   }
 
   /**
-   * Update streak when a workout is completed
+   * @deprecated Weekly streaks don't use individual workout completion - use weekly goal achievement instead
    */
   static updateStreakOnWorkoutCompletion(
     workoutDate: string,
@@ -184,63 +91,18 @@ class StreakService {
     newLastStreakDate: string;
     streakIncreased: boolean;
   } {
-    // Only training days count toward streak
-    if (workoutType === 'rest' || workoutType === 'cross-train') {
-      return {
-        newCurrentStreak: currentStreak,
-        newLongestStreak: longestStreak,
-        newLastStreakDate: lastStreakDate || workoutDate,
-        streakIncreased: false
-      };
-    }
-
-    const today = new Date().toISOString().split('T')[0];
+    console.warn('Individual workout streak updates are deprecated. Use weekly goal completion instead.');
     
-    // Only count workouts completed today or in the past
-    if (workoutDate > today) {
-      return {
-        newCurrentStreak: currentStreak,
-        newLongestStreak: longestStreak,
-        newLastStreakDate: lastStreakDate || workoutDate,
-        streakIncreased: false
-      };
-    }
-
-    // If this is the first workout or continues the streak
-    let newCurrentStreak = currentStreak;
-    let streakIncreased = false;
-
-    if (!lastStreakDate || currentStreak === 0) {
-      // First ever training day completed - always counts as streak = 1
-      newCurrentStreak = 1;
-      streakIncreased = true;
-    } else {
-      const lastStreakDateTime = new Date(lastStreakDate).getTime();
-      const workoutDateTime = new Date(workoutDate).getTime();
-      const daysBetween = Math.floor((workoutDateTime - lastStreakDateTime) / (1000 * 60 * 60 * 24));
-
-      if (daysBetween <= 3) { // Allow some flexibility for training plans
-        newCurrentStreak = currentStreak + 1;
-        streakIncreased = true;
-      } else {
-        // Gap is too large, reset streak to 1 (this workout still counts)
-        newCurrentStreak = 1;
-        streakIncreased = false;
-      }
-    }
-
-    const newLongestStreak = Math.max(newCurrentStreak, longestStreak);
-
     return {
-      newCurrentStreak,
-      newLongestStreak,
-      newLastStreakDate: workoutDate,
-      streakIncreased
+      newCurrentStreak: currentStreak,
+      newLongestStreak: longestStreak,
+      newLastStreakDate: lastStreakDate || workoutDate,
+      streakIncreased: false
     };
   }
 
   /**
-   * Get streak flame icons for display (like in the image)
+   * Get streak flame icons for weekly streak display
    */
   static getStreakFlameIcons(currentStreak: number, maxIcons: number = 7): {
     filled: number;
@@ -253,76 +115,305 @@ class StreakService {
     return {
       filled,
       outlined,
-      total: maxIcons
+      total: maxIcons,
     };
   }
 
   /**
-   * Get streak encouragement message
+   * Get appropriate message for weekly streak
    */
-  static getStreakMessage(streakInfo: StreakInfo): string {
+  static getStreakMessage(streakInfo: WeeklyStreakInfo): string {
     const { currentStreak, streakStatus } = streakInfo;
-
-    if (currentStreak === 0) {
-      return "Complete your first workout to start your streak! 🔥";
+    
+    if (streakStatus === 'broken') {
+      return "Hit your weekly goal to restart your streak! 🔥";
     }
-
-    if (streakStatus === 'active') {
-      if (currentStreak === 1) {
-        return "Streak started! Your first training day is complete! 🎉";
-      } else if (currentStreak < 7) {
-        return `${currentStreak} day streak! You're building momentum! 🚀`;
-      } else if (currentStreak < 14) {
-        return `${currentStreak} days strong! You're on fire! 🔥`;
-      } else if (currentStreak < 30) {
-        return `${currentStreak} day streak! Absolutely crushing it! 💥`;
-      } else {
-        return `${currentStreak} days! You're a training legend! 👑`;
-      }
-    }
-
+    
     if (streakStatus === 'at_risk') {
-      return `${currentStreak} day streak at risk! Complete today's planned workout! ⚡`;
+      return "You need to complete your weekly goal to maintain your streak!";
     }
-
-    return "Time to rebuild your streak! You've got this! 💪";
+    
+    if (currentStreak >= 12) {
+      return "Incredible! You've maintained consistency for 3+ months!";
+    } else if (currentStreak >= 4) {
+      return "Outstanding habit building! You're unstoppable!";
+    } else if (currentStreak >= 2) {
+      return "Great momentum! Keep hitting those weekly goals!";
+    } else if (currentStreak > 0) {
+      return "Nice work! Keep building your weekly streak!";
+    }
+    
+    return "Complete your weekly running goal to start your streak!";
   }
 
   /**
-   * Check if user deserves a streak freeze (milestone rewards)
+   * Get streak milestone rewards for weekly streaks
    */
   static getStreakRewards(newStreak: number, oldStreak: number): {
     streakFreezes: number;
     milestoneReached?: number;
     message?: string;
   } {
-    const milestones = [7, 14, 30, 60, 100, 365];
     let streakFreezes = 0;
     let milestoneReached: number | undefined;
     let message: string | undefined;
 
+    // Weekly streak milestones (much longer intervals)
+    const milestones = [4, 8, 12, 24, 52]; // 1 month, 2 months, 3 months, 6 months, 1 year
+    
     for (const milestone of milestones) {
       if (newStreak >= milestone && oldStreak < milestone) {
         milestoneReached = milestone;
         
-        // Award streak freezes at certain milestones
-        if (milestone === 7) {
+        if (milestone === 4) {
           streakFreezes = 1;
-          message = "7 day streak! Earned 1 streak freeze! 🧊";
-        } else if (milestone === 30) {
+          message = "1 month streak! Earned 1 streak freeze! 🧊";
+        } else if (milestone === 12) {
           streakFreezes = 2;
-          message = "30 day streak! Earned 2 streak freezes! 🧊🧊";
-        } else if (milestone === 100) {
+          message = "3 month streak! Earned 2 streak freezes! 🧊🧊";
+        } else if (milestone === 52) {
           streakFreezes = 3;
-          message = "100 day streak! Earned 3 streak freezes! 🧊🧊🧊";
+          message = "1 year streak! Earned 3 streak freezes! 🧊🧊🧊";
         } else {
-          message = `${milestone} day streak milestone! Amazing! 🏆`;
+          message = `${milestone} week streak milestone! Amazing! 🏆`;
         }
         break;
       }
     }
 
     return { streakFreezes, milestoneReached, message };
+  }
+
+  /**
+   * Calculate weekly streak info for simple training schedule users
+   * THIS IS THE MAIN STREAK CALCULATION METHOD
+   */
+  static calculateWeeklyStreakInfo(
+    activities: any[],
+    scheduleHistory: any[],
+    currentStreak: number = 0,
+    longestStreak: number = 0,
+    lastStreakWeek: string | null = null,
+    mascotHealth: number = 4,
+    weekStartDay: number = 1
+  ): WeeklyStreakInfo {
+    if (scheduleHistory.length === 0) {
+      return {
+        currentStreak: 0,
+        longestStreak: 0,
+        lastStreakWeek: null,
+        isOnStreak: false,
+        weeksUntilStreakBreak: 0,
+        streakStatus: 'broken',
+        mascotHealth: 4
+      };
+    }
+
+    // Get current week
+    const today = new Date();
+    const currentWeekStart = this.getWeekStart(today, weekStartDay);
+    const currentWeekStartISO = currentWeekStart.toISOString().split('T')[0];
+
+    // Calculate actual streak from data
+    const calculatedStreak = this.calculateCurrentWeeklyStreakFromData(
+      activities, 
+      scheduleHistory, 
+      currentWeekStartISO, 
+      weekStartDay
+    );
+
+    // Use the higher of calculated or stored streak
+    const actualCurrentStreak = Math.max(calculatedStreak.currentStreak, currentStreak);
+    const actualLongestStreak = Math.max(actualCurrentStreak, longestStreak);
+
+    // Determine current week status
+    const weekStatus = this.determineWeeklyStreakStatus(
+      activities,
+      scheduleHistory,
+      currentWeekStartISO,
+      weekStartDay
+    );
+
+    return {
+      currentStreak: actualCurrentStreak,
+      longestStreak: actualLongestStreak,
+      lastStreakWeek: calculatedStreak.lastStreakWeek || lastStreakWeek,
+      isOnStreak: actualCurrentStreak > 0 && weekStatus.status === 'active',
+      weeksUntilStreakBreak: weekStatus.weeksUntilBreak,
+      streakStatus: weekStatus.status,
+      mascotHealth: Math.max(0, Math.min(4, mascotHealth))
+    };
+  }
+
+  /**
+   * Calculate current weekly streak from activity and schedule data
+   */
+  private static calculateCurrentWeeklyStreakFromData(
+    activities: any[],
+    scheduleHistory: any[],
+    currentWeekStart: string,
+    weekStartDay: number
+  ): {
+    currentStreak: number;
+    lastStreakWeek: string | null;
+  } {
+    let streak = 0;
+    let lastStreakWeek: string | null = null;
+    let weekStart = new Date(currentWeekStart);
+
+    // Go back week by week
+    while (true) {
+      const weekStartISO = weekStart.toISOString().split('T')[0];
+      
+      // Get the effective schedule for this week
+      const weekSchedule = this.getScheduleForWeek(weekStartISO, scheduleHistory);
+      if (!weekSchedule) {
+        break; // No schedule data
+      }
+
+      // Count run days in this week
+      const runDaysInWeek = this.countRunDaysInWeek(activities, weekStartISO);
+      const goalMet = runDaysInWeek >= weekSchedule.runsPerWeek;
+
+      if (goalMet) {
+        streak++;
+        if (!lastStreakWeek) {
+          lastStreakWeek = weekStartISO;
+        }
+      } else {
+        break; // Streak broken
+      }
+
+      // Move to previous week
+      weekStart.setDate(weekStart.getDate() - 7);
+      
+      // Safety check
+      if (streak > 520) break; // More than 10 years
+    }
+
+    return { currentStreak: streak, lastStreakWeek };
+  }
+
+  /**
+   * Determine weekly streak status
+   */
+  private static determineWeeklyStreakStatus(
+    activities: any[],
+    scheduleHistory: any[],
+    currentWeekStart: string,
+    weekStartDay: number
+  ): {
+    status: 'active' | 'at_risk' | 'broken';
+    weeksUntilBreak: number;
+  } {
+    const weekSchedule = this.getScheduleForWeek(currentWeekStart, scheduleHistory);
+    if (!weekSchedule) {
+      return { status: 'broken', weeksUntilBreak: 0 };
+    }
+
+    const runDaysThisWeek = this.countRunDaysInWeek(activities, currentWeekStart);
+    const goalMet = runDaysThisWeek >= weekSchedule.runsPerWeek;
+
+    if (goalMet) {
+      return { status: 'active', weeksUntilBreak: 0 };
+    }
+
+    // Check if there's still time this week to complete the goal
+    const today = new Date();
+    const weekEnd = new Date(currentWeekStart);
+    weekEnd.setDate(new Date(currentWeekStart).getDate() + 6);
+    
+    if (today <= weekEnd) {
+      return { status: 'at_risk', weeksUntilBreak: 1 };
+    }
+
+    return { status: 'broken', weeksUntilBreak: 0 };
+  }
+
+  /**
+   * Get appropriate weekly streak message
+   */
+  static getWeeklyStreakMessage(streakInfo: WeeklyStreakInfo, runsThisWeek: number, runsNeeded: number): string {
+    const { currentStreak, streakStatus } = streakInfo;
+    const runsRemaining = Math.max(0, runsNeeded - runsThisWeek);
+    
+    if (streakStatus === 'active') {
+      return `${currentStreak} week streak! Weekly goal complete! 🔥`;
+    } else if (streakStatus === 'at_risk') {
+      if (runsRemaining === 1) {
+        return `${runsRemaining} more run needed to maintain your ${currentStreak} week streak!`;
+      } else {
+        return `${runsRemaining} more runs needed to maintain your ${currentStreak} week streak!`;
+      }
+    } else {
+      if (runsRemaining === 1) {
+        return `${runsRemaining} run needed to start your streak!`;
+      } else {
+        return `${runsRemaining} runs needed to start your streak!`;
+      }
+    }
+  }
+
+  /**
+   * Get mascot health message based on health level
+   */
+  static getMascotHealthMessage(health: number): string {
+    switch (health) {
+      case 4: return "Blaze is at full energy! ⚡⚡⚡⚡";
+      case 3: return "Blaze is feeling strong! ⚡⚡⚡";
+      case 2: return "Blaze needs some motivation! ⚡⚡";
+      case 1: return "Blaze is getting tired... ⚡";
+      case 0: return "Blaze needs you to get back on track! 💔";
+      default: return "Blaze is ready to run! ⚡⚡⚡⚡";
+    }
+  }
+
+  /**
+   * Helper function to get week start date
+   */
+  private static getWeekStart(date: Date, weekStartDay: number): Date {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const day = d.getDay();
+
+    let diff;
+    if (weekStartDay === 1) {
+      diff = day === 0 ? 6 : day - 1;
+    } else {
+      diff = day;
+    }
+
+    const weekStart = new Date(d);
+    weekStart.setDate(d.getDate() - diff);
+    weekStart.setHours(0, 0, 0, 0);
+    return weekStart;
+  }
+
+  private static getScheduleForWeek(weekStartDate: string, scheduleHistory: any[]): any | null {
+    const effectiveSchedules = scheduleHistory
+      .filter(h => h.effectiveFromDate <= weekStartDate)
+      .sort((a, b) => b.effectiveFromDate.localeCompare(a.effectiveFromDate));
+    
+    return effectiveSchedules[0] || null;
+  }
+
+  private static countRunDaysInWeek(activities: any[], weekStartDate: string): number {
+    const weekStart = new Date(weekStartDate);
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    
+    const weekStartISO = weekStart.toISOString().split('T')[0];
+    const weekEndISO = weekEnd.toISOString().split('T')[0];
+    
+    const runDays = new Set<string>();
+    
+    activities.forEach(activity => {
+      const activityDate = activity.startDate.split('T')[0];
+      if (activityDate >= weekStartISO && activityDate <= weekEndISO) {
+        runDays.add(activityDate);
+      }
+    });
+    
+    return runDays.size;
   }
 }
 

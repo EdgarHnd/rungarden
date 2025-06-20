@@ -311,12 +311,6 @@ export default function ActivityDetailScreen() {
             </TouchableOpacity>
           </View>
         )}
-
-        {/* Activity ID (for debugging/technical info) */}
-        <View style={styles.technicalSection}>
-          <Text style={styles.technicalTitle}>Run Log ID</Text>
-          <Text style={styles.technicalText}>{activity.uuid}</Text>
-        </View>
       </ScrollView>
     </View>
   );

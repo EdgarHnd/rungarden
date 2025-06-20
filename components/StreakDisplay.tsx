@@ -8,7 +8,7 @@ interface StreakDisplayProps {
   streakInfo: {
     currentStreak: number;
     longestStreak: number;
-    lastStreakDate: string | null;
+    lastStreakWeek: string | null;
   } | null;
   onClose: () => void;
 }
@@ -18,14 +18,28 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
   const longestStreak = streakInfo?.longestStreak || 0;
 
   const getStreakMessage = () => {
-    if (currentStreak >= 6) {
-      return "You've been training for almost a week straight!";
-    } else if (currentStreak >= 3) {
-      return "You're building an amazing habit!";
+    if (currentStreak >= 12) {
+      return "You've been consistent for almost 3 months! Amazing!";
+    } else if (currentStreak >= 4) {
+      return "You're building an incredible habit!";
+    } else if (currentStreak >= 2) {
+      return "Great momentum! Keep hitting your weekly goals!";
     } else if (currentStreak > 0) {
-      return "Keep going to build your streak!";
+      return "Keep going to build your weekly streak!";
     }
-    return "Start your training streak today! 🔥";
+    return "Hit your weekly goal to start your streak! 🔥";
+  };
+
+  const getWeekNumbers = () => {
+    // Show last 8 weeks, with current streak filled
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+      weeks.push({
+        weekNumber: i + 1,
+        isCompleted: i < currentStreak
+      });
+    }
+    return weeks;
   };
 
   return (
@@ -42,7 +56,7 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
       >
         <View style={styles.container}>
           <View style={styles.header}>
-            <Text style={styles.title}>Your Streak</Text>
+            <Text style={styles.title}>Your Weekly Streak</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={Theme.colors.text.secondary} />
             </TouchableOpacity>
@@ -51,18 +65,18 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
           <View style={styles.streakDisplay}>
             <Text style={styles.streakFlameIcon}>🔥</Text>
             <Text style={styles.streakMainNumber}>{currentStreak}</Text>
-            <Text style={styles.streakMainLabel}>day streak</Text>
+            <Text style={styles.streakMainLabel}>week{currentStreak !== 1 ? 's' : ''} streak</Text>
           </View>
 
           <View style={styles.streakWeekView}>
-            {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((dayName, index) => (
-              <View key={dayName} style={styles.streakDayColumn}>
-                <Text style={styles.streakDayName}>{dayName}</Text>
+            {getWeekNumbers().map((week) => (
+              <View key={week.weekNumber} style={styles.streakWeekColumn}>
+                <Text style={styles.streakWeekName}>W{week.weekNumber}</Text>
                 <View style={[
-                  styles.streakDayCircle,
-                  index < currentStreak ? styles.streakDayCompleted : styles.streakDayIncomplete
+                  styles.streakWeekCircle,
+                  week.isCompleted ? styles.streakWeekCompleted : styles.streakWeekIncomplete
                 ]}>
-                  {index < currentStreak && (
+                  {week.isCompleted && (
                     <Text style={styles.streakCheckmark}>✓</Text>
                   )}
                 </View>
@@ -74,7 +88,7 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
             <Text style={styles.streakMessage}>{getStreakMessage()}</Text>
             {longestStreak > 0 && (
               <Text style={styles.longestStreak}>
-                Longest streak: {longestStreak} days 🏆
+                Longest streak: {longestStreak} week{longestStreak !== 1 ? 's' : ''} 🏆
               </Text>
             )}
           </View>
@@ -140,26 +154,26 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.lg,
     paddingHorizontal: Theme.spacing.sm,
   },
-  streakDayColumn: {
+  streakWeekColumn: {
     alignItems: 'center',
     gap: Theme.spacing.sm,
   },
-  streakDayName: {
+  streakWeekName: {
     fontSize: 12,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
   },
-  streakDayCircle: {
+  streakWeekCircle: {
     width: 32,
     height: 32,
     borderRadius: 16,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakDayCompleted: {
+  streakWeekCompleted: {
     backgroundColor: Theme.colors.accent.primary,
   },
-  streakDayIncomplete: {
+  streakWeekIncomplete: {
     backgroundColor: Theme.colors.background.tertiary,
   },
   streakCheckmark: {

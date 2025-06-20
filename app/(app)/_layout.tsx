@@ -74,12 +74,12 @@ export default function AppLayout() {
         })}
       />
       <Tabs.Screen
-        name="training"
+        name="activities"
         options={({ navigation }) => ({
           tabBarIcon: ({ color, size }) => (
             <FontAwesome5 name="calendar-alt" size={size} color={color} />
           ),
-          tabBarButton: createTabBarButton(() => navigation.navigate('training')),
+          tabBarButton: createTabBarButton(() => navigation.navigate('activities')),
         })}
       />
       <Tabs.Screen
@@ -99,8 +99,8 @@ export default function AppLayout() {
           ),
           tabBarButton: createTabBarButton(() =>
             Alert.alert(
-              "Coming Soon",
-              "Recording feature is coming soon!",
+              "Recording coming soon",
+              "For now, use the Strava or Apple Health integration to log your runs.",
               [{ text: "OK", style: "default" }]
             )
           ),

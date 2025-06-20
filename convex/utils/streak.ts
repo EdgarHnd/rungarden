@@ -1,84 +1,180 @@
 import { DatabaseReader, DatabaseWriter } from "../_generated/server";
 
+// Helper function to get week start date based on user preference  
+function getWeekStart(date: Date, weekStartDay: number): Date {
+  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+  const day = d.getDay(); // 0 = Sunday, 1 = Monday, etc.
+
+  let diff;
+  if (weekStartDay === 1) { // Monday start
+    diff = day === 0 ? 6 : day - 1;
+  } else { // Sunday start
+    diff = day;
+  }
+
+  const weekStart = new Date(d);
+  weekStart.setDate(d.getDate() - diff);
+  weekStart.setHours(0, 0, 0, 0);
+  return weekStart;
+}
+
+// Get the effective schedule for a specific week
+function getScheduleForWeek(weekStartDate: string, scheduleHistory: any[]): any | null {
+  // Find the most recent schedule entry that was effective for this week
+  const effectiveSchedules = scheduleHistory
+    .filter(h => h.effectiveFromDate <= weekStartDate)
+    .sort((a, b) => b.effectiveFromDate.localeCompare(a.effectiveFromDate));
+  
+  return effectiveSchedules[0] || null;
+}
+
+// Count unique run days in a week
+function countRunDaysInWeek(activities: any[], weekStartDate: string): number {
+  const weekStart = new Date(weekStartDate);
+  const weekEnd = new Date(weekStart);
+  weekEnd.setDate(weekStart.getDate() + 6);
+  
+  const weekStartISO = weekStart.toISOString().split('T')[0];
+  const weekEndISO = weekEnd.toISOString().split('T')[0];
+  
+  const runDays = new Set<string>();
+  
+  activities.forEach(activity => {
+    const activityDate = activity.startDate.split('T')[0];
+    if (activityDate >= weekStartISO && activityDate <= weekEndISO) {
+      runDays.add(activityDate);
+    }
+  });
+  
+  return runDays.size;
+}
+
+// Main streak recalculation function - now weekly-based
 export async function recalcStreak(db: DatabaseReader & DatabaseWriter, userId: any, todayISO: string) {
-  console.log("recalcStreak", userId, todayISO);
+  console.log("recalcStreak (weekly)", userId, todayISO);
+  
   const profile = await db
     .query("userProfiles")
     .withIndex("by_user", (q: any) => q.eq("userId", userId))
     .unique();
   if (!profile) return;
 
-  // Get all planned workouts up to today
-  const planned = await db
-    .query("plannedWorkouts")
+  // Get user's simple training schedule
+  const simpleSchedule = await db
+    .query("simpleTrainingSchedule")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .first();
+  
+  if (!simpleSchedule || !simpleSchedule.isActive) {
+    console.log("No active simple training schedule found");
+    return;
+  }
+
+  // Get schedule history for this user
+  const scheduleHistory = await db
+    .query("scheduleHistory")
     .withIndex("by_user_date", (q: any) => q.eq("userId", userId))
-    .filter((q: any) => q.lte(q.field("scheduledDate"), todayISO))
     .collect();
 
-  // Get all activities up to today
+  if (scheduleHistory.length === 0) {
+    console.log("No schedule history found");
+    return;
+  }
+
+  // Get all activities for this user
   const activities = await db
     .query("activities")
     .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .filter((q: any) => q.lte(q.field("startDate"), todayISO))
     .collect();
 
-  // Create a map of dates to activities
-  const activityMap = new Map<string, any[]>();
-  activities.forEach((activity: any) => {
-    const activityDate = activity.startDate.split('T')[0]; // Extract date part
-    if (!activityMap.has(activityDate)) {
-      activityMap.set(activityDate, []);
-    }
-    activityMap.get(activityDate)!.push(activity);
-  });
-
-  // Create a map of dates to planned workouts
-  const plannedMap = new Map<string, any>();
-  planned.forEach((pw: any) => {
-    plannedMap.set(pw.scheduledDate, pw);
-  });
-
-  // Get all unique dates (both planned and activity dates) and sort them newest to oldest
-  const allDates = new Set<string>();
-  planned.forEach((pw: any) => allDates.add(pw.scheduledDate));
-  activities.forEach((activity: any) => {
-    const activityDate = activity.startDate.split('T')[0];
-    allDates.add(activityDate);
-  });
-
-  const sortedDates = Array.from(allDates)
-    .filter(date => date <= todayISO)
-    .sort((a, b) => b.localeCompare(a)); // newest first
-
+  const weekStartDay = profile.weekStartDay ?? 1; // Default to Monday
+  const thisWeekStart = getWeekStart(new Date(todayISO), weekStartDay);
+  const thisWeekStartISO = thisWeekStart.toISOString().split('T')[0];
+  
   let streak = 0;
-  let lastCompletedDate: string | undefined;
+  let lastStreakWeek: string | undefined;
+  let consecutiveMissedWeeks = 0;
+  let currentWeekStart = new Date(thisWeekStart);
+  let isFirstWeek = true;
 
-  for (const date of sortedDates) {
-    const plannedWorkout = plannedMap.get(date);
-    const dayActivities = activityMap.get(date) || [];
+  // Go back week by week from current week to calculate streak
+  while (true) {
+    const weekStartISO = currentWeekStart.toISOString().split('T')[0];
     
-    // Check if this day should break the streak
-    if (plannedWorkout?.status === "missed") {
-      break; // Only "missed" planned workouts break the streak
+    // Don't check weeks before the schedule started
+    if (weekStartISO < simpleSchedule.startDate) {
+      break;
     }
 
-    // Check if this day counts toward the streak
-    const hasActivity = dayActivities.length > 0;
-    const isCompletedWorkout = plannedWorkout?.status === "completed";
-    
-    if (hasActivity || isCompletedWorkout) {
-      streak += 1;
-      if (!lastCompletedDate) {
-        lastCompletedDate = date;
+    // Get the effective schedule for this week
+    const weekSchedule = getScheduleForWeek(weekStartISO, scheduleHistory);
+    if (!weekSchedule) {
+      break; // No schedule data for this week
+    }
+
+    // Count run days in this week
+    const runDaysInWeek = countRunDaysInWeek(activities, weekStartISO);
+    const goalMet = runDaysInWeek >= weekSchedule.runsPerWeek;
+
+    if (goalMet) {
+      // Goal met - extend streak
+      streak++;
+      if (isFirstWeek) {
+        consecutiveMissedWeeks = 0; // Current week goal is met, no missed weeks
       }
+      if (!lastStreakWeek) {
+        lastStreakWeek = weekStartISO;
+      }
+    } else {
+      // Goal missed - only count as missed if it's not the current week
+      if (!isFirstWeek) {
+        consecutiveMissedWeeks++;
+      }
+      break; // Streak is broken
     }
-    // If no activity and no completed workout, but also no "missed" status, 
-    // we don't break the streak but don't extend it either
+
+    // Move to previous week
+    currentWeekStart.setDate(currentWeekStart.getDate() - 7);
+    isFirstWeek = false;
+    
+    // Safety check to prevent infinite loops
+    if (streak > 520) { // More than 10 years seems unreasonable
+      break;
+    }
   }
 
+  // Calculate mascot health based on consecutive missed weeks from current week
+  // Start with full health and reduce by consecutive missed weeks (max reduction of 4)
+  const maxHealth = 4;
+  const healthPenalty = Math.min(consecutiveMissedWeeks, maxHealth);
+  const mascotHealth = Math.max(0, maxHealth - healthPenalty);
+
+  // Update user profile with new streak and health data
   await db.patch(profile._id, {
     currentStreak: streak,
     longestStreak: Math.max(streak, profile.longestStreak ?? 0),
-    lastStreakDate: lastCompletedDate ?? profile.lastStreakDate,
+    lastStreakWeek: lastStreakWeek ?? profile.lastStreakWeek,
+    mascotHealth: mascotHealth,
   });
+
+  console.log(`Updated streak: ${streak}, health: ${mascotHealth} (${consecutiveMissedWeeks} consecutive missed weeks)`);
+}
+
+// Helper function to restore mascot health (when user hits weekly goals)
+export async function restoreMascotHealth(db: DatabaseReader & DatabaseWriter, userId: any) {
+  const profile = await db
+    .query("userProfiles")
+    .withIndex("by_user", (q: any) => q.eq("userId", userId))
+    .unique();
+  
+  if (!profile) return;
+
+  // Restore 1 health point when weekly goal is met (max 4)
+  const newHealth = Math.min(4, (profile.mascotHealth ?? 0) + 1);
+  
+  await db.patch(profile._id, {
+    mascotHealth: newHealth,
+  });
+
+  console.log(`Restored mascot health to: ${newHealth}`);
 } 

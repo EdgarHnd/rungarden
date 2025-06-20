@@ -63,8 +63,10 @@ export const createProfile = mutation({
       // Initialize streak fields
       currentStreak: 0,
       longestStreak: 0,
-      lastStreakDate: undefined,
+      lastStreakWeek: undefined,
       streakFreezeAvailable: 0,
+      // Initialize mascot health
+      mascotHealth: 4,
       // Default preferences
       weekStartDay: 1, // Monday
       metricSystem: "metric",
@@ -155,6 +157,7 @@ export const updateProfile = mutation({
         currentStreak: 0,
         longestStreak: 0,
         streakFreezeAvailable: 0,
+        mascotHealth: 4,
         metricSystem: args.metricSystem ?? "metric",
         updatedAt: now,
       });
@@ -300,6 +303,7 @@ export const updateSyncPreferences = mutation({
         currentStreak: 0,
         longestStreak: 0,
         streakFreezeAvailable: 0,
+        mascotHealth: 4,
         healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
         stravaSyncEnabled: args.stravaSyncEnabled ?? false,
         lastHealthKitSync: args.lastHealthKitSync === null ? undefined : args.lastHealthKitSync,
@@ -517,7 +521,7 @@ export const updateStreakOnCompletion = mutation({
 
     const currentStreak = profile.currentStreak || 0;
     const longestStreak = profile.longestStreak || 0;
-    const lastStreakDate = profile.lastStreakDate;
+    const lastStreakWeek = profile.lastStreakWeek;
 
     // Calculate new streak values
     let newCurrentStreak = currentStreak;
@@ -533,12 +537,12 @@ export const updateStreakOnCompletion = mutation({
       };
     }
 
-    if (!lastStreakDate) {
+    if (!lastStreakWeek) {
       // First ever training day completed
       newCurrentStreak = 1;
       streakIncreased = true;
     } else {
-      const lastStreakDateTime = new Date(lastStreakDate).getTime();
+      const lastStreakDateTime = new Date(lastStreakWeek).getTime();
       const workoutDateTime = new Date(args.workoutDate).getTime();
       const daysBetween = Math.floor((workoutDateTime - lastStreakDateTime) / (1000 * 60 * 60 * 24));
 
@@ -582,7 +586,7 @@ export const updateStreakOnCompletion = mutation({
     await ctx.db.patch(profile._id, {
       currentStreak: newCurrentStreak,
       longestStreak: newLongestStreak,
-      lastStreakDate: args.workoutDate,
+      lastStreakWeek: args.workoutDate,
       streakFreezeAvailable: newStreakFreezes,
       updatedAt: new Date().toISOString(),
     });
@@ -708,10 +712,61 @@ export const useStreakFreeze = mutation({
 });
 
 
+// Get rest activities for a user within a date range
+export const getRestActivities = query({
+  args: {
+    startDate: v.string(), // YYYY-MM-DD format
+    endDate: v.string(),   // YYYY-MM-DD format
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const restActivities = await ctx.db
+      .query("restActivities")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => 
+        q.and(
+          q.gte(q.field("date"), args.startDate),
+          q.lte(q.field("date"), args.endDate)
+        )
+      )
+      .collect();
+
+    return restActivities;
+  },
+});
+
+// Check if a specific date has a completed rest day
+export const isRestDayCompleted = query({
+  args: { 
+    date: v.string() // YYYY-MM-DD format
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const restActivity = await ctx.db
+      .query("restActivities")
+      .withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", args.date))
+      .first();
+
+    return {
+      isCompleted: !!restActivity,
+      restActivity: restActivity || null,
+    };
+  },
+});
+
 // Complete rest day and update streak
 export const completeRestDay = mutation({
   args: { 
-    date: v.string() // Date in YYYY-MM-DD format
+    date: v.string(), // Date in YYYY-MM-DD format
+    notes: v.optional(v.string()) // Optional notes about the rest day
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -735,50 +790,44 @@ export const completeRestDay = mutation({
       throw new Error("Can only complete today's rest day");
     }
 
-    // Check if rest day has already been completed today by checking lastStreakDate
-    // If the last streak date is today and it wasn't from a workout, it was a rest day
-    if (profile.lastStreakDate === args.date) {
-      // Check if there's a workout for today - if not, it was likely a rest day completion
-      const todayWorkout = await ctx.db
-        .query("activities")
-        .withIndex("by_user_and_date", (q) => 
-          q.eq("userId", userId).gte("startDate", args.date).lt("startDate", args.date + "T23:59:59")
-        )
-        .first();
-      
-      if (!todayWorkout) {
-        // Return success with current streak info instead of throwing error
-        return {
-          success: false,
-          alreadyCompleted: true,
-          message: "Rest day already completed for today",
-          rewards: {
-            xpGained: 1000,
-            coinsGained: 10,
-            leveledUp: false,
-            oldLevel: profile.level || 1,
-            newLevel: profile.level || 1,
-          },
-          streak: {
-            currentStreak: profile.currentStreak || 0,
-            longestStreak: profile.longestStreak || 0,
-            streakIncreased: false,
-            milestoneMessage: undefined,
-            streakFreezesEarned: 0
-          }
-        };
-      }
+    // Check if rest day has already been completed today
+    const existingRestActivity = await ctx.db
+      .query("restActivities")
+      .withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", args.date))
+      .first();
+
+    if (existingRestActivity) {
+      // Return success with current streak info instead of throwing error
+      return {
+        success: false,
+        alreadyCompleted: true,
+        message: "Rest day already completed for today",
+        rewards: {
+          xpGained: existingRestActivity.xpGained,
+          coinsGained: existingRestActivity.coinsGained,
+          leveledUp: false,
+          oldLevel: profile.level || 1,
+          newLevel: profile.level || 1,
+        },
+        streak: {
+          currentStreak: profile.currentStreak || 0,
+          longestStreak: profile.longestStreak || 0,
+          streakIncreased: false,
+          milestoneMessage: undefined,
+          streakFreezesEarned: 0
+        }
+      };
     }
 
-    // Rest day rewards: 1000 XP and 10 coins
-    const restXP = 1000;
+    // Rest day rewards: 100 XP and 10 coins
+    const restXP = 100;
     const restCoins = 10;
     
     const currentXP = profile.totalXP || 0;
     const currentCoins = profile.coins || 0;
     const currentStreak = profile.currentStreak || 0;
     const longestStreak = profile.longestStreak || 0;
-    const lastStreakDate = profile.lastStreakDate;
+    const lastStreakWeek = profile.lastStreakWeek;
 
     // Calculate new totals
     const newTotalXP = currentXP + restXP;
@@ -790,12 +839,12 @@ export const completeRestDay = mutation({
     let newCurrentStreak = currentStreak;
     let streakIncreased = false;
 
-    if (!lastStreakDate || currentStreak === 0) {
+    if (!lastStreakWeek || currentStreak === 0) {
       // First ever day completed (rest day can start a streak)
       newCurrentStreak = 1;
       streakIncreased = true;
     } else {
-      const lastStreakDateTime = new Date(lastStreakDate).getTime();
+      const lastStreakDateTime = new Date(lastStreakWeek).getTime();
       const restDateTime = new Date(args.date).getTime();
       const daysBetween = Math.floor((restDateTime - lastStreakDateTime) / (1000 * 60 * 60 * 24));
 
@@ -835,7 +884,15 @@ export const completeRestDay = mutation({
       }
     }
 
-    // Rest day completion is tracked by the streak update above
+    // Create rest activity entry
+    const restActivityId = await ctx.db.insert("restActivities", {
+      userId,
+      date: args.date,
+      completedAt: new Date().toISOString(),
+      xpGained: restXP,
+      coinsGained: restCoins,
+      notes: args.notes,
+    });
 
     // Update profile with new values
     await ctx.db.patch(profile._id, {
@@ -844,13 +901,14 @@ export const completeRestDay = mutation({
       coins: newCoins,
       currentStreak: newCurrentStreak,
       longestStreak: newLongestStreak,
-      lastStreakDate: args.date,
+      lastStreakWeek: args.date,
       streakFreezeAvailable: newStreakFreezes,
       updatedAt: new Date().toISOString(),
     });
 
     return {
       success: true,
+      restActivityId,
       rewards: {
         xpGained: restXP,
         coinsGained: restCoins,
@@ -947,7 +1005,37 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
       currentStreak: 0,
       longestStreak: 0,
       streakFreezeAvailable: 0,
+      mascotHealth: 4,
       updatedAt: now,
     });
   }
-} 
+}
+
+// Delete a rest activity (for corrections or testing)
+export const deleteRestActivity = mutation({
+  args: { 
+    date: v.string() // YYYY-MM-DD format
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const restActivity = await ctx.db
+      .query("restActivities")
+      .withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", args.date))
+      .first();
+
+    if (!restActivity) {
+      throw new Error("Rest activity not found for this date");
+    }
+
+    await ctx.db.delete(restActivity._id);
+
+    return {
+      success: true,
+      message: "Rest activity deleted successfully",
+    };
+  },
+}); 

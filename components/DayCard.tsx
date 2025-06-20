@@ -1,18 +1,21 @@
 import RestCelebrationModal from '@/components/RestCelebrationModal';
+import RestWorkoutCard from '@/components/RestWorkoutCard';
 import SuggestedActivityCard from '@/components/SuggestedActivityCard';
 import WorkoutCard from '@/components/WorkoutCard';
 import Theme from '@/constants/theme';
+import { SuggestedActivity, getActivityType, isDatabasePlannedWorkout, isGeneratedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
-import { RunningActivity } from '@/services/HealthService';
+import { Doc } from '@/convex/_generated/dataModel';
 import { useMutation } from 'convex/react';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Alert, StyleSheet, Text, View } from 'react-native';
 
 interface DayCardProps {
   date: string;
-  activities: RunningActivity[];
-  plannedWorkout: any; // Direct planned workout from training plan
+  activities: Doc<"activities">[];
+  plannedWorkout?: SuggestedActivity | null;
+  restActivity?: Doc<"restActivities">;
   formatDistance: (meters: number) => string;
   formatPace: (duration: number, distance: number) => string;
   streakInfo?: {
@@ -26,6 +29,7 @@ export default function DayCard({
   date,
   activities,
   plannedWorkout,
+  restActivity,
   formatDistance,
   formatPace,
   streakInfo,
@@ -35,10 +39,10 @@ export default function DayCard({
   const completeRestDay = useMutation(api.userProfile.completeRestDay);
 
   // Check if there are activities that match this planned workout
-  const hasLinkedActivities = activities.length > 0 && plannedWorkout?.status === 'completed';
-  const workoutType = plannedWorkout?.workout?.type || plannedWorkout?.type || 'run';
+  const hasLinkedActivities = activities.length > 0 && plannedWorkout && isDatabasePlannedWorkout(plannedWorkout) && plannedWorkout.status === 'completed';
+  const workoutType = plannedWorkout ? getActivityType(plannedWorkout) : 'run';
 
-  const handleActivityPress = (activity: RunningActivity) => {
+  const handleActivityPress = (activity: Doc<"activities">) => {
     router.push({
       pathname: '/activity-detail',
       params: {
@@ -48,23 +52,6 @@ export default function DayCard({
         })
       }
     });
-  };
-
-  const getWorkoutEmoji = (type: string): string => {
-    const emojiMap: Record<string, string> = {
-      'easy': '🏃‍♂️',
-      'tempo': '🔥',
-      'interval': '⚡',
-      'intervals': '⚡',
-      'long': '🏃‍♂️',
-      'recovery': '🧘‍♀️',
-      'cross-train': '🚴‍♂️',
-      'strength': '💪',
-      'rest': '😴',
-      'race': '🏆',
-      'run': '🏃‍♂️'
-    };
-    return emojiMap[type] || '🏃‍♂️';
   };
 
   const getWorkoutDisplayName = (type: string): string => {
@@ -84,46 +71,14 @@ export default function DayCard({
     return displayNames[type] || type.charAt(0).toUpperCase() + type.slice(1).replace('-', ' ');
   };
 
-  // Helper function to calculate duration from workout steps
-  const calculateDurationFromSteps = (steps?: Array<{ duration?: string;[key: string]: any; }>): string => {
-    if (!steps || steps.length === 0) return '30 min';
-
-    const durations = steps.map(step => step.duration).filter(Boolean);
-    if (durations.length === 0) return '30 min';
-
-    // Sum up durations if they're all in minutes
-    const totalMinutes = durations.reduce((sum, duration) => {
-      const match = duration!.match(/(\d+)\s*min/);
-      return sum + (match ? parseInt(match[1]) : 0);
-    }, 0);
-
-    if (totalMinutes > 0) {
-      return `${totalMinutes} min`;
-    }
-
-    // If we can't sum them, return the first duration
-    return durations[0] || '30 min';
-  };
-
-  // Helper function to calculate distance from workout steps
-  const calculateDistanceFromSteps = (steps?: Array<{ distance?: number;[key: string]: any; }>): number => {
-    if (!steps || steps.length === 0) return 0;
-
-    const totalDistance = steps.reduce((sum, step) => sum + (step.distance || 0), 0);
-    return totalDistance;
-  };
-
-  const handleTrainingPress = async (plannedWorkout: any) => {
-    // Extract workout type from new nested structure, with fallback to old structure
-    const workoutType = plannedWorkout.workout?.type || plannedWorkout.type || 'run';
-    const workoutDescription = plannedWorkout.workout?.description || plannedWorkout.description || '';
-    const workoutDuration = plannedWorkout.duration || calculateDurationFromSteps(plannedWorkout.workout?.steps);
-    const workoutDistance = plannedWorkout.distance || calculateDistanceFromSteps(plannedWorkout.workout?.steps);
-
-    // If it's a rest day, show the modal. Non-today rest days are disabled.
+  const handleTrainingPress = async (plannedWorkout: SuggestedActivity) => {
+    // If it's a rest day, complete it directly
     if (workoutType === 'rest') {
       try {
-        const result = await completeRestDay({ date: plannedWorkout.scheduledDate });
+        const result = await completeRestDay({
+          date: plannedWorkout.scheduledDate,
+          notes: undefined // Could add note input in the future
+        });
         if (result.success || result.alreadyCompleted) {
           setShowRestCelebrationModal(true);
         }
@@ -133,13 +88,29 @@ export default function DayCard({
       return;
     }
 
-    // Navigate to training detail with the planned workout ID
-    router.push({
-      pathname: '/training-detail',
-      params: {
-        scheduleWorkoutId: plannedWorkout._id
-      }
-    });
+    // Handle simple schedule runs
+    if (isGeneratedActivity(plannedWorkout) && plannedWorkout.isSimpleScheduleRun) {
+      handleSimpleRunPress();
+      return;
+    }
+
+    // Navigate to training detail only for database planned workouts
+    if (isDatabasePlannedWorkout(plannedWorkout)) {
+      router.push({
+        pathname: '/training-detail',
+        params: {
+          scheduleWorkoutId: plannedWorkout._id
+        }
+      });
+    } else {
+      // For generated activities, show a helpful message
+      Alert.alert("Training Plan", "This is a suggested activity. Connect to a structured training plan for detailed workouts.");
+    }
+  };
+
+  const handleSimpleRunPress = async () => {
+    // nice alert saying the recording feature is coming soon
+    Alert.alert("Recording coming soon", "For now, use the Strava or Apple Health integration to log your runs.");
   };
 
   // Check if this day is today
@@ -148,12 +119,12 @@ export default function DayCard({
   return (
     <View style={styles.dayCard}>
       {activities.map((activity, index) => (
-        <View key={activity.uuid || `activity-${index}-${activity.startDate}`}>
+        <View key={activity._id || `activity-${index}-${activity.startDate}`}>
           {/* Show linkage indicator if this activity is linked to the planned workout */}
           {hasLinkedActivities && index === 0 && (
             <View style={styles.linkageIndicator}>
               <Text style={styles.linkageText}>
-                {getWorkoutEmoji(workoutType)} Completed: {getWorkoutDisplayName(workoutType)}
+                Completed: {getWorkoutDisplayName(workoutType)}
               </Text>
             </View>
           )}
@@ -173,13 +144,22 @@ export default function DayCard({
           />
         </View>
       ))}
-      {/* Planned Workout */}
-      {plannedWorkout && !hasLinkedActivities && (
+
+      {/* Completed Rest Activity Card */}
+      {restActivity && (
+        <RestWorkoutCard
+          restActivity={restActivity}
+          onPress={() => { }}
+        />
+      )}
+
+      {/* Planned Workout (including rest days and simple schedule workouts) */}
+      {plannedWorkout && !hasLinkedActivities && activities.length === 0 && !restActivity && (
         <SuggestedActivityCard
           plannedWorkout={plannedWorkout}
           onPress={(() => {
-            const workoutType = plannedWorkout.workout?.type || plannedWorkout.type || 'run';
-            return (workoutType === 'rest' && (!isToday || isRestDayCompleted)) ? undefined : () => handleTrainingPress(plannedWorkout);
+            const activityType = getActivityType(plannedWorkout);
+            return (activityType === 'rest' && (!isToday || isRestDayCompleted)) ? undefined : () => handleTrainingPress(plannedWorkout);
           })()}
           isToday={isToday}
           isRestDayCompleted={isRestDayCompleted}

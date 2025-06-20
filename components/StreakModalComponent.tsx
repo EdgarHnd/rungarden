@@ -32,11 +32,11 @@ export default function StreakModalComponent({
     // Heavy haptic for streak emphasis
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    // Sequential light haptics for each day
-    for (let i = 0; i < currentStreak; i++) {
+    // Sequential light haptics for each week
+    for (let i = 0; i < Math.min(currentStreak, 8); i++) {
       setTimeout(() => {
         Haptics.selectionAsync();
-      }, i * 200);
+      }, i * 300);
     }
   }, [currentStreak]);
 
@@ -46,26 +46,38 @@ export default function StreakModalComponent({
     };
   });
 
+  const getWeekNumbers = () => {
+    // Show last 8 weeks, with current streak filled
+    const weeks = [];
+    for (let i = 7; i >= 0; i--) {
+      weeks.push({
+        weekNumber: i + 1,
+        isCompleted: i < currentStreak
+      });
+    }
+    return weeks;
+  };
+
   return (
     <View style={styles.centeredGroup}>
       <Reanimated.View style={[styles.streakDisplay, streakAnimatedStyle]}>
         <Text style={styles.streakFlameIcon}>🔥</Text>
         <Text style={styles.streakMainNumber}>{currentStreak}</Text>
-        <Text style={styles.streakMainLabel}>day streak</Text>
+        <Text style={styles.streakMainLabel}>week{currentStreak !== 1 ? 's' : ''} streak</Text>
       </Reanimated.View>
 
       <View style={styles.streakWeekView}>
-        {['Th', 'Fr', 'Sa', 'Su', 'Mo', 'Tu', 'We'].map((dayName, index) => (
+        {getWeekNumbers().map((week) => (
           <Reanimated.View
-            key={dayName}
-            style={styles.streakDayColumn}
+            key={week.weekNumber}
+            style={styles.streakWeekColumn}
           >
-            <Text style={styles.streakDayName}>{dayName}</Text>
+            <Text style={styles.streakWeekName}>W{week.weekNumber}</Text>
             <View style={[
-              styles.streakDayCircle,
-              index < currentStreak ? styles.streakDayCompleted : styles.streakDayIncomplete
+              styles.streakWeekCircle,
+              week.isCompleted ? styles.streakWeekCompleted : styles.streakWeekIncomplete
             ]}>
-              {index < currentStreak && (
+              {week.isCompleted && (
                 <Text style={styles.streakCheckmark}>✓</Text>
               )}
             </View>
@@ -76,8 +88,8 @@ export default function StreakModalComponent({
       <Text style={styles.streakEncouragement}>
         {customMessage || (
           streakIncreased
-            ? "Streak continued! Consistency is key! 🌟"
-            : "Keep going to build your streak! 🎯"
+            ? "Weekly goal achieved! Consistency builds champions! 🌟"
+            : "Keep hitting your weekly goals to build your streak! 🎯"
         )}
       </Text>
     </View>
@@ -116,27 +128,27 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.xxxl,
     paddingHorizontal: Theme.spacing.lg,
   },
-  streakDayColumn: {
+  streakWeekColumn: {
     alignItems: 'center',
     gap: Theme.spacing.sm,
   },
-  streakDayName: {
+  streakWeekName: {
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     marginBottom: Theme.spacing.sm,
   },
-  streakDayCircle: {
+  streakWeekCircle: {
     width: 40,
     height: 40,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  streakDayCompleted: {
+  streakWeekCompleted: {
     backgroundColor: Theme.colors.accent.primary,
   },
-  streakDayIncomplete: {
+  streakWeekIncomplete: {
     backgroundColor: Theme.colors.background.tertiary,
   },
   streakCheckmark: {

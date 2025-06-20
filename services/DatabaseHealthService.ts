@@ -1,42 +1,11 @@
 import { ConvexReactClient } from "convex/react";
 import { api } from '../convex/_generated/api';
+import { Doc } from '../convex/_generated/dataModel';
 import HealthService, { RunningActivity } from './HealthService';
 
-export interface DatabaseActivity {
-  _id: string;
-  userId: string;
-  source?: 'healthkit' | 'strava';
-  healthKitUuid?: string;
-  stravaId?: number;
-  startDate: string;
-  endDate: string;
-  duration: number;
-  distance: number;
-  calories: number;
-  averageHeartRate?: number;
-  workoutName?: string;
-  pace?: number;
-  syncedAt: string;
-}
-
-export interface UserProfile {
-  _id?: string;
-  userId: string;
-  weeklyGoal: number;
-  totalDistance: number;
-  totalWorkouts: number;
-  totalCalories: number;
-  lastSyncDate?: string;
-  level: number;
-  coins?: number; // Coins earned from running (1 coin per km)
-  weekStartDay?: number; // 0 = Sunday, 1 = Monday
-  // Sync preferences
-  healthKitSyncEnabled?: boolean; // Whether HealthKit sync is enabled
-  stravaSyncEnabled?: boolean; // Whether Strava sync is enabled
-  lastHealthKitSync?: string; // Last HealthKit sync timestamp
-  lastStravaSync?: string; // Last Strava sync timestamp
-  updatedAt: string;
-}
+// Use proper Convex types instead of custom interfaces
+type DatabaseActivity = Doc<"activities">;
+type UserProfile = Doc<"userProfiles">;
 
 export interface SyncResult {
   created: number;
@@ -180,8 +149,6 @@ class DatabaseHealthService {
     }
   }
 
-
-
   /**
    * Enable or disable HealthKit sync
    */
@@ -197,8 +164,6 @@ class DatabaseHealthService {
       throw error;
     }
   }
-
-
 
   /**
    * Sync activities only if HealthKit sync is enabled

@@ -129,7 +129,8 @@ export default function RestCelebrationModal({
 
       try {
         const result = await completeRestDay({
-          date: new Date().toISOString().split('T')[0]
+          date: new Date().toISOString().split('T')[0],
+          notes: undefined // Could add note support in the future
         });
 
         if (result.success) {
@@ -197,7 +198,7 @@ export default function RestCelebrationModal({
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
           <Image
-            source={require('@/assets/images/blaze/blazeidle.png')}
+            source={require('@/assets/images/blaze/blaze-sleep-icon.png')}
             style={styles.image}
             resizeMode="contain"
           />
@@ -220,9 +221,7 @@ export default function RestCelebrationModal({
           <View style={styles.restActivities}>
             <Text style={styles.restTitle}>Perfect rest day activities:</Text>
             <View style={styles.infoList}>
-              <Text style={styles.infoItem}>• Gentle stretching</Text>
-              <Text style={styles.infoItem}>• Light yoga</Text>
-              <Text style={styles.infoItem}>• Meditation</Text>
+              <Text style={styles.infoItem}>Gentle stretching, light yoga, meditation, or a walk</Text>
             </View>
           </View>
         </View>

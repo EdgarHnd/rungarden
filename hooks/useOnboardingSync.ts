@@ -8,15 +8,27 @@ export function useOnboardingSync() {
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const saveTrainingProfile = useMutation(api.trainingProfile.saveOnboardingData);
   const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
+  const setSimpleTrainingSchedule = useMutation(api.simpleTrainingSchedule.setSimpleTrainingSchedule);
 
   useEffect(() => {
     const syncPendingOnboardingData = async () => {
+      console.log('[useOnboardingSync] Hook triggered, trainingProfile state:', trainingProfile);
+      
       // Check if we can query the database (user is authenticated)
-      if (trainingProfile === undefined) return; // Still loading
+      if (trainingProfile === undefined) {
+        console.log('[useOnboardingSync] Still loading training profile, waiting...');
+        return; // Still loading
+      }
       
       try {
+        console.log('[useOnboardingSync] Checking for pending onboarding data...');
         const pendingData = await AsyncStorage.getItem('pendingOnboardingData');
-        if (!pendingData) return;
+        console.log('[useOnboardingSync] Pending data found:', !!pendingData);
+        
+        if (!pendingData) {
+          console.log('[useOnboardingSync] No pending data found in AsyncStorage');
+          return;
+        }
 
         const onboardingData = JSON.parse(pendingData);
         console.log('Found pending onboarding data, processing...', {
@@ -30,14 +42,28 @@ export function useOnboardingSync() {
           action: trainingProfile !== null ? 'updated' : 'created'
         });
         
-        // Generate/regenerate the training plan based on new profile data
+        // Create simple training schedule as the default system
         try {
-          const planResult = await generateTrainingPlan();
-          console.log('Training plan generated successfully:', planResult);
-        } catch (planError) {
-          console.error('Failed to generate training plan:', planError);
-          // Don't fail the whole process if plan generation fails
+          const simpleScheduleResult = await setSimpleTrainingSchedule({
+            runsPerWeek: onboardingData.daysPerWeek,
+            preferredDays: onboardingData.preferredDays.length > 0 
+              ? onboardingData.preferredDays 
+              : ['Mon', 'Wed', 'Fri'] // Default if no preferred days selected
+          });
+          console.log('Simple training schedule created successfully:', simpleScheduleResult);
+        } catch (scheduleError) {
+          console.error('Failed to create simple training schedule:', scheduleError);
+          // Don't fail the whole process if schedule creation fails
         }
+        
+        // Optional: Generate structured training plan for advanced users
+        // (Currently disabled - simple schedule is the default)
+        // try {
+        //   const planResult = await generateTrainingPlan();
+        //   console.log('Training plan generated successfully:', planResult);
+        // } catch (planError) {
+        //   console.error('Failed to generate training plan:', planError);
+        // }
         
         // Clear the pending data after successful save
         await AsyncStorage.removeItem('pendingOnboardingData');
@@ -50,5 +76,5 @@ export function useOnboardingSync() {
     };
 
     syncPendingOnboardingData();
-  }, [trainingProfile]);
+  }, [trainingProfile, saveTrainingProfile, setSimpleTrainingSchedule]);
 } 

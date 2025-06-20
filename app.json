@@ -52,7 +52,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#D9D9D9"
+          "backgroundColor": "#000000"
         }
       ],
       [

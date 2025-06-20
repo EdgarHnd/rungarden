@@ -20,6 +20,7 @@ import type * as leaderboard from "../leaderboard.js";
 import type * as migrations from "../migrations.js";
 import type * as pushNotifications from "../pushNotifications.js";
 import type * as restReward from "../restReward.js";
+import type * as simpleTrainingSchedule from "../simpleTrainingSchedule.js";
 import type * as stravaWebhooks from "../stravaWebhooks.js";
 import type * as streak from "../streak.js";
 import type * as trainingPlan from "../trainingPlan.js";
@@ -46,6 +47,7 @@ declare const fullApi: ApiFromModules<{
   migrations: typeof migrations;
   pushNotifications: typeof pushNotifications;
   restReward: typeof restReward;
+  simpleTrainingSchedule: typeof simpleTrainingSchedule;
   stravaWebhooks: typeof stravaWebhooks;
   streak: typeof streak;
   trainingPlan: typeof trainingPlan;

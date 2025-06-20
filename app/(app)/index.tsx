@@ -1,11 +1,14 @@
 import DayCard from '@/components/DayCard';
+import HealthModal from '@/components/HealthModal';
 import InitialSyncModal from '@/components/InitialSyncModal';
 import RestCelebrationModal from '@/components/RestCelebrationModal';
 import RunCelebrationModal from '@/components/RunCelebrationModal';
 import StreakDisplay from '@/components/StreakDisplay';
 import WeekView from '@/components/WeekView';
 import Theme from '@/constants/theme';
+import { getActivityType, SuggestedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
+import { Doc } from '@/convex/_generated/dataModel';
 import { useOnboardingSync } from '@/hooks/useOnboardingSync';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import Ionicons from '@expo/vector-icons/build/Ionicons';
@@ -22,34 +25,10 @@ import { RiveRef } from 'rive-react-native';
 const SCROLLING_BG_LOOP_WIDTH = 2000;
 const SCROLLING_BG_ANIMATION_DURATION = 8000;
 
-// Match WeekView's expected DatabaseActivity interface
-interface DatabaseActivity {
-  startDate: string;
-  endDate: string;
-  duration: number;
-  distance: number;
-  calories: number;
-  averageHeartRate?: number;
-  workoutName?: string;
-  healthKitUuid: string;
-}
-
-// RunningActivity interface for DayCard
-interface RunningActivity {
-  uuid: string;
-  startDate: string;
-  endDate: string;
-  duration: number;
-  distance: number;
-  calories: number;
-  averageHeartRate?: number;
-  workoutName?: string;
-}
-
 interface DayData {
   date: string;
-  activities: DatabaseActivity[];
-  plannedWorkout: any;
+  activities: Doc<"activities">[]; // Use Doc<"activities">[] to match DayCard expectations
+  plannedWorkout?: SuggestedActivity | null;
   weekIndex: number;
   isRestDayCompleted?: boolean;
 }
@@ -77,9 +56,15 @@ export default function HomeScreen() {
     startDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 20 days ago
     endDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]    // 20 days ahead
   });
+  const restActivities = useQuery(api.userProfile.getRestActivities, {
+    startDate: new Date(Date.now() - 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0], // 20 days ago
+    endDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]    // 20 days ahead
+  });
+  const simpleSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
   const createProfile = useMutation(api.userProfile.createProfile);
   const markCelebrationShown = useMutation(api.activities.markCelebrationShown);
   const refreshStreak = useMutation(api.streak.refreshStreak);
+  const setSimpleSchedule = useMutation(api.simpleTrainingSchedule.setSimpleTrainingSchedule);
   // const processAchievements = useMutation(api.achievements.processAchievementsForActivity);
 
   // Proper state management for week navigation
@@ -126,6 +111,9 @@ export default function HomeScreen() {
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [tapCount, setTapCount] = useState(0);
   const tapTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Health modal state
+  const [showHealthModal, setShowHealthModal] = useState(false);
 
   // Refresh streak on first app load of the day
   const [streakRefreshed, setStreakRefreshed] = useState(false);
@@ -245,37 +233,16 @@ export default function HomeScreen() {
     return weekStart;
   };
 
-  // Transform Convex activities to match WeekView expected format
-  const transformActivities = (convexActivities: any[]): DatabaseActivity[] => {
-    return convexActivities.map(activity => ({
-      startDate: activity.startDate,
-      endDate: activity.endDate,
-      duration: activity.duration,
-      distance: activity.distance,
-      calories: activity.calories,
-      averageHeartRate: activity.averageHeartRate,
-      workoutName: activity.workoutName,
-      healthKitUuid: activity.healthKitUuid || activity._id || 'unknown', // Ensure string
-    }));
-  };
-
-  // Convert DatabaseActivity to RunningActivity for DayCard
-  const convertToRunningActivities = (dbActivities: DatabaseActivity[]): RunningActivity[] => {
-    return dbActivities.map(activity => ({
-      uuid: activity.healthKitUuid,
-      startDate: activity.startDate,
-      endDate: activity.endDate,
-      duration: activity.duration,
-      distance: activity.distance,
-      calories: activity.calories,
-      averageHeartRate: activity.averageHeartRate,
-      workoutName: activity.workoutName,
-    }));
+  // Helper function to get day name from date string
+  const getDayName = (dateString: string): string => {
+    const date = new Date(dateString);
+    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    return days[date.getDay()];
   };
 
   // Generate proper week data for WeekView
   const generateWeekData = (): { weeks: WeekData[], allDays: DayData[], todayIndex: number } => {
-    if (!activities || !plannedWorkouts) return { weeks: [], allDays: [], todayIndex: 0 };
+    if (!activities || !plannedWorkouts || !restActivities) return { weeks: [], allDays: [], todayIndex: 0 };
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -296,17 +263,48 @@ export default function HomeScreen() {
       activityMap.get(activityDate)!.push(activity);
     });
 
-    // Create planned workout lookup map
+    // Create planned workout lookup map  
     const plannedWorkoutMap = new Map<string, any>();
     plannedWorkouts?.forEach(workout => {
       plannedWorkoutMap.set(workout.scheduledDate, workout);
     });
+
+    // Create rest activities lookup map
+    const restActivitiesMap = new Map<string, any>();
+    restActivities?.forEach(restActivity => {
+      restActivitiesMap.set(restActivity.date, restActivity);
+    });
+
+    // Helper function to calculate week progress for any given week
+    const calculateWeekProgress = (weekStartDate: Date) => {
+      const weekStart = getLocalDateString(weekStartDate);
+      const weekEnd = new Date(weekStartDate);
+      weekEnd.setDate(weekStartDate.getDate() + 6);
+      const weekEndStr = getLocalDateString(weekEnd);
+
+      const runDays = new Set<string>();
+      activities.forEach((activity: any) => {
+        const activityDate = getLocalDateString(new Date(activity.startDate));
+        if (activityDate >= weekStart && activityDate <= weekEndStr) {
+          runDays.add(activityDate);
+        }
+      });
+
+      return {
+        runsThisWeek: runDays.size,
+        weeklyGoalMet: simpleSchedule ? runDays.size >= simpleSchedule.runsPerWeek : false,
+        hasRunsThisWeek: runDays.size > 0
+      };
+    };
 
     // Generate 3 weeks: last week, this week, next week
     for (let weekOffset = -1; weekOffset <= 1; weekOffset++) {
       const weekStart = new Date(thisWeekStart);
       weekStart.setDate(thisWeekStart.getDate() + (weekOffset * 7));
       const days: DayData[] = [];
+
+      // Calculate this week's progress
+      const weekProgress = calculateWeekProgress(weekStart);
 
       for (let dayOffset = 0; dayOffset < 7; dayOffset++) {
         const date = new Date(weekStart);
@@ -317,42 +315,95 @@ export default function HomeScreen() {
         const dayActivities = activityMap.get(dateString) || [];
         const plannedWorkout = plannedWorkoutMap.get(dateString);
 
-        // Create workout data (planned or default rest)
-        const finalPlannedWorkout = plannedWorkout || {
-          scheduledDate: dateString,
-          type: "rest",
-          duration: "15-30 min",
-          description: "Rest day - Perfect time for gentle stretching, foam rolling, or mobility work. Listen to your body and recover well!",
-          target: "Active recovery",
-          status: "scheduled",
-          distance: 0,
-          workoutId: null,
-          workout: { type: "rest" },
-          isDefault: true
-        };
+        // Create appropriate planned workout based on user's mode
+        let finalPlannedWorkout = plannedWorkout;
 
-        // Determine if rest day is completed
+        if (!plannedWorkout) {
+          if (trainingPlan?.isActive) {
+            // Structured training plan users get default rest days
+            finalPlannedWorkout = {
+              scheduledDate: dateString,
+              type: "rest",
+              duration: "15-30 min",
+              description: "Rest day - Perfect time for gentle stretching, foam rolling, or mobility work. Listen to your body and recover well!",
+              target: "Active recovery",
+              status: "scheduled",
+              distance: 0,
+              workoutId: null,
+              workout: { type: "rest", steps: [] },
+              isDefault: true
+            };
+          } else if (simpleSchedule?.isActive) {
+            // For simple schedule users, create rest days when:
+            // 1. Weekly goal is already met, OR
+            // 2. It's not a preferred day AND they've done some runs this week (for current/past weeks)
+            // 3. It's not a preferred day AND it's a future week (show planned rest days)
+            const dayName = getDayName(dateString);
+            const isPreferredDay = simpleSchedule.preferredDays.includes(dayName);
+            const isFutureWeek = weekOffset > 0; // Next week is weekOffset = 1
+            const isPastOrCurrentWeek = weekOffset <= 0;
+
+            const shouldShowRestDay =
+              weekProgress.weeklyGoalMet || // Goal already met
+              (!isPreferredDay && weekProgress.hasRunsThisWeek && isPastOrCurrentWeek) || // Non-preferred day with some runs (current/past weeks)
+              (!isPreferredDay && isFutureWeek); // Non-preferred day in future weeks
+
+            if (shouldShowRestDay) {
+              finalPlannedWorkout = {
+                scheduledDate: dateString,
+                type: "rest",
+                duration: "15-30 min",
+                description: weekProgress.weeklyGoalMet
+                  ? "Great job! You've hit your weekly goal. Time to rest and recover! 🎉"
+                  : isFutureWeek
+                    ? "Planned rest day - Perfect time for gentle stretching, foam rolling, or mobility work."
+                    : "Rest day - Perfect time for gentle stretching, foam rolling, or mobility work. Listen to your body and recover well!",
+                target: "Active recovery",
+                status: "scheduled",
+                distance: 0,
+                workoutId: null,
+                workout: { type: "rest" },
+                isDefault: true,
+                isSimpleScheduleRest: true
+              };
+            } else {
+              // Create a simple run workout for preferred days or when weekly goal isn't met
+              finalPlannedWorkout = {
+                scheduledDate: dateString,
+                type: "run",
+                duration: "30-45 min",
+                description: isPreferredDay
+                  ? "Go for a run! Perfect day for your weekly training."
+                  : "Optional run day - Go for a run if you have time and energy.",
+                target: "Easy run",
+                status: "scheduled",
+                distance: 3000, // 3km default
+                workoutId: null,
+                workout: { type: "run" },
+                isDefault: true,
+                isSimpleScheduleRun: true
+              };
+            }
+          }
+        }
+
+        // Determine if rest day is completed using the restActivities table
         let isRestDayCompleted = false;
-        const workoutType = plannedWorkout?.workout?.type || "rest";
+        const workoutType = plannedWorkout?.workout?.type || finalPlannedWorkout?.type || "rest";
 
-        if (workoutType === 'rest') {
+        if (workoutType === 'rest' && finalPlannedWorkout) {
           if (finalPlannedWorkout.status === 'completed') {
             isRestDayCompleted = true;
           } else {
-            const isPastDay = dateString < todayString;
-            const isToday = dateString === todayString;
-
-            if (isPastDay) {
-              isRestDayCompleted = dayActivities.length === 0;
-            } else if (isToday && profile?.lastStreakDate === dateString) {
-              isRestDayCompleted = dayActivities.length === 0;
-            }
+            // Check if there's a rest activity for this date
+            const restActivity = restActivitiesMap.get(dateString);
+            isRestDayCompleted = !!restActivity;
           }
         }
 
         const dayData: DayData = {
           date: dateString,
-          activities: transformActivities(dayActivities),
+          activities: dayActivities, // Use activities directly without transformation
           plannedWorkout: finalPlannedWorkout,
           weekIndex: weekOffset + 1,
           isRestDayCompleted,
@@ -457,8 +508,6 @@ export default function HomeScreen() {
       const isInitialConnection = !lastSync;
 
       if (isInitialConnection) {
-        console.log('[HomeScreen] Performing initial connection sync for Strava activities...');
-
         try {
           setHasPerformedInitialSync(true);
 
@@ -468,8 +517,6 @@ export default function HomeScreen() {
           const syncResult = await stravaService.syncActivitiesFromStrava(30); // Sync last 30 days for initial connection
 
           if (syncResult && syncResult.created > 0) {
-            console.log(`[HomeScreen] Initial sync completed: ${syncResult.created} new activities`);
-
             // Show modal for first-time sync with significant results
             if (syncResult.created >= 5 || (syncResult.distanceGained && syncResult.distanceGained > 10000)) {
               setInitialSyncResult({
@@ -484,10 +531,8 @@ export default function HomeScreen() {
               setInitialSyncModalVisible(true);
             }
           } else {
-            console.log('[HomeScreen] Initial sync completed: no new activities found');
           }
         } catch (error) {
-          console.error('[HomeScreen] Initial sync failed:', error);
           // Show alert if authentication error
           if (error instanceof Error && error.message.includes('Not authenticated with Strava')) {
             Alert.alert(
@@ -505,7 +550,6 @@ export default function HomeScreen() {
         }
       } else {
         // Already connected - webhooks handle new activities automatically
-        console.log('[HomeScreen] Strava already connected, webhooks handle new activities');
         setHasPerformedInitialSync(true);
       }
     };
@@ -541,7 +585,6 @@ export default function HomeScreen() {
   }, [activitiesNeedingCelebration, showRunCelebrationModal]);
 
   useEffect(() => {
-    console.log('HomeScreen mounted');
     return () => {
       if (bgAnimationRef.current) {
         bgAnimationRef.current.stop();
@@ -617,7 +660,7 @@ export default function HomeScreen() {
     updateTimeoutRef.current = setTimeout(() => {
       const selectedDayData = allDays[currentDayIndex];
       if (selectedDayData) {
-        const workoutType = selectedDayData.plannedWorkout?.type;
+        const workoutType = getActivityType(selectedDayData.plannedWorkout);
         const newAnimationType: 'running' | 'idle' = workoutType === 'rest' ? 'idle' : 'running';
 
         if (newAnimationType === 'running') {
@@ -685,12 +728,48 @@ export default function HomeScreen() {
     return `${minutes}:${seconds.toString().padStart(2, '0')}`;
   };
 
+
+
+  // Helper function to calculate week-specific run progress
+  const getWeekProgress = (weekIndex: number) => {
+    if (!simpleSchedule?.isActive || !activities) {
+      return null;
+    }
+
+    // Get the week start date for the specified week
+    const today = new Date();
+    const thisWeekStart = getWeekStart(today, weekStartDay);
+    const targetWeekStart = new Date(thisWeekStart);
+    targetWeekStart.setDate(thisWeekStart.getDate() + ((weekIndex - 1) * 7)); // weekIndex 0=last week, 1=this week, 2=next week
+
+    // Calculate week end date
+    const weekEnd = new Date(targetWeekStart);
+    weekEnd.setDate(targetWeekStart.getDate() + 6);
+
+    const weekStartISO = getLocalDateString(targetWeekStart);
+    const weekEndISO = getLocalDateString(weekEnd);
+
+    // Count unique run days in this week
+    const runDays = new Set<string>();
+    activities.forEach((activity: any) => {
+      const activityDate = getLocalDateString(new Date(activity.startDate));
+      if (activityDate >= weekStartISO && activityDate <= weekEndISO) {
+        runDays.add(activityDate);
+      }
+    });
+
+    return {
+      completed: runDays.size,
+      target: simpleSchedule.runsPerWeek,
+    };
+  };
+
   // Show loading state when queries are loading
-  if (!profile || !activities || plannedWorkouts === undefined) {
+  if (!profile || !activities || plannedWorkouts === undefined || restActivities === undefined || simpleSchedule === undefined) {
     return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.loading}>Loading...</Text>
-      </SafeAreaView>
+      <View style={styles.loadingContainer}>
+        <Text style={styles.loadingText}>Loading...</Text>
+      </View>
     );
   }
 
@@ -711,23 +790,28 @@ export default function HomeScreen() {
           colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.tertiary]}
           style={styles.solidBackground}
         />
-        {/* <Animated.View
-          style={[
-            styles.scrollingBackgroundContainer,
-            { transform: [{ translateX: scrollX }] }
-          ]}
-        >
-          <Image source={BG_IMAGE_STADIUM} style={styles.scrollingBackgroundImage} />
-          <Image source={BG_IMAGE_STADIUM} style={styles.scrollingBackgroundImage} />
-        </Animated.View> */}
         <View style={styles.headerContainer}>
           <View style={styles.leftHeaderSection}>
-            <TouchableOpacity onPress={handleTitlePress}>
-              <Text style={styles.title}>Blaze</Text>
-            </TouchableOpacity>
-            <View style={styles.livesRowContainer}>
+            <View style={styles.titleContainer}>
+              <TouchableOpacity onPress={handleTitlePress}>
+                <Text style={styles.title}>Blaze</Text>
+              </TouchableOpacity>
+              {levelInfo && (
+                <View style={styles.levelBadge}>
+                  <Text style={styles.levelText}>LVL {levelInfo.level}</Text>
+                </View>
+              )}
+            </View>
+            <TouchableOpacity
+              style={styles.livesRowContainer}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowHealthModal(true);
+              }}
+              activeOpacity={0.7}
+            >
               {[...Array(4)].map((_, index) => {
-                const currentLives = 3; // TODO: Get from user profile/state
+                const currentLives = profile?.mascotHealth || 0;
                 const isAlive = index < currentLives;
                 return (
                   <Ionicons
@@ -738,20 +822,9 @@ export default function HomeScreen() {
                   />
                 );
               })}
-            </View>
+            </TouchableOpacity>
           </View>
           <View style={styles.rightHeaderSection}>
-            {/* <TouchableOpacity
-              style={styles.streakContainer}
-              onPress={() => {
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowStreakModal(true);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.streakEmoji}>🔥</Text>
-              <Text style={styles.streakText}>{profile?.currentStreak || 0}</Text>
-            </TouchableOpacity> */}
             <TouchableOpacity
               onPress={() => Alert.alert(
                 "Coming Soon",
@@ -769,35 +842,6 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.animationContainer}>
-          {/* <Animated.View style={{ transform: [{ scale: scaleAnim }] }}>
-            <Rive
-              ref={runningRiveRef}
-              url={RIVE_URL_RUNNING}
-              style={{
-                ...styles.animation,
-                opacity: currentAnimationType === 'running' ? 1 : 0
-              }}
-              autoplay={true}
-            />
-
-            <Rive
-              ref={idleRiveRef}
-              url={RIVE_URL_IDDLE}
-              style={{
-                ...styles.animation,
-                position: 'absolute',
-                opacity: currentAnimationType === 'idle' ? 1 : 0
-              }}
-              autoplay={true}
-            />
-          </Animated.View> */}
-
-          {/* {showPuff && (
-            <Image
-              source={require('@/assets/images/bg/puff.gif')}
-              style={styles.puffImage}
-            />
-          )} */}
           <View style={styles.shadowDisc} />
           <Image
             source={require('@/assets/images/blaze/blazetr.gif')}
@@ -827,8 +871,23 @@ export default function HomeScreen() {
             streakInfo={profile ? {
               currentStreak: profile.currentStreak,
               longestStreak: profile.longestStreak,
-              lastStreakDate: profile.lastStreakDate || null,
+              lastStreakWeek: profile.lastStreakWeek || null,
             } : undefined}
+            simpleSchedule={simpleSchedule ? {
+              runsPerWeek: simpleSchedule.runsPerWeek,
+              preferredDays: simpleSchedule.preferredDays,
+              isActive: simpleSchedule.isActive,
+            } : null}
+            todaysRunStatus={(() => {
+              const weekProgress = getWeekProgress(currentWeekIndex);
+              if (!weekProgress) return null;
+
+              return {
+                runsThisWeek: weekProgress.completed,
+                runsNeeded: Math.max(0, weekProgress.target - weekProgress.completed),
+                weeklyGoalMet: weekProgress.completed >= weekProgress.target,
+              };
+            })()}
           />
 
           {/* Day Card */}
@@ -837,8 +896,16 @@ export default function HomeScreen() {
               <DayCard
                 key={`selected-day-${selectedDayData.date}`}
                 date={selectedDayData.date}
-                activities={convertToRunningActivities(selectedDayData.activities)}
+                activities={selectedDayData.activities}
                 plannedWorkout={selectedDayData.plannedWorkout}
+                restActivity={(() => {
+                  // Get rest activity for this date from restActivitiesMap
+                  const restActivitiesMap = new Map<string, any>();
+                  restActivities?.forEach(restActivity => {
+                    restActivitiesMap.set(restActivity.date, restActivity);
+                  });
+                  return restActivitiesMap.get(selectedDayData.date) || null;
+                })()}
                 formatDistance={formatDistance}
                 formatPace={formatPace}
                 streakInfo={{
@@ -850,6 +917,7 @@ export default function HomeScreen() {
             )}
           </View>
         </ScrollView>
+
         {/* Run Celebration Modal */}
         <RunCelebrationModal
           visible={showRunCelebrationModal}
@@ -866,19 +934,6 @@ export default function HomeScreen() {
           }}
           isInitialSync={runCelebrationData?.isInitialSync || false}
           onClose={async () => {
-            // Process achievements for this activity
-            if (runCelebrationData?.runData?._id) {
-              try {
-                // const achievementResult = await processAchievements({
-                //   activityId: runCelebrationData.runData._id
-                // });
-                // console.log('Achievements processed:', achievementResult);
-              } catch (error) {
-                console.error('Failed to process achievements:', error);
-              }
-            }
-
-            // Mark celebration as shown if this was for a new activity
             if (runCelebrationData?.runData?._id) {
               try {
                 await markCelebrationShown({ activityId: runCelebrationData.runData._id });
@@ -889,14 +944,6 @@ export default function HomeScreen() {
 
             setShowRunCelebrationModal(false);
             setRunCelebrationData(null);
-
-            // Show level up modal after run celebration if user leveled up
-            if (runCelebrationData?.rewards.leveledUp &&
-              runCelebrationData?.rewards.newLevel &&
-              runCelebrationData?.rewards.oldLevel) {
-              setShowRunCelebrationModal(false);
-              setRunCelebrationData(null);
-            }
           }}
         />
 
@@ -916,12 +963,24 @@ export default function HomeScreen() {
           streakInfo={profile ? {
             currentStreak: profile.currentStreak,
             longestStreak: profile.longestStreak,
-            lastStreakDate: profile.lastStreakDate || null,
+            lastStreakWeek: profile.lastStreakWeek || null,
           } : null}
           onClose={() => {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setShowStreakModal(false);
           }}
+        />
+
+        {/* Health Modal */}
+        <HealthModal
+          visible={showHealthModal}
+          onClose={() => setShowHealthModal(false)}
+          mascotHealth={profile?.mascotHealth || 0}
+          simpleSchedule={simpleSchedule ? {
+            runsPerWeek: simpleSchedule.runsPerWeek,
+            preferredDays: simpleSchedule.preferredDays,
+            isActive: simpleSchedule.isActive,
+          } : null}
         />
 
         {/* Debug Modal */}
@@ -949,58 +1008,6 @@ export default function HomeScreen() {
               <TouchableOpacity
                 style={styles.debugButton}
                 onPress={() => {
-                  // Show training plan info
-                  const planInfo = trainingPlan ? `Active plan: ${trainingPlan.meta.goal} (${trainingPlan.meta.weeks} weeks)` : 'No active plan';
-                  const workoutsInfo = `Planned workouts: ${plannedWorkouts?.length || 0}`;
-                  const todaysWorkout = plannedWorkouts?.find(w => w.scheduledDate === new Date().toISOString().split('T')[0]);
-                  const todayInfo = todaysWorkout ? `Today: Planned workout (${todaysWorkout.status})` : 'No workout today';
-
-                  Alert.alert(
-                    'Training Plan Status',
-                    `${planInfo}\n${workoutsInfo}\n${todayInfo}`,
-                    [{ text: 'OK' }]
-                  );
-                }}
-              >
-                <Text style={styles.debugButtonText}>📋 Training Plan Info</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.debugButton}
-                onPress={() => {
-                  // Trigger run celebration with last activity
-                  const lastActivity = activities?.[0];
-                  if (lastActivity) {
-                    // Mock some rewards data for testing
-                    const mockRewards = {
-                      distanceGained: lastActivity.distance,
-                      coinsGained: Math.floor(lastActivity.distance / 100),
-                      leveledUp: Math.random() > 0.7, // 30% chance of level up for demo
-                      newLevel: (profile?.level || 1) + 1,
-                      oldLevel: profile?.level || 1,
-                      challengesUnlocked: [],
-                    };
-
-                    setRunCelebrationData({
-                      runData: lastActivity,
-                      rewards: mockRewards,
-                      isInitialSync: false // Not an initial sync for debug
-                    });
-
-                    setShowDebugModal(false);
-                    setShowRunCelebrationModal(true);
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                  } else {
-                    Alert.alert('No Activities', 'No activities found to celebrate!');
-                  }
-                }}
-              >
-                <Text style={styles.debugButtonText}>🎉 Test Run Celebration</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.debugButton}
-                onPress={() => {
                   setShowDebugModal(false);
                   setShowRestCelebrationModal(true);
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -1011,72 +1018,48 @@ export default function HomeScreen() {
 
               <TouchableOpacity
                 style={styles.debugButton}
-                onPress={async () => {
-                  try {
-                    const { default: DatabaseStravaService } = await import('@/services/DatabaseStravaService');
-                    const stravaService = new DatabaseStravaService(convex);
+                onPress={() => {
+                  if (activities && activities.length > 0) {
+                    const lastRun = activities[0]; // Most recent activity
+                    const mockRewards = {
+                      distanceGained: lastRun.distance,
+                      coinsGained: Math.floor(lastRun.distance / 1000) * 10, // 10 coins per km
+                      leveledUp: false,
+                      challengesUnlocked: [],
+                    };
 
-                    const debugInfo = await stravaService.debugAuthenticationStatus();
+                    setRunCelebrationData({
+                      runData: lastRun,
+                      rewards: mockRewards,
+                      isInitialSync: false
+                    });
 
-                    Alert.alert(
-                      'Strava Auth Debug',
-                      `Local Auth: ${debugInfo.localAuth}\n` +
-                      `Local Tokens Expired: ${debugInfo.localTokens.isExpired}\n` +
-                      `Local Time Until Expiry: ${debugInfo.localTokens.timeUntilExpiry}s\n\n` +
-                      `DB Auth: ${debugInfo.dbAuth}\n` +
-                      `DB Strava Sync Enabled: ${debugInfo.dbTokens.stravaSyncEnabled}\n` +
-                      `DB Tokens Expired: ${debugInfo.dbTokens.isExpired}\n` +
-                      `DB Time Until Expiry: ${debugInfo.dbTokens.timeUntilExpiry}s\n` +
-                      `DB Athlete ID: ${debugInfo.dbTokens.stravaAthleteId}`,
-                      [{ text: 'OK' }]
-                    );
-                  } catch (error) {
-                    Alert.alert('Debug Error', `Failed to get auth info: ${error}`);
+                    setShowDebugModal(false);
+                    setShowRunCelebrationModal(true);
+                    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                  } else {
+                    Alert.alert('No Runs', 'No runs found to test with');
                   }
                 }}
               >
-                <Text style={styles.debugButtonText}>🔍 Debug Strava Auth</Text>
+                <Text style={styles.debugButtonText}>🏃‍♂️ Test Run Celebration</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.debugButton}
                 onPress={async () => {
-                  Alert.alert(
-                    'Reset Strava Auth',
-                    'This will clear all Strava authentication data. You will need to reconnect to Strava. Continue?',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Reset',
-                        style: 'destructive',
-                        onPress: async () => {
-                          try {
-                            const { default: DatabaseStravaService } = await import('@/services/DatabaseStravaService');
-                            const stravaService = new DatabaseStravaService(convex);
-
-                            await stravaService.resetAuthentication();
-
-                            Alert.alert(
-                              'Reset Complete',
-                              'Strava authentication has been reset. Please go to Settings to reconnect.',
-                              [
-                                { text: 'OK' },
-                                {
-                                  text: 'Open Settings',
-                                  onPress: () => router.push('/settings')
-                                }
-                              ]
-                            );
-                          } catch (error) {
-                            Alert.alert('Reset Failed', `Failed to reset auth: ${error}`);
-                          }
-                        }
-                      }
-                    ]
-                  );
+                  try {
+                    await setSimpleSchedule({
+                      runsPerWeek: 3,
+                      preferredDays: ['Mon', 'Wed', 'Fri']
+                    });
+                    Alert.alert('Success', 'Simple training schedule created: 3 runs per week on Mon/Wed/Fri');
+                  } catch (error) {
+                    Alert.alert('Error', 'Failed to create simple schedule: ' + error);
+                  }
                 }}
               >
-                <Text style={styles.debugButtonText}>🔄 Reset Strava Auth</Text>
+                <Text style={styles.debugButtonText}>🏃‍♂️ Create Simple Schedule</Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -1126,20 +1109,6 @@ const styles = StyleSheet.create({
     width: '100%',
     backgroundColor: '#0D0C0F'
   },
-  scrollingBackgroundContainer: {
-    position: 'absolute',
-    top: -200,
-    left: 0,
-    height: '120%', // Should match original visual intent
-    width: SCROLLING_BG_LOOP_WIDTH * 2, // To hold two images side-by-side
-    flexDirection: 'row', // Arrange images horizontally
-    zIndex: 0, // Ensure it's behind other content
-  },
-  scrollingBackgroundImage: {
-    width: SCROLLING_BG_LOOP_WIDTH,
-    height: '100%',
-    resizeMode: 'cover',
-  },
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -1152,8 +1121,25 @@ const styles = StyleSheet.create({
     flexDirection: 'column',
     alignItems: 'flex-start',
   },
+  titleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
   title: {
     fontSize: 32,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  levelBadge: {
+    backgroundColor: Theme.colors.accent.primary,
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 12,
+    alignSelf: 'flex-start',
+  },
+  levelText: {
+    fontSize: 12,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
@@ -1162,24 +1148,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: Theme.spacing.xs,
     gap: 2,
-  },
-  streakContainer: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  streakIcon: {
-    width: 24,
-    height: 24,
-    marginRight: 2,
-  },
-  streakEmoji: {
-    fontSize: 20,
-    marginRight: 2,
-  },
-  streakText: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
   },
   rightHeaderSection: {
     flexDirection: 'row',
@@ -1216,11 +1184,6 @@ const styles = StyleSheet.create({
     zIndex: 1,
     position: 'relative',
   },
-  animation: {
-    width: 300,
-    height: 300,
-    margin: Theme.spacing.xl,
-  },
   selectedDayCardContainer: {
     backgroundColor: Theme.colors.background.primary,
     minHeight: 400,
@@ -1254,7 +1217,6 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.xxl,
     alignItems: 'center',
     marginHorizontal: 40,
-    ...Theme.shadows.large,
     minWidth: 280,
     borderWidth: 1,
     borderColor: Theme.colors.border.primary,
@@ -1290,12 +1252,6 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.semibold,
     textAlign: 'center',
   },
-  puffImage: {
-    position: 'absolute',
-    width: 250,
-    height: 250,
-    zIndex: 10,
-  },
   blazeImage: {
     position: 'absolute',
     width: 350,
@@ -1310,5 +1266,15 @@ const styles = StyleSheet.create({
     borderRadius: '100%',
     bottom: 40,
     zIndex: 5,
+  },
+  loadingContainer: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  loadingText: {
+    fontSize: 16,
+    color: Theme.colors.text.tertiary,
   },
 });
