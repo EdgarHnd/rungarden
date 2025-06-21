@@ -1,3 +1,6 @@
+import { ActivityCard } from '@/components/ActivityCard';
+import { ActivityGrid } from '@/components/ActivityGrid';
+import { MonthHeader } from '@/components/MonthHeader';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useConvexAuth, useQuery } from "convex/react";
@@ -6,6 +9,7 @@ import { router } from 'expo-router';
 import React from 'react';
 import {
   ActivityIndicator,
+  Alert,
   RefreshControl,
   SafeAreaView,
   SectionList,
@@ -45,18 +49,29 @@ export default function ProgressScreen() {
   });
 
   const profile = useQuery(api.userProfile.getOrCreateProfile);
-  const stats = useQuery(api.activities.getActivityStats, { days: 365 });
   const trainingPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
-  const plannedWorkouts = useQuery(api.trainingPlan.getPlannedWorkouts, {
-    startDate: new Date(Date.now() - 180 * 24 * 60 * 60 * 1000).toISOString().split('T')[0],
-    endDate: new Date(Date.now() + 185 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]
-  });
+  const simpleSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
   const completedWorkouts: any[] = [];
   const isMetric = (profile?.metricSystem ?? 'metric') === 'metric';
 
   const handleRefresh = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+  };
+
+  const handleStartNowPress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // Check if we're in development mode
+    if (__DEV__) {
+      router.push('/manage-plan');
+    } else {
+      Alert.alert(
+        'Coming Soon',
+        'Training plan generation is coming soon! Stay tuned for updates.',
+        [{ text: 'OK', style: 'default' }]
+      );
+    }
   };
 
   const formatDistance = (kilometers: number) => {
@@ -109,118 +124,6 @@ export default function ProgressScreen() {
       'just-run-more': 'Get Fit'
     };
     return names[goal] || goal;
-  };
-
-  const formatDateRange = (start: Date, end: Date) => {
-    const startDate = new Date(start);
-    const endDate = new Date(end);
-
-    const startFormatted = startDate.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric'
-    });
-    const endFormatted = endDate.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric'
-    });
-
-    return `${startFormatted.toUpperCase()} - ${endFormatted.toUpperCase()}`;
-  };
-
-  const calculateDurationFromSteps = (steps?: Array<{ duration?: string;[key: string]: any; }>): number => {
-    if (!steps || steps.length === 0) return 30;
-
-    const durations = steps.map(step => step.duration).filter(Boolean);
-    if (durations.length === 0) return 30;
-
-    const totalMinutes = durations.reduce((sum, duration) => {
-      const match = duration!.match(/(\d+)\s*min/);
-      return sum + (match ? parseInt(match[1]) : 0);
-    }, 0);
-
-    return totalMinutes > 0 ? totalMinutes : 30;
-  };
-
-  const calculateDistanceFromSteps = (steps?: Array<{ distance?: number;[key: string]: any; }>): number => {
-    if (!steps || steps.length === 0) return 0;
-
-    const totalDistance = steps.reduce((sum, step) => sum + (step.distance || 0), 0);
-    return totalDistance / 1000; // Convert meters to km
-  };
-
-  const calculateWeekSummaries = (): WeekSummary[] => {
-    if (!trainingPlan?.plan || !plannedWorkouts) return [];
-
-    const weekSummaries: WeekSummary[] = [];
-
-    trainingPlan.plan.forEach((planWeek) => {
-      const weekWorkouts = plannedWorkouts.filter(workout => {
-        return planWeek.days.some(day => day.date === workout.scheduledDate);
-      });
-
-      const firstWorkoutDate = weekWorkouts.length > 0
-        ? new Date(weekWorkouts[0].scheduledDate)
-        : new Date();
-
-      const weekStart = new Date(firstWorkoutDate);
-      weekStart.setDate(firstWorkoutDate.getDate() - firstWorkoutDate.getDay());
-
-      const weekEnd = new Date(weekStart);
-      weekEnd.setDate(weekStart.getDate() + 6);
-
-      const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-
-      const workouts = planWeek.days
-        .map(day => {
-          const scheduledWorkout = weekWorkouts.find(w =>
-            w.scheduledDate === day.date
-          );
-
-          const workoutDate = new Date(`${day.date}T00:00:00`);
-
-          let workoutType, workoutDescription, distance, duration;
-
-          if (scheduledWorkout && (scheduledWorkout as any).workout) {
-            const enrichedWorkout = (scheduledWorkout as any).workout;
-            workoutType = enrichedWorkout.type || day.type;
-            workoutDescription = enrichedWorkout.description || day.description;
-            distance = calculateDistanceFromSteps(enrichedWorkout.steps);
-            duration = calculateDurationFromSteps(enrichedWorkout.steps);
-          } else {
-            workoutType = day.type;
-            workoutDescription = day.description;
-            distance = day.type === 'long' ? 5.0 : day.type === 'easy' ? 3.0 : day.type === 'tempo' ? 4.0 : 0;
-            duration = day.type === 'long' ? 45 : day.type === 'easy' ? 30 : day.type === 'tempo' ? 35 : day.type === 'interval' ? 40 : 20;
-          }
-
-          return {
-            day: dayNames[workoutDate.getDay()],
-            date: day.date,
-            displayDate: workoutDate.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }),
-            type: workoutType,
-            distance,
-            duration: `${duration}m`,
-            description: workoutDescription,
-            completed: completedWorkouts?.some(c =>
-              new Date(c._creationTime).toDateString() === workoutDate.toDateString()
-            )
-          };
-        })
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-      const totalWorkouts = workouts.length;
-      const totalDistance = workouts.reduce((sum, w) => sum + w.distance, 0);
-
-      weekSummaries.push({
-        weekNumber: planWeek.week,
-        dateRange: formatDateRange(weekStart, weekEnd),
-        totalWorkouts,
-        totalDistance: Math.round(totalDistance * 10) / 10,
-        workouts
-      });
-    });
-
-    return weekSummaries;
   };
 
   const calculateOverallProgress = () => {
@@ -278,11 +181,60 @@ export default function ProgressScreen() {
     return `${monthNames[normalizedMonth]} ${year}`;
   };
 
-  const currentMonthActivities = getActivitiesForMonth(0);
-  const currentMonthDistance = getMonthlyDistance(0);
-  const weekSummaries = calculateWeekSummaries();
+  // Generate dynamic sections based on months that have activities
+  const generateDynamicSections = () => {
+    if (!activitiesForYear || activitiesForYear.length === 0) return [];
+
+    // Get unique months from activities
+    const monthsWithActivities = new Set<string>();
+    activitiesForYear.forEach(activity => {
+      const activityDate = new Date(activity.startDate);
+      const monthKey = `${activityDate.getFullYear()}-${activityDate.getMonth()}`;
+      monthsWithActivities.add(monthKey);
+    });
+
+    // Convert to array and sort by date (newest first)
+    const sortedMonths = Array.from(monthsWithActivities)
+      .map(monthKey => {
+        const [year, month] = monthKey.split('-').map(Number);
+        return { year, month, monthKey };
+      })
+      .sort((a, b) => {
+        if (a.year !== b.year) return b.year - a.year;
+        return b.month - a.month;
+      });
+
+    // Generate sections for each month with activities
+    return sortedMonths.map(({ year, month }) => {
+      const currentYear = new Date().getFullYear();
+      const currentMonth = new Date().getMonth();
+
+      // Calculate month offset
+      const monthOffset = (year - currentYear) * 12 + (month - currentMonth);
+
+      const activities = getActivitiesForMonth(monthOffset);
+      const distance = getMonthlyDistance(monthOffset);
+
+      // Generate title
+      let title: string;
+      if (year === currentYear && month === currentMonth) {
+        title = 'This Month';
+      } else {
+        title = getMonthName(monthOffset);
+      }
+
+      return {
+        title,
+        distance: formatDistance(distance),
+        runCount: activities.length,
+        data: activities,
+      };
+    });
+  };
+
   const progress = calculateOverallProgress();
   const planName = trainingProfile ? `${getGoalDisplayName(trainingProfile.goalDistance)} Plan` : '';
+  const sections = generateDynamicSections();
 
   // Loading state
   if (!isAuthenticated || activitiesForYear === undefined || profile === undefined) {
@@ -328,34 +280,6 @@ export default function ProgressScreen() {
     );
   }
 
-  // Prepare sections for SectionList
-  const sections = [
-    {
-      title: 'This Month',
-      distance: formatDistance(currentMonthDistance),
-      runCount: currentMonthActivities.length,
-      data: currentMonthActivities,
-    },
-    {
-      title: getMonthName(-1),
-      distance: formatDistance(getMonthlyDistance(-1)),
-      runCount: getActivitiesForMonth(-1).length,
-      data: getActivitiesForMonth(-1),
-    },
-    {
-      title: getMonthName(-2),
-      distance: formatDistance(getMonthlyDistance(-2)),
-      runCount: getActivitiesForMonth(-2).length,
-      data: getActivitiesForMonth(-2),
-    },
-    {
-      title: getMonthName(-3),
-      distance: formatDistance(getMonthlyDistance(-3)),
-      runCount: getActivitiesForMonth(-3).length,
-      data: getActivitiesForMonth(-3),
-    },
-  ];
-
   return (
     <SafeAreaView style={styles.container}>
       <SectionList
@@ -393,15 +317,6 @@ export default function ProgressScreen() {
             <View style={styles.pageHeader}>
               <View style={styles.headerContainer}>
                 <Text style={styles.headerTitle}>Progress</Text>
-                <TouchableOpacity
-                  style={styles.editButton}
-                  onPress={() => {
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    router.push('/manage-plan');
-                  }}
-                >
-                  <Text style={styles.editButtonText}>edit</Text>
-                </TouchableOpacity>
               </View>
             </View>
 
@@ -411,16 +326,36 @@ export default function ProgressScreen() {
                 <TouchableOpacity onPress={() => router.push('/training')}>
                   <View style={styles.overviewCard}>
                     <View style={styles.overviewHeader}>
-                      <View>
+                      <View style={styles.planInfo}>
                         <Text style={styles.planTitle}>{planName}</Text>
+                      </View>
+
+                      {/* Manage Plan Button at top right */}
+                      <TouchableOpacity
+                        style={styles.inCardButton}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          router.push('/manage-plan');
+                        }}
+                      >
+                        <Text style={styles.inCardButtonText}>View Plan</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.statsRow}>
+                      <View style={styles.statItem}>
                         {trainingProfile.goalDistance !== 'just-run-more' && trainingProfile.goalDate && (
-                          <Text style={styles.trialText}>
-                            Race Day: {new Date(trainingProfile.goalDate).toLocaleDateString('en-US', {
-                              month: 'short',
-                              day: 'numeric',
-                              year: 'numeric'
-                            }).toUpperCase()}
-                          </Text>
+                          <View>
+                            <Text style={styles.statLabel}>Race Day</Text>
+                            <Text style={styles.statValue}>
+                              {new Date(trainingProfile.goalDate).toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              }).toUpperCase()}
+                            </Text>
+                          </View>
                         )}
                       </View>
                       <View style={styles.statItem}>
@@ -431,22 +366,72 @@ export default function ProgressScreen() {
                   </View>
                 </TouchableOpacity>
               </View>
+            ) : simpleSchedule && simpleSchedule.isActive ? (
+              <View style={styles.trainingPlanContainer}>
+                <TouchableOpacity onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/manage-schedule');
+                }}>
+                  <View style={styles.overviewCard}>
+                    <View style={styles.overviewHeader}>
+                      <View style={styles.planInfo}>
+                        <Text style={styles.planTitle}>Basic Training</Text>
+                      </View>
+
+                      {/* Manage Schedule Button at top right */}
+                      <TouchableOpacity
+                        style={styles.inCardButton}
+                        onPress={(e) => {
+                          e.stopPropagation();
+                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                          router.push('/manage-schedule');
+                        }}
+                      >
+                        <Text style={styles.inCardButtonText}>Manage Schedule</Text>
+                      </TouchableOpacity>
+                    </View>
+
+                    <View style={styles.statsRow}>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>Runs per week</Text>
+                        <Text style={styles.statValue}>{simpleSchedule.runsPerWeek}</Text>
+                      </View>
+                      <View style={styles.statItem}>
+                        <Text style={styles.statLabel}>Preferred Days</Text>
+                        <Text style={styles.statValue}>{simpleSchedule.preferredDays.join(', ')}</Text>
+                      </View>
+                    </View>
+                  </View>
+                </TouchableOpacity>
+
+                {/* Start Custom Training Plan button outside */}
+                <TouchableOpacity
+                  style={styles.actionButton}
+                  onPress={handleStartNowPress}
+                >
+                  <Text style={styles.actionButtonText}>Start Custom Training Plan</Text>
+                </TouchableOpacity>
+              </View>
             ) : (
               <View style={styles.trainingPlanContainer}>
                 <View style={styles.trainingPlanCard}>
-                  <Text style={styles.trainingPlanText}>No custom training plan</Text>
+                  <Text style={styles.trainingPlanText}>No training schedule</Text>
                   <TouchableOpacity
                     style={styles.generateButton}
-                    onPress={() => {
-                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                      router.push('/manage-plan');
-                    }}
+                    onPress={handleStartNowPress}
                   >
-                    <Text style={styles.generateButtonText}>Generate Now</Text>
+                    <Text style={styles.generateButtonText}>Start Now</Text>
                   </TouchableOpacity>
                 </View>
               </View>
             )}
+
+            {/* GitHub-style Activity Grid */}
+            <View style={styles.activityGridContainer}>
+              <Text style={styles.activityGridTitle}>Activity Overview</Text>
+              <ActivityGrid activities={activitiesForYear || []} profile={profile} />
+
+            </View>
           </>
         )}
         refreshControl={
@@ -457,7 +442,7 @@ export default function ProgressScreen() {
           />
         }
         showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: Theme.spacing.xxxl }}
+        contentContainerStyle={{ paddingBottom: 100 }}
       />
     </SafeAreaView>
   );
@@ -535,7 +520,7 @@ const styles = StyleSheet.create({
   },
   trainingPlanContainer: {
     paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.md,
+    marginBottom: Theme.spacing.xl,
   },
   trainingPlanCard: {
     backgroundColor: Theme.colors.background.secondary,
@@ -554,27 +539,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.xxxl,
     paddingVertical: Theme.spacing.md,
     borderRadius: Theme.borderRadius.medium,
+    borderBottomWidth: 3,
+    borderBottomColor: Theme.colors.accent.secondary,
   },
   generateButtonText: {
     fontSize: 16,
     fontFamily: Theme.fonts.semibold,
     color: Theme.colors.text.primary,
-  },
-  monthHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
-  },
-  monthTitle: {
-    fontSize: 24,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-  },
-  monthDistance: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.secondary,
   },
   activitiesContainer: {
     backgroundColor: Theme.colors.background.secondary,
@@ -591,62 +562,13 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
   },
-  activityCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
-  },
-  activityHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-  },
-  activityTitleContainer: {
-    flex: 1,
-  },
-  activityType: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: 2,
-  },
-  activityDate: {
-    fontSize: 12,
-    color: Theme.colors.text.tertiary,
-    fontFamily: Theme.fonts.regular,
-  },
-  chevron: {
-    fontSize: 20,
-    color: Theme.colors.accent.primary,
-    fontFamily: Theme.fonts.medium,
-  },
-  activityStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  activityStat: {
-    alignItems: 'center',
-    flex: 1,
-  },
-  activityValue: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-  },
-  activityLabel: {
-    fontSize: 10,
-    color: Theme.colors.text.tertiary,
-    marginTop: 2,
-    fontFamily: Theme.fonts.regular,
-  },
   statValue: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
   statLabel: {
-    fontSize: 12,
+    fontSize: 14,
     color: Theme.colors.text.tertiary,
     marginTop: 4,
     fontFamily: Theme.fonts.medium,
@@ -655,24 +577,6 @@ const styles = StyleSheet.create({
     paddingTop: Theme.spacing.xl,
     paddingBottom: Theme.spacing.xl,
     paddingHorizontal: Theme.spacing.xl,
-  },
-  stickyMonthHeader: {
-    paddingHorizontal: Theme.spacing.xl,
-    backgroundColor: Theme.colors.background.primary,
-    marginBottom: Theme.spacing.md,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.background.secondary,
-  },
-  monthStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    gap: Theme.spacing.sm,
-  },
-  monthRunCount: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
   },
   activityItemWrapper: {
     paddingHorizontal: Theme.spacing.xl,
@@ -690,7 +594,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'flex-start',
-    marginBottom: Theme.spacing.xl,
+    marginBottom: Theme.spacing.lg,
   },
   planTitle: {
     fontSize: 24,
@@ -719,62 +623,51 @@ const styles = StyleSheet.create({
   statsRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
-    marginBottom: Theme.spacing.xl,
   },
   statItem: {
-    flex: 1,
     alignItems: 'center',
+  },
+  activityGridContainer: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xl,
+  },
+  activityGridTitle: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.lg,
+  },
+  actionButton: {
+    flex: 1,
+    backgroundColor: Theme.colors.accent.primary,
+    paddingVertical: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.lg,
+    borderRadius: Theme.borderRadius.medium,
+    borderBottomWidth: 3,
+    borderBottomColor: Theme.colors.accent.secondary,
+    marginTop: Theme.spacing.lg,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+  },
+  inCardButton: {
+    paddingVertical: Theme.spacing.xs,
+    paddingHorizontal: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.small,
+    borderWidth: 2,
+    borderColor: Theme.colors.background.tertiary,
+  },
+  inCardButtonText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
+  },
+  planInfo: {
+    flex: 1,
+    marginRight: Theme.spacing.md,
   },
 });
 
-const ActivityCard = ({ activity, handleActivityPress, formatDistance, formatDate, formatPace }: any) => (
-  <TouchableOpacity
-    style={styles.activityCard}
-    onPress={() => handleActivityPress(activity)}
-    activeOpacity={0.7}
-  >
-    <View style={styles.activityHeader}>
-      <View style={styles.activityTitleContainer}>
-        <Text style={styles.activityType}>{activity.workoutName || 'Running'}</Text>
-        <Text style={styles.activityDate}>{formatDate(activity.startDate)}</Text>
-      </View>
-      <Text style={styles.chevron}>›</Text>
-    </View>
-    <View style={styles.activityStats}>
-      <View style={styles.activityStat}>
-        <Text style={styles.activityValue}>
-          {formatDistance(activity.distance)}
-        </Text>
-        <Text style={styles.activityLabel}>Distance</Text>
-      </View>
-      <View style={styles.activityStat}>
-        <Text style={styles.activityValue}>{activity.duration} min</Text>
-        <Text style={styles.activityLabel}>Duration</Text>
-      </View>
-      <View style={styles.activityStat}>
-        <Text style={styles.activityValue}>{activity.calories}</Text>
-        <Text style={styles.activityLabel}>Calories</Text>
-      </View>
-      {activity.pace && (
-        <View style={styles.activityStat}>
-          <Text style={styles.activityValue}>
-            {formatPace(activity.pace)}
-          </Text>
-          <Text style={styles.activityLabel}>Pace</Text>
-        </View>
-      )}
-    </View>
-  </TouchableOpacity>
-);
-
-const MonthHeader = ({ title, distance, runCount }: { title: string, distance: string, runCount: number }) => (
-  <View style={styles.stickyMonthHeader}>
-    <View style={styles.monthHeader}>
-      <Text style={styles.monthTitle}>{title}</Text>
-      <View style={styles.monthStats}>
-        <Text style={styles.monthDistance}>{distance}</Text>
-        <Text style={styles.monthRunCount}>{runCount} runs</Text>
-      </View>
-    </View>
-  </View>
-);

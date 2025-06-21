@@ -595,7 +595,7 @@ export default function HomeScreen() {
   // Memoize week data generation to prevent unnecessary recalculations
   const weekData = useMemo(() => {
     return generateWeekData();
-  }, [activities, plannedWorkouts, weekStartDay]);
+  }, [activities, plannedWorkouts, restActivities, simpleSchedule, trainingPlan, weekStartDay]);
 
   const { weeks, allDays } = weekData;
 
