@@ -58,21 +58,11 @@ const schema = defineSchema({
   /* ────────────────────────────── onboarding */
   trainingProfiles: defineTable({
     userId: v.id("users"),
+    goalDistance: v.optional(v.string()),
+    goalDate: v.optional(v.string()),
 
-    goalDistance: v.union(
-      v.literal("5K"), v.literal("10K"), v.literal("just-run-more"),
-      v.literal("half-marathon"), v.literal("marathon")
-    ),
-    goalDate: v.string(),
-
-    currentAbility: v.union(
-      v.literal("none"), v.literal("less1min"), v.literal("1to5min"),
-      v.literal("5to10min"), v.literal("more10min")
-    ),
-    longestDistance: v.union(
-      v.literal("never"), v.literal("1to2km"), v.literal("2to4km"),
-      v.literal("5plusKm")
-    ),
+    currentAbility: v.string(),
+    longestDistance: v.string(),
 
     daysPerWeek: v.number(),                 // 2-6
     preferredDays: v.array(v.string()),      // ["Mon","Wed",…]

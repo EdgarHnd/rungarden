@@ -59,7 +59,7 @@ function AuthenticatedApp() {
         }}
       />
       <Stack.Screen
-        name="activities"
+        name="training"
         options={{
           presentation: 'card',
           gestureEnabled: true,

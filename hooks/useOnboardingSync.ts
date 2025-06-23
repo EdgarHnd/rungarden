@@ -7,6 +7,8 @@ export function useOnboardingSync() {
   // Try to get the training profile - if this succeeds, user is authenticated
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const saveTrainingProfile = useMutation(api.trainingProfile.saveOnboardingData);
+  const updateUserProfile = useMutation(api.userProfile.updateProfile);
+  const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
   const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
   const setSimpleTrainingSchedule = useMutation(api.simpleTrainingSchedule.setSimpleTrainingSchedule);
 
@@ -36,18 +38,63 @@ export function useOnboardingSync() {
           newData: onboardingData
         });
 
+        // Handle both old format (flat) and new format (separated)
+        let trainingProfileData, userProfileData;
+        
+        if (onboardingData.trainingProfile && onboardingData.userProfile) {
+          // New separated format
+          trainingProfileData = onboardingData.trainingProfile;
+          userProfileData = onboardingData.userProfile;
+        } else {
+          // Old flat format - extract only training profile fields
+          trainingProfileData = {
+            goalDistance: onboardingData.goalDistance,
+            goalDate: onboardingData.goalDate,
+            currentAbility: onboardingData.currentAbility,
+            longestDistance: onboardingData.longestDistance,
+            daysPerWeek: onboardingData.daysPerWeek,
+            preferredDays: onboardingData.preferredDays,
+            hasTreadmill: onboardingData.hasTreadmill || false,
+            preferTimeOverDistance: onboardingData.preferTimeOverDistance,
+            pushNotificationsEnabled: onboardingData.pushNotificationsEnabled,
+          };
+          userProfileData = {
+            name: onboardingData.name,
+            path: onboardingData.path,
+            metricSystem: onboardingData.metricSystem,
+            gender: onboardingData.gender,
+            age: onboardingData.age,
+          };
+        }
+
         // Save the training profile (creates new or updates existing)
-        await saveTrainingProfile(onboardingData);
+        await saveTrainingProfile(trainingProfileData);
         console.log('Training profile saved successfully', {
           action: trainingProfile !== null ? 'updated' : 'created'
         });
+
+        // Update user profile with onboarding data
+        if (userProfileData.metricSystem) {
+          await updateUserProfile({
+            metricSystem: userProfileData.metricSystem
+          });
+          console.log('User profile updated with metric system preference');
+        }
+
+        // Update push notification settings
+        if (trainingProfileData.pushNotificationsEnabled !== undefined) {
+          await updateSyncPreferences({
+            pushNotificationsEnabled: trainingProfileData.pushNotificationsEnabled
+          });
+          console.log('Push notification settings updated');
+        }
         
         // Create simple training schedule as the default system
         try {
           const simpleScheduleResult = await setSimpleTrainingSchedule({
-            runsPerWeek: onboardingData.daysPerWeek,
-            preferredDays: onboardingData.preferredDays.length > 0 
-              ? onboardingData.preferredDays 
+            runsPerWeek: trainingProfileData.daysPerWeek,
+            preferredDays: trainingProfileData.preferredDays.length > 0 
+              ? trainingProfileData.preferredDays 
               : ['Mon', 'Wed', 'Fri'] // Default if no preferred days selected
           });
           console.log('Simple training schedule created successfully:', simpleScheduleResult);
@@ -76,5 +123,5 @@ export function useOnboardingSync() {
     };
 
     syncPendingOnboardingData();
-  }, [trainingProfile, saveTrainingProfile, setSimpleTrainingSchedule]);
+  }, [trainingProfile, saveTrainingProfile, updateUserProfile, updateSyncPreferences, setSimpleTrainingSchedule]);
 } 

@@ -52,27 +52,10 @@ function classifyFitnessLevel(
 // Save onboarding data and create training profile
 export const saveOnboardingData = mutation({
   args: {
-    goalDistance: v.union(
-      v.literal("5K"), 
-      v.literal("10K"),
-      v.literal("just-run-more"),
-      v.literal("half-marathon"), 
-      v.literal("marathon")
-    ),
-    goalDate: v.string(), // ISO string
-    currentAbility: v.union(
-      v.literal("none"),
-      v.literal("less1min"),
-      v.literal("1to5min"), 
-      v.literal("5to10min"),
-      v.literal("more10min")
-    ),
-    longestDistance: v.union(
-      v.literal("never"),
-      v.literal("1to2km"),
-      v.literal("2to4km"),
-      v.literal("5plusKm")
-    ),
+    goalDistance: v.optional(v.string()),
+    goalDate: v.optional(v.string()), // ISO string
+    currentAbility: v.string(),
+    longestDistance: v.string(),
     daysPerWeek: v.number(),
     preferredDays: v.array(v.string()),
     hasTreadmill: v.boolean(),
@@ -89,9 +72,9 @@ export const saveOnboardingData = mutation({
     
     // Classify fitness level
     const fitnessLevel = classifyFitnessLevel(
-      args.goalDistance, 
-      args.longestDistance, 
-      args.currentAbility
+      args.goalDistance || "5K", 
+      args.longestDistance || "never", 
+      args.currentAbility || "none"
     );
 
     // Extract push notification setting to save to user profile
@@ -157,27 +140,10 @@ export const getTrainingProfile = query({
 // Update training profile
 export const updateTrainingProfile = mutation({
   args: {
-    goalDistance: v.optional(v.union(
-      v.literal("5K"), 
-      v.literal("10K"),
-      v.literal("just-run-more"),
-      v.literal("half-marathon"), 
-      v.literal("marathon")
-    )),
+    goalDistance: v.optional(v.string()),
     goalDate: v.optional(v.string()),
-    currentAbility: v.optional(v.union(
-      v.literal("none"),
-      v.literal("less1min"),
-      v.literal("1to5min"), 
-      v.literal("5to10min"),
-      v.literal("more10min")
-    )),
-    longestDistance: v.optional(v.union(
-      v.literal("never"),
-      v.literal("1to2km"),
-      v.literal("2to4km"),
-      v.literal("5plusKm")
-    )),
+    currentAbility: v.optional(v.string()),
+    longestDistance: v.optional(v.string()),
     daysPerWeek: v.optional(v.number()),
     preferredDays: v.optional(v.array(v.string())),
     hasTreadmill: v.optional(v.boolean()),
@@ -204,9 +170,9 @@ export const updateTrainingProfile = mutation({
     let fitnessLevel = existingProfile.fitnessLevel;
     if (args.goalDistance || args.longestDistance || args.currentAbility) {
       fitnessLevel = classifyFitnessLevel(
-        args.goalDistance || existingProfile.goalDistance,
-        args.longestDistance || existingProfile.longestDistance,
-        args.currentAbility || existingProfile.currentAbility
+        args.goalDistance || existingProfile.goalDistance || "5K",
+        args.longestDistance || existingProfile.longestDistance || "never",
+        args.currentAbility || existingProfile.currentAbility || "none"
       );
     }
 

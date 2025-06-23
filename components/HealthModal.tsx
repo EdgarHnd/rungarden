@@ -36,7 +36,7 @@ export default function HealthModal({ visible, mascotHealth, simpleSchedule, onC
           </View>
 
           <View style={styles.healthDisplay}>
-            <Image source={require('@/assets/images/blaze/blazeidle.png')} style={styles.healthMascotIcon} resizeMode="contain" />
+            <Image source={require('@/assets/images/blaze/blazelove.png')} style={styles.healthMascotIcon} resizeMode="contain" />
             <View style={styles.healthLivesDisplay}>
               {[...Array(4)].map((_, index) => {
                 const isAlive = index < mascotHealth;

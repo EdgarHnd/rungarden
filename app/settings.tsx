@@ -1232,7 +1232,7 @@ export default function SettingsScreen() {
             style={styles.section}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Linking.openURL('https://www.trykoko.app/terms');
+              Linking.openURL('https://www.blaze.run/terms');
             }}
             activeOpacity={0.7}
           >
@@ -1246,7 +1246,7 @@ export default function SettingsScreen() {
             style={styles.section}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Linking.openURL('https://www.trykoko.app/privacy');
+              Linking.openURL('https://www.blaze.run/privacy');
             }}
             activeOpacity={0.7}
           >
@@ -1260,7 +1260,7 @@ export default function SettingsScreen() {
             style={styles.section}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              Linking.openURL('mailto:support@trykoko.app');
+              Linking.openURL('mailto:support@blaze.run');
             }}
             activeOpacity={0.7}
           >

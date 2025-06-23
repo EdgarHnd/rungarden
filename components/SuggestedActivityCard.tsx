@@ -117,41 +117,6 @@ const getWorkoutDescription = (plannedWorkout: SuggestedActivity, isToday: boole
   return 'From your training plan';
 };
 
-// Helper function to calculate total duration from workout steps - deprecated, use helper instead
-const calculateDurationFromSteps = (steps?: Array<{
-  duration?: string;
-  [key: string]: any;
-}>): string | undefined => {
-  if (!steps || steps.length === 0) return undefined;
-
-  const durations = steps.map(step => step.duration).filter(Boolean);
-  if (durations.length === 0) return undefined;
-
-  // Sum up durations if they're all in minutes
-  const totalMinutes = durations.reduce((sum, duration) => {
-    const match = duration!.match(/(\d+)\s*min/);
-    return sum + (match ? parseInt(match[1]) : 0);
-  }, 0);
-
-  if (totalMinutes > 0) {
-    return `${totalMinutes} min`;
-  }
-
-  // If we can't sum them, return the first duration
-  return durations[0];
-};
-
-// Helper function to calculate total distance from workout steps - deprecated, use helper instead
-const calculateDistanceFromSteps = (steps?: Array<{
-  distance?: number;
-  [key: string]: any;
-}>): number | undefined => {
-  if (!steps || steps.length === 0) return undefined;
-
-  const totalDistance = steps.reduce((sum, step) => sum + (step.distance || 0), 0);
-  return totalDistance > 0 ? totalDistance : undefined;
-};
-
 export default function SuggestedActivityCard({
   plannedWorkout,
   weeklyProgress = 5.2,

@@ -233,7 +233,7 @@ export default function ProgressScreen() {
   };
 
   const progress = calculateOverallProgress();
-  const planName = trainingProfile ? `${getGoalDisplayName(trainingProfile.goalDistance)} Plan` : '';
+  const planName = trainingProfile ? `${getGoalDisplayName(trainingProfile.goalDistance || '5K')} Plan` : '';
   const sections = generateDynamicSections();
 
   // Loading state
@@ -339,7 +339,7 @@ export default function ProgressScreen() {
                           router.push('/manage-plan');
                         }}
                       >
-                        <Text style={styles.inCardButtonText}>View Plan</Text>
+                        <Text style={styles.inCardButtonText}>View</Text>
                       </TouchableOpacity>
                     </View>
 
@@ -387,7 +387,7 @@ export default function ProgressScreen() {
                           router.push('/manage-schedule');
                         }}
                       >
-                        <Text style={styles.inCardButtonText}>Manage Schedule</Text>
+                        <Text style={styles.inCardButtonText}>Manage</Text>
                       </TouchableOpacity>
                     </View>
 

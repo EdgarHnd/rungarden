@@ -6,52 +6,54 @@ import { makeRedirectUri } from "expo-auth-session";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { openAuthSessionAsync } from "expo-web-browser";
-import React, { useState } from 'react';
+import React, { useRef, useState } from 'react';
 import {
   Alert,
   Animated,
   Dimensions,
+  Image,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View
 } from 'react-native';
-import DatePicker from 'react-native-date-picker';
 
 const redirectTo = makeRedirectUri();
 const { width: screenWidth } = Dimensions.get('window');
 
 interface OnboardingData {
-  goalDistance: '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon' | null;
-  targetDate: Date | null;
+  name: string | null;
+  path: 'light-spark' | 'keep-fire' | 'run-melt' | 'race-ready' | null;
   currentAbility: 'none' | 'less1min' | '1to5min' | '5to10min' | 'more10min' | null;
-  longestDistance: 'never' | '1to2km' | '2to4km' | '5plusKm' | null;
   daysPerWeek: number;
   preferredDays: string[];
-  hasTreadmill: boolean | null;
   preferTimeOverDistance: boolean | null;
+  metricSystem: 'metric' | 'imperial' | null;
+  gender: 'female' | 'male' | 'other' | null;
+  age: number | null;
   pushNotificationsEnabled: boolean | null;
 }
 
-const TOTAL_STEPS = 9;
+const TOTAL_STEPS = 12;
 
 export default function OnboardingScreen() {
   const { signIn } = useAuthActions();
   const router = useRouter();
   const [currentStep, setCurrentStep] = useState(0);
   const [slideAnim] = useState(new Animated.Value(0));
-  const [datePickerOpen, setDatePickerOpen] = useState(false);
+  const nameInputRef = useRef<TextInput>(null);
   const [data, setData] = useState<OnboardingData>({
-    goalDistance: null,
-    targetDate: null,
+    name: null,
+    path: null,
     currentAbility: null,
-    longestDistance: null,
     daysPerWeek: 3,
     preferredDays: [],
-    hasTreadmill: null,
     preferTimeOverDistance: null,
+    metricSystem: null,
+    gender: null,
+    age: null,
     pushNotificationsEnabled: null,
   });
 
@@ -61,6 +63,11 @@ export default function OnboardingScreen() {
 
   const nextStep = () => {
     if (currentStep < TOTAL_STEPS - 1) {
+      // Blur the name input if we're leaving the name step
+      if (currentStep === 1 && nameInputRef.current) {
+        nameInputRef.current.blur();
+      }
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       Animated.timing(slideAnim, {
         toValue: currentStep + 1,
@@ -71,86 +78,90 @@ export default function OnboardingScreen() {
     }
   };
 
-  const prevStep = () => {
-    if (currentStep > 0) {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-      Animated.timing(slideAnim, {
-        toValue: currentStep - 1,
-        duration: 300,
-        useNativeDriver: true,
-      }).start();
-      setCurrentStep(currentStep - 1);
+  const handleSelection = (updateFn: () => void) => {
+    updateFn();
+    // Auto-advance for most steps, except name (1), path (2), days per week (4), and preferred days (5)
+    if (currentStep !== 1 && currentStep !== 2 && currentStep !== 4 && currentStep !== 5) {
+      setTimeout(() => {
+        nextStep();
+      }, 300); // Small delay for visual feedback
     }
   };
 
   const canProceed = () => {
     switch (currentStep) {
-      case 0: return true; // Welcome step
-      case 1: return data.goalDistance !== null;
-      case 2: return data.targetDate !== null;
-      case 3: return data.currentAbility !== null;
-      case 4: return data.longestDistance !== null;
-      case 5: return data.daysPerWeek >= 2;
-      case 6: return true; // Preferences are optional
-      case 7: return data.pushNotificationsEnabled !== null;
-      case 8: return true; // Auth step
+      case 0: return true; // Welcome
+      case 1: return data.name !== null && data.name.trim() !== ''; // Name
+      case 2: return data.path !== null; // Path
+      case 3: return data.currentAbility !== null; // Current ability
+      case 4: return data.daysPerWeek >= 1; // Days per week
+      case 5: return data.preferredDays.length >= data.daysPerWeek; // Preferred days
+      case 6: return data.preferTimeOverDistance !== null; // Workout style
+      case 7: return data.metricSystem !== null; // Units
+      case 8: return data.gender !== null; // Gender
+      case 9: return data.age !== null; // Age
+      case 10: return data.pushNotificationsEnabled !== null; // Notifications
+      case 11: return true; // Auth step
       default: return false;
     }
   };
 
   const saveOnboardingDataToStorage = async () => {
-    console.log('[Onboarding] Saving onboarding data to storage...', data);
-
-    if (!data.goalDistance || !data.targetDate || !data.currentAbility ||
-      !data.longestDistance || data.hasTreadmill === null ||
-      data.preferTimeOverDistance === null || data.pushNotificationsEnabled === null) {
-      console.error('[Onboarding] Missing required onboarding data:', {
-        goalDistance: data.goalDistance,
-        targetDate: data.targetDate,
-        currentAbility: data.currentAbility,
-        longestDistance: data.longestDistance,
-        hasTreadmill: data.hasTreadmill,
-        preferTimeOverDistance: data.preferTimeOverDistance,
-        pushNotificationsEnabled: data.pushNotificationsEnabled,
-      });
-      return;
-    }
-
     try {
-      const onboardingData = {
-        goalDistance: data.goalDistance,
-        goalDate: data.targetDate.toISOString(),
+      // Map onboarding goalDistance to training profile format
+      let mappedGoalDistance: '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon' = '5K'; // Default to 5K
+
+      // Map currentAbility to longestDistance for training profile
+      let longestDistance: 'never' | '1to2km' | '2to4km' | '5plusKm' = 'never';
+      if (data.currentAbility === 'none') {
+        longestDistance = 'never';
+      } else if (data.currentAbility === 'less1min' || data.currentAbility === '1to5min') {
+        longestDistance = '1to2km';
+      } else if (data.currentAbility === '5to10min') {
+        longestDistance = '2to4km';
+      } else if (data.currentAbility === 'more10min') {
+        longestDistance = '5plusKm';
+      }
+
+      // Separate training profile data from user profile data
+      const trainingProfileData = {
+        goalDistance: mappedGoalDistance,
+        goalDate: undefined,
         currentAbility: data.currentAbility,
-        longestDistance: data.longestDistance,
+        longestDistance,
         daysPerWeek: data.daysPerWeek,
         preferredDays: data.preferredDays,
-        hasTreadmill: data.hasTreadmill,
+        hasTreadmill: false, // Default value
         preferTimeOverDistance: data.preferTimeOverDistance,
         pushNotificationsEnabled: data.pushNotificationsEnabled,
       };
 
+      const userProfileData = {
+        name: data.name,
+        path: data.path,
+        metricSystem: data.metricSystem,
+        gender: data.gender,
+        age: data.age,
+      };
+
+      const onboardingData = {
+        trainingProfile: trainingProfileData,
+        userProfile: userProfileData,
+      };
+
       await AsyncStorage.setItem('pendingOnboardingData', JSON.stringify(onboardingData));
-      console.log('[Onboarding] Onboarding data saved to storage successfully:', onboardingData);
     } catch (error) {
-      console.error('[Onboarding] Failed to save onboarding data to storage:', error);
+      console.error('Failed to save onboarding data:', error);
     }
   };
 
   const handleGoogleSignIn = async () => {
     try {
-      console.log('[Onboarding] Google sign-in triggered');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      // Save onboarding data to storage first
-      console.log('[Onboarding] About to save onboarding data...');
       await saveOnboardingDataToStorage();
       const { redirect } = await signIn("google", { redirectTo });
-
-      if (Platform.OS === "web") {
-        return;
-      }
-
+      if (Platform.OS === "web") return;
       const result = await openAuthSessionAsync(redirect!.toString(), redirectTo);
-
       if (result.type === "success") {
         const { url } = result;
         const code = new URL(url).searchParams.get("code")!;
@@ -159,73 +170,84 @@ export default function OnboardingScreen() {
       }
     } catch (error) {
       console.error("Google sign in error:", error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", "Failed to sign in with Google");
     }
   };
 
   const handleAppleSignIn = async () => {
     try {
-      console.log('[Onboarding] Apple sign-in triggered');
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      // Save onboarding data to storage first
-      console.log('[Onboarding] About to save onboarding data...');
       await saveOnboardingDataToStorage();
       await signIn("apple");
       router.replace('/(app)');
     } catch (error) {
       console.error("Apple sign in error:", error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert("Error", "Failed to sign in with Apple");
     }
   };
 
   const renderProgressBar = () => (
     <View style={styles.topRow}>
-      {currentStep > 0 ? (
-        <TouchableOpacity onPress={prevStep} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={24} color={Theme.colors.text.primary} />
-        </TouchableOpacity>
-      ) : (
-        <View style={styles.backButtonPlaceholder} />
-      )}
-      {currentStep > 0 && (
+      <View style={styles.backButtonPlaceholder} />
+      {currentStep > 0 && currentStep < TOTAL_STEPS - 1 && (
         <View style={styles.progressBarContainer}>
           <View style={styles.progressBar}>
-            <View
-              style={[
-                styles.progressFill,
-                { width: `${(currentStep / (TOTAL_STEPS - 1)) * 100}%` }
-              ]}
-            />
+            <View style={[styles.progressFill, { width: `${(currentStep / (TOTAL_STEPS - 2)) * 100}%` }]} />
           </View>
         </View>
       )}
     </View>
   );
 
+  const renderName = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.blazeContainer}>
+        <Image source={require('@/assets/images/blaze/blazeidle.png')} style={styles.blazeImage} resizeMode="contain" />
+      </View>
+
+      <View style={styles.nameContent}>
+        <TextInput
+          ref={nameInputRef}
+          style={styles.nameInput}
+          placeholder="Enter name"
+          placeholderTextColor={Theme.colors.text.tertiary}
+          value={data.name || ''}
+          onChangeText={(text) => updateData({ name: text })}
+          returnKeyType="done"
+          onSubmitEditing={() => {
+            if (canProceed()) {
+              handleSelection(() => { });
+            }
+          }}
+        />
+      </View>
+    </View>
+  );
+
   const renderHeader = () => {
     const getStepInfo = () => {
       switch (currentStep) {
-        case 0: return { title: 'Welcome to Koko', subtitle: 'Your personal running companion' };
-        case 1: return { title: '🎯 What\'s your goal?', subtitle: 'Choose the distance you want to work towards' };
-        case 2: return { title: '📅 When\'s your target date?', subtitle: 'This helps us pace your training properly' };
-        case 3: return { title: '🏃‍♀️ How long can you run now?', subtitle: 'Be honest - this helps us start at the right level' };
-        case 4: return { title: '📏 Longest distance recently?', subtitle: 'What\'s the furthest you\'ve run in the past month?' };
-        case 5: return { title: '📅 Training schedule', subtitle: 'How many days per week can you train?' };
-        case 6: return { title: '⚙️ Training preferences', subtitle: 'These help us customize your workouts (optional)' };
-        case 7: return { title: '🔔 Stay motivated!', subtitle: 'Get notified when it\'s time to run and track progress' };
-        case 8: return { title: '🎉 Almost there!', subtitle: 'Sign in to save your personalized training plan' };
-        default: return { title: 'Welcome to Koko', subtitle: 'Let\'s create your perfect training plan' };
+        case 0: return { title: '', subtitle: '' };
+        case 1: return { title: 'What should we call your flame?', subtitle: '' };
+        case 2: return { title: 'Choose your path', subtitle: '' };
+        case 3: return { title: 'How long can you run?', subtitle: '' };
+        case 4: return { title: 'How many days per week?', subtitle: '' };
+        case 5: return { title: 'Preferred training days', subtitle: '' };
+        case 6: return { title: 'Workout style', subtitle: '' };
+        case 7: return { title: 'Units', subtitle: '' };
+        case 8: return { title: 'Gender', subtitle: '' };
+        case 9: return { title: 'Age', subtitle: '' };
+        case 10: return { title: 'Notifications', subtitle: '' };
+        case 11: return { title: 'Save your progress', subtitle: '' };
+        default: return { title: '', subtitle: '' };
       }
     };
-
     const stepInfo = getStepInfo();
-
+    if (currentStep === 0) return null;
     return (
       <View style={styles.header}>
         <Text style={styles.headerTitle}>{stepInfo.title}</Text>
-        <Text style={styles.headerSubtitle}>{stepInfo.subtitle}</Text>
+        {stepInfo.subtitle && <Text style={styles.headerSubtitle}>{stepInfo.subtitle}</Text>}
       </View>
     );
   };
@@ -233,303 +255,171 @@ export default function OnboardingScreen() {
   const renderWelcome = () => (
     <View style={styles.stepContainer}>
       <View style={styles.welcomeContainer}>
-        <View style={styles.welcomeHero}>
-          <Text style={styles.welcomeEmoji}>🏃‍♀️</Text>
-          <Text style={styles.welcomeMessage}>
-            Ready to start your running journey? We'll create a personalized training plan just for you.
-          </Text>
+        <View style={styles.blazeContainer}>
+          <Image source={require('@/assets/images/blaze/blazeruncycle.gif')} style={styles.blazeGif} resizeMode="contain" />
         </View>
-
-        <View style={styles.welcomeFeatures}>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>🎯</Text>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Personalized Plans</Text>
-              <Text style={styles.featureDescription}>Tailored to your current fitness level and goals</Text>
-            </View>
-          </View>
-
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>📈</Text>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Progress Tracking</Text>
-              <Text style={styles.featureDescription}>Watch your endurance and speed improve over time</Text>
-            </View>
-          </View>
-
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>🏆</Text>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Achieve Your Goals</Text>
-              <Text style={styles.featureDescription}>From 5K to 10K and beyond</Text>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.welcomeFooter}>
-          <Text style={styles.welcomeFooterText}>
-            Let's get started with a few quick questions
-          </Text>
+        <View style={styles.welcomeContent}>
+          <Text style={styles.welcomeTitle}>Welcome to Blaze</Text>
+          <Text style={styles.welcomeSubtitle}>Your personal running companion</Text>
         </View>
       </View>
     </View>
   );
 
-  const renderGoalDistance = () => (
+  const renderChoosePath = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.goalOptionsContainer}>
+      <View style={styles.pathGridContainer}>
         {[
-          { value: 'just-run-more', title: 'Just run more', subtitle: 'Build a consistent habit', emoji: '🌱' },
-          { value: '5K', title: 'From 0 to 5K', subtitle: 'Perfect for beginners', emoji: '🏃‍♀️' },
-          { value: '10K', title: 'First 10K', subtitle: 'Ready for a challenge', emoji: '🏃‍♂️' },
-          { value: 'half-marathon', title: 'Half Marathon', subtitle: 'Coming Soon!', emoji: '🏆', disabled: true },
-          { value: 'marathon', title: 'Marathon', subtitle: 'Coming Soon!', emoji: '👑', disabled: true },
+          {
+            value: 'light-spark',
+            title: 'Light the Spark',
+            description: 'From zero to first runs',
+            image: require('@/assets/images/blaze/blazespark.png')
+          },
+          {
+            value: 'keep-fire',
+            title: 'Keep the Fire',
+            description: 'Build a lasting habit',
+            image: require('@/assets/images/blaze/blazefriends.png')
+          },
+          {
+            value: 'run-melt',
+            title: 'Run to Melt',
+            description: 'Lose weight with running',
+            image: require('@/assets/images/blaze/blazemelt.png')
+          },
+          {
+            value: 'race-ready',
+            title: 'Race Ready',
+            description: 'Train for competitions',
+            image: require('@/assets/images/blaze/blazerace.png')
+          },
         ].map((option) => (
           <TouchableOpacity
             key={option.value}
-            style={[
-              styles.goalOption,
-              data.goalDistance === option.value && styles.goalOptionSelected,
-              (option as any).disabled && styles.goalOptionDisabled,
-            ]}
+            style={[styles.pathGridOption, data.path === option.value && styles.pathGridOptionSelected]}
             onPress={() => {
-              if ((option as any).disabled) return;
-              updateData({ goalDistance: option.value as '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon' });
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              handleSelection(() => updateData({ path: option.value as any }));
             }}
-            disabled={(option as any).disabled}
           >
-            <Text style={styles.goalEmoji}>{option.emoji}</Text>
-            <View style={styles.goalContent}>
-              <Text style={styles.goalTitle}>{option.title}</Text>
-              <Text style={styles.goalSubtitle}>{option.subtitle}</Text>
+            <View style={styles.pathImageContainer}>
+              <Image source={option.image} style={styles.pathGridImage} resizeMode="cover" />
             </View>
-            {data.goalDistance === option.value && (
-              <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent.primary} />
-            )}
+            <View style={styles.pathContentContainer}>
+              <Text style={styles.pathGridTitle}>{option.title}</Text>
+              <Text style={styles.pathGridDescription}>{option.description}</Text>
+            </View>
           </TouchableOpacity>
         ))}
       </View>
     </View>
   );
-
-  const renderTargetDate = () => {
-    const today = new Date();
-    const minDate = new Date(today);
-    minDate.setDate(today.getDate() + 28); // Minimum 4 weeks from now
-
-    const formatSelectedDate = (date: Date | null) => {
-      if (!date) return 'Select your target date';
-      return date.toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-    };
-
-    const calculateWeeksFromNow = (date: Date | null) => {
-      if (!date) return '';
-      const diffTime = date.getTime() - today.getTime();
-      const diffWeeks = Math.ceil(diffTime / (1000 * 60 * 60 * 24 * 7));
-      return `(${diffWeeks} weeks from now)`;
-    };
-
-    return (
-      <View style={styles.stepContainer}>
-        <View style={styles.calendarContainer}>
-          <TouchableOpacity
-            style={[
-              styles.datePickerButton,
-              data.targetDate && styles.datePickerButtonSelected
-            ]}
-            onPress={() => {
-              setDatePickerOpen(true);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-          >
-            <View style={styles.datePickerContent}>
-              <Ionicons
-                name="calendar"
-                size={24}
-                color={data.targetDate ? Theme.colors.accent.primary : Theme.colors.text.tertiary}
-              />
-              <View style={styles.datePickerTextContainer}>
-                <Text style={[
-                  styles.datePickerText,
-                  data.targetDate && styles.datePickerTextSelected
-                ]}>
-                  {formatSelectedDate(data.targetDate)}
-                </Text>
-                {data.targetDate && (
-                  <Text style={styles.datePickerSubtext}>
-                    {calculateWeeksFromNow(data.targetDate)}
-                  </Text>
-                )}
-              </View>
-            </View>
-            <Ionicons
-              name="chevron-forward"
-              size={20}
-              color={Theme.colors.text.tertiary}
-            />
-          </TouchableOpacity>
-
-          {data.targetDate && (
-            <View style={styles.selectedDateInfo}>
-              <View style={styles.selectedDateCard}>
-                <Text style={styles.selectedDateTitle}>Training Duration</Text>
-                <Text style={styles.selectedDateValue}>
-                  {calculateWeeksFromNow(data.targetDate).replace('(', '').replace(')', '')}
-                </Text>
-              </View>
-            </View>
-          )}
-        </View>
-
-        <DatePicker
-          modal
-          open={datePickerOpen}
-          date={data.targetDate || minDate}
-          mode="date"
-          minimumDate={minDate}
-          title="Select your target date"
-          confirmText="Confirm"
-          cancelText="Cancel"
-          theme={Platform.OS === 'ios' ? 'auto' : 'light'}
-          onConfirm={(selectedDate: Date) => {
-            setDatePickerOpen(false);
-            updateData({ targetDate: selectedDate });
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          }}
-          onCancel={() => {
-            setDatePickerOpen(false);
-          }}
-        />
-      </View>
-    );
-  };
 
   const renderCurrentAbility = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.abilityContainer}>
+      <View style={styles.abilityListContainer}>
         {[
-          { value: 'none', title: 'I can\'t run yet', subtitle: 'Let\'s start from walking', emoji: '🚶‍♀️' },
-          { value: 'less1min', title: 'Less than 1 minute', subtitle: 'We\'ll build up slowly', emoji: '⏱️' },
-          { value: '1to5min', title: '1-5 minutes', subtitle: 'Good starting point', emoji: '🏃‍♀️' },
-          { value: '5to10min', title: '5-10 minutes', subtitle: 'Nice foundation', emoji: '💪' },
-          { value: 'more10min', title: '10+ minutes', subtitle: 'Strong base to build on', emoji: '🔥' },
+          { value: 'less1min', title: 'Less than 1 min' },
+          { value: '1to5min', title: '5 min without stopping' },
+          { value: '5to15min', title: '15 min without stopping' },
+          { value: '15to30min', title: '30 min without stopping' },
+          { value: 'more30min', title: 'More than 30 min' },
         ].map((option) => (
           <TouchableOpacity
             key={option.value}
-            style={[
-              styles.abilityOption,
-              data.currentAbility === option.value && styles.abilityOptionSelected
-            ]}
+            style={[styles.abilityListOption, data.currentAbility === option.value && styles.abilityListOptionSelected]}
             onPress={() => {
-              updateData({ currentAbility: option.value as any });
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              handleSelection(() => updateData({ currentAbility: option.value as any }));
             }}
           >
-            <Text style={styles.abilityEmoji}>{option.emoji}</Text>
-            <View style={styles.abilityContent}>
-              <Text style={styles.abilityTitle}>{option.title}</Text>
-              <Text style={styles.abilitySubtitle}>{option.subtitle}</Text>
-            </View>
-            {data.currentAbility === option.value && (
-              <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent.primary} />
-            )}
+            <Text style={styles.abilityListTitle}>{option.title}</Text>
           </TouchableOpacity>
         ))}
       </View>
     </View>
   );
 
-  const renderLongestDistance = () => (
+  const renderDaysPerWeek = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.distanceContainer}>
-        {[
-          { value: 'never', title: 'Never ran', subtitle: 'Starting fresh', emoji: '🌱' },
-          { value: '1to2km', title: '1-2 km', subtitle: 'Building endurance', emoji: '🌿' },
-          { value: '2to4km', title: '2-4 km', subtitle: 'Good progress', emoji: '🌳' },
-          { value: '5plusKm', title: '5+ km', subtitle: 'Strong runner', emoji: '🌲' },
-        ].map((option) => (
+      <View style={styles.daysPerWeekSection}>
+        <View style={styles.runsCounter}>
           <TouchableOpacity
-            key={option.value}
-            style={[
-              styles.distanceOption,
-              data.longestDistance === option.value && styles.distanceOptionSelected
-            ]}
+            style={[styles.counterButton, data.daysPerWeek <= 1 && styles.counterButtonDisabled]}
             onPress={() => {
-              updateData({ longestDistance: option.value as any });
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              if (data.daysPerWeek > 1) {
+                const newDays = data.daysPerWeek - 1;
+                updateData({ daysPerWeek: newDays, preferredDays: [] }); // Reset preferred days
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
             }}
+            disabled={data.daysPerWeek <= 1}
           >
-            <Text style={styles.distanceEmoji}>{option.emoji}</Text>
-            <View style={styles.distanceContent}>
-              <Text style={styles.distanceTitle}>{option.title}</Text>
-              <Text style={styles.distanceSubtitle}>{option.subtitle}</Text>
-            </View>
-            {data.longestDistance === option.value && (
-              <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent.primary} />
-            )}
+            <Ionicons
+              name="remove"
+              size={24}
+              color={data.daysPerWeek <= 1 ? Theme.colors.text.tertiary : Theme.colors.text.primary}
+            />
           </TouchableOpacity>
-        ))}
+
+          <View style={styles.counterDisplay}>
+            <Text style={styles.counterNumber}>{data.daysPerWeek}</Text>
+            <Text style={styles.counterLabel}>{data.daysPerWeek === 1 ? 'day' : 'days'}</Text>
+          </View>
+
+          <TouchableOpacity
+            style={[styles.counterButton, data.daysPerWeek >= 7 && styles.counterButtonDisabled]}
+            onPress={() => {
+              if (data.daysPerWeek < 7) {
+                updateData({ daysPerWeek: data.daysPerWeek + 1, preferredDays: [] }); // Reset preferred days
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }
+            }}
+            disabled={data.daysPerWeek >= 7}
+          >
+            <Ionicons
+              name="add"
+              size={24}
+              color={data.daysPerWeek >= 7 ? Theme.colors.text.tertiary : Theme.colors.text.primary}
+            />
+          </TouchableOpacity>
+        </View>
       </View>
     </View>
   );
 
-  const renderTrainingAvailability = () => {
-    const daysOfWeek = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
+  const renderPreferredDays = () => {
+    const daysOfWeek = [
+      { short: 'Mon', full: 'Monday' },
+      { short: 'Tue', full: 'Tuesday' },
+      { short: 'Wed', full: 'Wednesday' },
+      { short: 'Thu', full: 'Thursday' },
+      { short: 'Fri', full: 'Friday' },
+      { short: 'Sat', full: 'Saturday' },
+      { short: 'Sun', full: 'Sunday' },
+    ];
 
     return (
       <View style={styles.stepContainer}>
-        <View style={styles.daysPerWeekContainer}>
-          <Text style={styles.daysLabel}>Days per week</Text>
-          <View style={styles.daysSelector}>
-            {[2, 3, 4, 5, 6].map((days) => (
+        <View style={styles.preferredDaysSection}>
+          <Text style={styles.sectionDescription}>
+            Select {data.daysPerWeek} or more days for flexibility.
+          </Text>
+          <View style={styles.preferredDaysList}>
+            {daysOfWeek.map((day, index) => (
               <TouchableOpacity
-                key={days}
-                style={[
-                  styles.dayButton,
-                  data.daysPerWeek === days && styles.dayButtonSelected
-                ]}
+                key={index}
+                style={[styles.preferredDayOption, data.preferredDays.includes(day.short) && styles.preferredDayOptionSelected]}
                 onPress={() => {
-                  updateData({ daysPerWeek: days });
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <Text style={[
-                  styles.dayButtonText,
-                  data.daysPerWeek === days && styles.dayButtonTextSelected
-                ]}>{days}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.preferredDaysContainer}>
-          <Text style={styles.preferredDaysLabel}>Preferred days (optional)</Text>
-          <View style={styles.weekDaysContainer}>
-            {daysOfWeek.map((day) => (
-              <TouchableOpacity
-                key={day}
-                style={[
-                  styles.weekDayButton,
-                  data.preferredDays.includes(day) && styles.weekDayButtonSelected
-                ]}
-                onPress={() => {
-                  const newPreferred = data.preferredDays.includes(day)
-                    ? data.preferredDays.filter(d => d !== day)
-                    : [...data.preferredDays, day];
+                  const newPreferred = data.preferredDays.includes(day.short)
+                    ? data.preferredDays.filter(d => d !== day.short)
+                    : [...data.preferredDays, day.short];
                   updateData({ preferredDays: newPreferred });
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}
               >
-                <Text style={[
-                  styles.weekDayText,
-                  data.preferredDays.includes(day) && styles.weekDayTextSelected
-                ]}>{day}</Text>
+                <Text style={[styles.preferredDayText, data.preferredDays.includes(day.short) && styles.preferredDayTextSelected]}>
+                  {day.full}
+                </Text>
               </TouchableOpacity>
             ))}
           </View>
@@ -538,154 +428,157 @@ export default function OnboardingScreen() {
     );
   };
 
-  const renderPreferences = () => (
+  const renderWorkoutStyle = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.preferencesContainer}>
-        <View style={styles.preferenceCard}>
-          <View style={styles.preferenceHeader}>
-            <Text style={styles.preferenceEmoji}>🏃‍♀️</Text>
-            <View style={styles.preferenceContent}>
-              <Text style={styles.preferenceTitle}>Treadmill access</Text>
-              <Text style={styles.preferenceSubtitle}>Do you have access to a treadmill?</Text>
-            </View>
-          </View>
-          <View style={styles.preferenceOptions}>
-            {[
-              { value: true, label: 'Yes', color: Theme.colors.status.success },
-              { value: false, label: 'No', color: Theme.colors.status.error },
-            ].map((option) => (
-              <TouchableOpacity
-                key={option.label}
-                style={[
-                  styles.preferenceButton,
-                  data.hasTreadmill === option.value && [
-                    styles.preferenceButtonSelected,
-                    { backgroundColor: option.color }
-                  ]
-                ]}
-                onPress={() => {
-                  updateData({ hasTreadmill: option.value });
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <Text style={[
-                  styles.preferenceButtonText,
-                  data.hasTreadmill === option.value && styles.preferenceButtonTextSelected
-                ]}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+      <View style={styles.workoutStyleGrid}>
+        {[
+          { value: true, title: 'Time Based', subtitle: '20 min easy run', icon: 'time-outline' },
+          { value: false, title: 'Distance Based', subtitle: '3km easy run', icon: 'location-outline' },
+        ].map((option) => (
+          <TouchableOpacity
+            key={option.title}
+            style={[styles.workoutStyleCard, data.preferTimeOverDistance === option.value && styles.workoutStyleCardSelected]}
+            onPress={() => {
+              handleSelection(() => updateData({ preferTimeOverDistance: option.value }));
+            }}
+          >
+            <Ionicons name={option.icon as any} size={24} color={data.preferTimeOverDistance === option.value ? Theme.colors.accent.primary : Theme.colors.text.tertiary} />
+            <Text style={[styles.workoutStyleCardTitle, data.preferTimeOverDistance === option.value && styles.workoutStyleCardTitleSelected]}>{option.title}</Text>
+            <Text style={styles.workoutStyleCardSubtitle}>{option.subtitle}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
 
-        <View style={styles.preferenceCard}>
-          <View style={styles.preferenceHeader}>
-            <Text style={styles.preferenceEmoji}>⏱️</Text>
-            <View style={styles.preferenceContent}>
-              <Text style={styles.preferenceTitle}>Workout style</Text>
-              <Text style={styles.preferenceSubtitle}>Prefer time-based or distance-based?</Text>
+  const renderUnits = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.unitsGrid}>
+        {[
+          { value: 'metric', title: 'Metric', subtitle: 'km, kg, °C', icon: 'speedometer-outline' },
+          { value: 'imperial', title: 'Imperial', subtitle: 'miles, lbs, °F', icon: 'speedometer-outline' },
+        ].map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={[styles.unitCard, data.metricSystem === option.value && styles.unitCardSelected]}
+            onPress={() => {
+              handleSelection(() => updateData({ metricSystem: option.value as any }));
+            }}
+          >
+            <Ionicons name={option.icon as any} size={24} color={data.metricSystem === option.value ? Theme.colors.accent.primary : Theme.colors.text.tertiary} />
+            <Text style={[styles.unitCardTitle, data.metricSystem === option.value && styles.unitCardTitleSelected]}>{option.title}</Text>
+            <Text style={styles.unitCardSubtitle}>{option.subtitle}</Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderGender = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.genderListContainer}>
+        {[
+          { value: 'female', title: 'Female', icon: 'person-outline' },
+          { value: 'male', title: 'Male', icon: 'person-outline' },
+          { value: 'other', title: 'Other', icon: 'person-outline' },
+        ].map((option) => (
+          <TouchableOpacity
+            key={option.value}
+            style={[styles.genderListOption, data.gender === option.value && styles.genderListOptionSelected]}
+            onPress={() => {
+              handleSelection(() => updateData({ gender: option.value as any }));
+            }}
+          >
+            <View style={styles.genderListContent}>
+              <Ionicons name={option.icon as any} size={20} color={data.gender === option.value ? Theme.colors.accent.primary : Theme.colors.text.tertiary} />
+              <Text style={styles.genderListTitle}>{option.title}</Text>
             </View>
-          </View>
-          <View style={styles.preferenceOptions}>
-            {[
-              { value: true, label: 'Time-based', subtitle: '20 min easy run' },
-              { value: false, label: 'Distance', subtitle: '3km easy run' },
-            ].map((option) => (
-              <TouchableOpacity
-                key={option.label}
-                style={[
-                  styles.workoutStyleButton,
-                  data.preferTimeOverDistance === option.value && styles.workoutStyleButtonSelected
-                ]}
-                onPress={() => {
-                  updateData({ preferTimeOverDistance: option.value });
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <Text style={[
-                  styles.workoutStyleLabel,
-                  data.preferTimeOverDistance === option.value && styles.workoutStyleLabelSelected
-                ]}>{option.label}</Text>
-                <Text style={[
-                  styles.workoutStyleSubtitle,
-                  data.preferTimeOverDistance === option.value && styles.workoutStyleSubtitleSelected
-                ]}>{option.subtitle}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
+
+  const renderAge = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.ageSection}>
+        <Text style={styles.sectionTitle}>What's your age range?</Text>
+        <Text style={styles.sectionDescription}>This helps us personalize your training plan</Text>
+
+        <View style={styles.ageListContainer}>
+          {[
+            { value: 15, label: 'Under 18' },
+            { value: 20, label: '18-24' },
+            { value: 30, label: '25-34' },
+            { value: 40, label: '35-44' },
+            { value: 50, label: '45-54' },
+            { value: 60, label: '55-64' },
+            { value: 70, label: '65+' },
+            { value: 0, label: 'Prefer not to say' },
+          ].map((range) => (
+            <TouchableOpacity
+              key={range.value}
+              style={[styles.ageListOption, data.age === range.value && styles.ageListOptionSelected]}
+              onPress={() => {
+                handleSelection(() => updateData({ age: range.value }));
+              }}
+            >
+              <Text style={[styles.ageListText, data.age === range.value && styles.ageListTextSelected]}>{range.label}</Text>
+            </TouchableOpacity>
+          ))}
         </View>
       </View>
     </View>
   );
 
-  const renderPushNotifications = () => (
+  const renderNotifications = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.pushNotificationsContainer}>
-        <View style={styles.motivationFeatures}>
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>🏃‍♂️</Text>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Training Reminders</Text>
-              <Text style={styles.featureDescription}>Get notified when it's time for your next run</Text>
+      <View style={styles.notificationsSection}>
+        <View style={styles.notificationHeroSection}>
+          <Text style={styles.notificationMainTitle}>Stay motivated with notifications</Text>
+          <Text style={styles.notificationMainDescription}>Get training reminders and celebrate your progress</Text>
+        </View>
+        <View style={styles.mockNotificationContainer}>
+          <View style={styles.mockNotificationDialog}>
+            <Text style={styles.mockNotificationTitle}>"Koko" Would Like to Send You Notifications</Text>
+            <Text style={styles.mockNotificationBody}>
+              Notifications may include alerts, sounds, and icon badges. These can be configured in Settings.
+            </Text>
+            <View style={styles.mockNotificationButtons}>
+              <View style={styles.mockButtonSecondary}>
+                <Text style={styles.mockButtonSecondaryText}>Don't Allow</Text>
+              </View>
+              <View style={styles.mockButtonPrimary}>
+                <Text style={styles.mockButtonPrimaryText}>Allow</Text>
+              </View>
             </View>
           </View>
-
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>🎉</Text>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Activity Celebrations</Text>
-              <Text style={styles.featureDescription}>Celebrate your progress when new runs are synced</Text>
-            </View>
-          </View>
-
-          <View style={styles.featureItem}>
-            <Text style={styles.featureEmoji}>🏆</Text>
-            <View style={styles.featureContent}>
-              <Text style={styles.featureTitle}>Achievement Alerts</Text>
-              <Text style={styles.featureDescription}>Get notified when you unlock new milestones</Text>
-            </View>
+          <View style={styles.mockNotificationArrow}>
+            <Text style={styles.mockNotificationArrowText}>👆 Tap "Allow" when this appears</Text>
           </View>
         </View>
-
-        <View style={styles.pushNotificationsCard}>
-          <View style={styles.pushNotificationsHeader}>
-            <Text style={styles.pushNotificationsEmoji}>🔔</Text>
-            <View style={styles.pushNotificationsContent}>
-              <Text style={styles.pushNotificationsTitle}>Enable Notifications</Text>
-              <Text style={styles.pushNotificationsSubtitle}>Stay motivated and track your progress</Text>
-            </View>
-          </View>
-          <View style={styles.pushNotificationsOptions}>
-            {[
-              { value: true, label: 'Enable', color: Theme.colors.status.success },
-              { value: false, label: 'Skip', color: Theme.colors.status.error },
-            ].map((option) => (
-              <TouchableOpacity
-                key={option.label}
-                style={[
-                  styles.pushNotificationsButton,
-                  data.pushNotificationsEnabled === option.value && [
-                    styles.pushNotificationsButtonSelected,
-                    { backgroundColor: option.color }
-                  ]
-                ]}
-                onPress={() => {
-                  updateData({ pushNotificationsEnabled: option.value });
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <Text style={[
-                  styles.pushNotificationsButtonText,
-                  data.pushNotificationsEnabled === option.value && styles.pushNotificationsButtonTextSelected
-                ]}>{option.label}</Text>
-              </TouchableOpacity>
-            ))}
-          </View>
-        </View>
-
-        <View style={styles.pushNotificationsDisclaimer}>
-          <Text style={styles.pushNotificationsDisclaimerText}>
-            You can always change this setting later in the app
-          </Text>
+        <View style={styles.notificationChoiceContainer}>
+          <TouchableOpacity
+            style={[styles.notificationMainButton, data.pushNotificationsEnabled === true && styles.notificationMainButtonSelected]}
+            onPress={() => {
+              handleSelection(() => updateData({ pushNotificationsEnabled: true }));
+            }}
+          >
+            <Ionicons name="notifications" size={24} color={data.pushNotificationsEnabled === true ? Theme.colors.text.primary : Theme.colors.text.tertiary} />
+            <Text style={[styles.notificationMainButtonText, data.pushNotificationsEnabled === true && styles.notificationMainButtonTextSelected]}>
+              Enable Notifications
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.notificationSkipButton, data.pushNotificationsEnabled === false && styles.notificationSkipButtonSelected]}
+            onPress={() => {
+              handleSelection(() => updateData({ pushNotificationsEnabled: false }));
+            }}
+          >
+            <Text style={[styles.notificationSkipButtonText, data.pushNotificationsEnabled === false && styles.notificationSkipButtonTextSelected]}>
+              Skip for now
+            </Text>
+          </TouchableOpacity>
         </View>
       </View>
     </View>
@@ -693,44 +586,52 @@ export default function OnboardingScreen() {
 
   const renderAuth = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.authPreview}>
-        <View style={styles.previewCard}>
-          <Text style={styles.previewTitle}>Your Training Plan</Text>
-          <View style={styles.previewDetails}>
-            <View style={styles.previewItem}>
-              <Text style={styles.previewLabel}>Goal:</Text>
-              <Text style={styles.previewValue}>
-                {data.goalDistance === 'just-run-more' ? 'Just run more' :
-                  data.goalDistance === 'half-marathon' ? 'Half Marathon' :
-                    data.goalDistance === 'marathon' ? 'Marathon' :
-                      data.goalDistance}
-              </Text>
+      <View style={styles.authSection}>
+        <View style={styles.authHeroSection}>
+          <Text style={styles.authMainDescription}>
+            Sign in to keep your training progress and achievements synced across devices.
+          </Text>
+        </View>
+
+        <View style={styles.blazeAuthContainer}>
+          <Image source={require('@/assets/images/blaze/blazelove.png')} style={styles.blazeAuthImage} resizeMode="contain" />
+        </View>
+
+        <View style={styles.authBenefitsList}>
+          <View style={styles.authBenefitItem}>
+            <View style={styles.authBenefitCheck}>
+              <Ionicons name="checkmark" size={16} color={Theme.colors.text.primary} />
             </View>
-            <View style={styles.previewItem}>
-              <Text style={styles.previewLabel}>Training days:</Text>
-              <Text style={styles.previewValue}>{data.daysPerWeek} per week</Text>
+            <Text style={styles.authBenefitText}>Save your training progress</Text>
+          </View>
+          <View style={styles.authBenefitItem}>
+            <View style={styles.authBenefitCheck}>
+              <Ionicons name="checkmark" size={16} color={Theme.colors.text.primary} />
             </View>
-            <View style={styles.previewItem}>
-              <Text style={styles.previewLabel}>Current level:</Text>
-              <Text style={styles.previewValue}>
-                {data.currentAbility === 'none' ? 'Beginner' :
-                  data.currentAbility === 'less1min' ? 'Getting started' :
-                    data.currentAbility === '1to5min' ? 'Building base' :
-                      data.currentAbility === '5to10min' ? 'Good foundation' : 'Strong runner'}
-              </Text>
+            <Text style={styles.authBenefitText}>Sync between devices</Text>
+          </View>
+          <View style={styles.authBenefitItem}>
+            <View style={styles.authBenefitCheck}>
+              <Ionicons name="checkmark" size={16} color={Theme.colors.text.primary} />
             </View>
+            <Text style={styles.authBenefitText}>Keep your streak safe</Text>
           </View>
         </View>
-      </View>
 
-      <View style={styles.authButtons}>
-        <TouchableOpacity style={[styles.authButton, styles.googleButton]} onPress={handleGoogleSignIn}>
-          <Text style={styles.authButtonText}>Continue with Google</Text>
-        </TouchableOpacity>
+        <View style={styles.authButtonsContainer}>
+          <TouchableOpacity style={styles.appleSignInButton} onPress={handleAppleSignIn}>
+            <Ionicons name="logo-apple" size={20} color={Theme.colors.text.primary} />
+            <Text style={styles.appleSignInButtonText}>Sign in with Apple</Text>
+          </TouchableOpacity>
 
-        <TouchableOpacity style={[styles.authButton, styles.appleButton]} onPress={handleAppleSignIn}>
-          <Text style={styles.authButtonText}>Continue with Apple</Text>
-        </TouchableOpacity>
+          <TouchableOpacity style={styles.googleSignInButton} onPress={handleGoogleSignIn}>
+            <Text style={styles.googleSignInButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
+        </View>
+
+        <Text style={styles.authPrivacyText}>
+          We only use your account for authentication. Your email and personal details stay private.
+        </Text>
       </View>
     </View>
   );
@@ -739,8 +640,7 @@ export default function OnboardingScreen() {
     <View style={styles.container}>
       {renderProgressBar()}
       {renderHeader()}
-
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+      <View style={styles.content}>
         <Animated.View
           style={[
             styles.stepWrapper,
@@ -755,18 +655,20 @@ export default function OnboardingScreen() {
           ]}
         >
           {renderWelcome()}
-          {renderGoalDistance()}
-          {renderTargetDate()}
+          {renderName()}
+          {renderChoosePath()}
           {renderCurrentAbility()}
-          {renderLongestDistance()}
-          {renderTrainingAvailability()}
-          {renderPreferences()}
-          {renderPushNotifications()}
+          {renderDaysPerWeek()}
+          {renderPreferredDays()}
+          {renderWorkoutStyle()}
+          {renderUnits()}
+          {renderGender()}
+          {renderAge()}
+          {renderNotifications()}
           {renderAuth()}
         </Animated.View>
-      </ScrollView>
-
-      {currentStep < TOTAL_STEPS - 1 && (
+      </View>
+      {(currentStep === 0 || currentStep === 1 || currentStep === 2 || currentStep === 4 || currentStep === 5) && (
         <View style={styles.footer}>
           <TouchableOpacity
             style={[styles.nextButton, !canProceed() && styles.nextButtonDisabled]}
@@ -774,9 +676,8 @@ export default function OnboardingScreen() {
             disabled={!canProceed()}
           >
             <Text style={styles.nextButtonText}>
-              {currentStep === TOTAL_STEPS - 2 ? 'Complete Setup' : 'Continue'}
+              {currentStep === 0 ? 'Get Started' : 'Continue'}
             </Text>
-            <Ionicons name="chevron-forward" size={20} color={Theme.colors.text.primary} />
           </TouchableOpacity>
         </View>
       )}
@@ -819,18 +720,20 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingHorizontal: Theme.spacing.xl,
-    paddingBottom: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.md,
   },
   headerTitle: {
-    fontSize: 24,
+    fontSize: 28,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginBottom: 4,
+    marginTop: Theme.spacing.xs,
+    textAlign: 'center',
   },
   headerSubtitle: {
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
+    textAlign: 'center',
   },
   content: {
     flex: 1,
@@ -842,461 +745,575 @@ const styles = StyleSheet.create({
   stepContainer: {
     width: screenWidth,
     paddingHorizontal: Theme.spacing.xl,
+    flex: 1,
+    justifyContent: 'flex-start',
     paddingTop: Theme.spacing.lg,
   },
   welcomeContainer: {
     alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
     paddingTop: Theme.spacing.xxxl,
   },
-  welcomeHero: {
+  blazeContainer: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.xxxl * 2,
+    marginBottom: Theme.spacing.lg,
   },
-  welcomeEmoji: {
-    fontSize: 80,
-    marginBottom: Theme.spacing.xl,
+  blazeGif: {
+    width: 350,
+    height: 350,
   },
-  welcomeMessage: {
+  blazeImage: {
+    width: 200,
+    height: 200,
+  },
+  welcomeContent: {
+    alignItems: 'center',
+  },
+  welcomeTitle: {
+    fontSize: 28,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.lg,
+    textAlign: 'center',
+  },
+  welcomeSubtitle: {
     fontSize: 18,
     fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.primary,
+    color: Theme.colors.text.tertiary,
+    marginBottom: Theme.spacing.xl,
     textAlign: 'center',
-    lineHeight: 26,
+  },
+  welcomeDescription: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    lineHeight: 24,
     paddingHorizontal: Theme.spacing.lg,
   },
-  welcomeFeatures: {
-    gap: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl * 2,
-    width: '100%',
-  },
-  featureItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-  },
-  featureEmoji: {
-    fontSize: 24,
-    marginRight: Theme.spacing.lg,
-  },
-  featureContent: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
-  },
-  featureDescription: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    lineHeight: 20,
-  },
-  welcomeFooter: {
-    alignItems: 'center',
-  },
-  welcomeFooterText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.accent.primary,
-    textAlign: 'center',
-  },
-  optionsContainer: {
+  pathGridContainer: {
     flexDirection: 'row',
     flexWrap: 'wrap',
-    gap: Theme.spacing.sm,
     justifyContent: 'space-between',
-  },
-  optionCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.medium,
-    padding: Theme.spacing.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-    width: '48%',
-    minHeight: 100,
-  },
-  optionCardSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  optionCardFullWidth: {
-    width: '100%',
-  },
-  optionEmoji: {
-    fontSize: 24,
-    marginBottom: Theme.spacing.xs,
-  },
-  optionTitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 2,
-    textAlign: 'center',
-  },
-  optionSubtitle: {
-    fontSize: 11,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
-  },
-  goalOptionsContainer: {
-    gap: Theme.spacing.md,
-  },
-  goalOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  goalOptionSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  goalOptionDisabled: {
-    opacity: 0.6,
-    backgroundColor: Theme.colors.background.tertiary,
-  },
-  goalEmoji: {
-    fontSize: 24,
-    marginRight: Theme.spacing.md,
-  },
-  goalContent: {
-    flex: 1,
-  },
-  goalTitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  goalSubtitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  dateOptionsContainer: {
-    maxHeight: 500,
-  },
-  dateOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  dateOptionSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  dateOptionContent: {
-    flex: 1,
-  },
-  dateOptionWeeks: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  dateOptionDate: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  abilityContainer: {
-    gap: Theme.spacing.md,
-  },
-  abilityOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  abilityOptionSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  abilityEmoji: {
-    fontSize: 24,
-    marginRight: Theme.spacing.md,
-  },
-  abilityContent: {
-    flex: 1,
-  },
-  abilityTitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  abilitySubtitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  distanceContainer: {
-    gap: Theme.spacing.md,
-  },
-  distanceOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  distanceOptionSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  distanceEmoji: {
-    fontSize: 24,
-    marginRight: Theme.spacing.md,
-  },
-  distanceContent: {
-    flex: 1,
-  },
-  distanceTitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  distanceSubtitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  daysPerWeekContainer: {
-    marginBottom: Theme.spacing.xxxl,
-  },
-  daysLabel: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.lg,
-    textAlign: 'center',
-  },
-  daysSelector: {
-    flexDirection: 'row',
-    justifyContent: 'center',
-    gap: Theme.spacing.md,
-  },
-  dayButton: {
-    width: 50,
-    height: 50,
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.full,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  dayButtonSelected: {
-    backgroundColor: Theme.colors.accent.primary,
-    borderColor: Theme.colors.accent.primary,
-  },
-  dayButtonText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.tertiary,
-  },
-  dayButtonTextSelected: {
-    color: Theme.colors.text.primary,
-  },
-  preferredDaysContainer: {
-
-  },
-  preferredDaysLabel: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.lg,
-    textAlign: 'center',
-  },
-  weekDaysContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    gap: Theme.spacing.sm,
-  },
-  weekDayButton: {
-    flex: 1,
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.medium,
-    paddingVertical: Theme.spacing.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  weekDayButtonSelected: {
-    backgroundColor: Theme.colors.transparent.accent20,
-    borderColor: Theme.colors.accent.primary,
-  },
-  weekDayText: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.tertiary,
-  },
-  weekDayTextSelected: {
-    color: Theme.colors.accent.primary,
-  },
-  preferencesContainer: {
-    gap: Theme.spacing.xl,
-  },
-  preferenceCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-  },
-  preferenceHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
-  },
-  preferenceEmoji: {
-    fontSize: 24,
-    marginRight: Theme.spacing.md,
-  },
-  preferenceContent: {
-    flex: 1,
-  },
-  preferenceTitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  preferenceSubtitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  preferenceOptions: {
-    flexDirection: 'row',
-    gap: Theme.spacing.md,
-  },
-  preferenceButton: {
-    flex: 1,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.medium,
-    paddingVertical: Theme.spacing.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  preferenceButtonSelected: {
-    borderColor: Theme.colors.accent.primary,
-  },
-  preferenceButtonText: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.tertiary,
-  },
-  preferenceButtonTextSelected: {
-    color: Theme.colors.text.primary,
-  },
-  workoutStyleButton: {
-    flex: 1,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.medium,
-    padding: Theme.spacing.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  workoutStyleButtonSelected: {
-    backgroundColor: Theme.colors.transparent.accent20,
-    borderColor: Theme.colors.accent.primary,
-  },
-  workoutStyleLabel: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.tertiary,
-    marginBottom: 4,
-  },
-  workoutStyleLabelSelected: {
-    color: Theme.colors.accent.primary,
-  },
-  workoutStyleSubtitle: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.muted,
-    textAlign: 'center',
-  },
-  workoutStyleSubtitleSelected: {
-    color: Theme.colors.text.tertiary,
-  },
-  authPreview: {
-    marginBottom: Theme.spacing.xxxl,
-  },
-  previewCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-  },
-  previewTitle: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.lg,
-    textAlign: 'center',
-  },
-  previewDetails: {
-    gap: Theme.spacing.md,
-  },
-  previewItem: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  previewLabel: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  previewValue: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-  },
-  authButtons: {
     gap: Theme.spacing.lg,
   },
-  authButton: {
-    paddingHorizontal: Theme.spacing.xl,
-    paddingVertical: Theme.spacing.lg,
+  pathGridOption: {
+    width: '47%',
+    backgroundColor: Theme.colors.background.primary,
     borderRadius: Theme.borderRadius.large,
+    borderWidth: 2,
+    borderColor: Theme.colors.background.tertiary,
     alignItems: 'center',
-    ...Theme.shadows.medium,
+    justifyContent: 'flex-start',
+    position: 'relative',
+    minHeight: 160,
+    paddingBottom: Theme.spacing.lg,
+    overflow: 'hidden',
   },
-  googleButton: {
-    backgroundColor: '#DB4437',
+  pathGridOptionSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
   },
-  appleButton: {
-    backgroundColor: '#000000',
+  pathImageContainer: {
+    width: '100%',
+    height: 200,
+    backgroundColor: Theme.colors.background.secondary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.md,
+    borderTopLeftRadius: Theme.borderRadius.large,
+    borderTopRightRadius: Theme.borderRadius.large,
   },
-  guestButton: {
-    backgroundColor: Theme.colors.background.tertiary,
+  pathGridImage: {
+    width: '100%',
+    height: '100%',
   },
-  authButtonText: {
+  pathContentContainer: {
+    alignItems: 'center',
+    width: '100%',
+  },
+  pathGridTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  pathGridDescription: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  abilityListContainer: {
+    gap: Theme.spacing.lg,
+  },
+  abilityListOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  abilityListOptionSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  abilityListTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    flex: 1,
+  },
+  scheduleSection: {
+    gap: Theme.spacing.xxxl,
+  },
+  daysPerWeekSection: {
+    alignItems: 'center',
+    gap: Theme.spacing.xl,
+    marginTop: Theme.spacing.xxxl,
+  },
+  sectionTitle: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.lg,
+    textAlign: 'center',
+  },
+  sectionDescription: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.xl,
+    lineHeight: 20,
+  },
+  runsCounter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: Theme.spacing.xxl,
+  },
+  counterButton: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    width: 60,
+    height: 60,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  counterButtonDisabled: {
+    opacity: 0.5,
+  },
+  counterDisplay: {
+    alignItems: 'center',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xxl,
+    minWidth: 100,
+  },
+  counterNumber: {
+    fontSize: 32,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  counterLabel: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    marginTop: 4,
+  },
+  preferredDaysSection: {
+    gap: Theme.spacing.lg,
+  },
+  preferredDaysHeader: {
+    alignItems: 'center',
+  },
+  preferredDaysSubtitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.accent.primary,
+    textAlign: 'center',
+  },
+  preferredDaysList: {
+    gap: Theme.spacing.md,
+  },
+  preferredDayOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  preferredDayOptionSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  preferredDayText: {
     fontSize: 16,
     fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  preferredDayTextSelected: {
+    color: Theme.colors.accent.primary,
+  },
+  workoutStyleGrid: {
+    gap: Theme.spacing.xl,
+  },
+  workoutStyleCard: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  workoutStyleCardSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  workoutStyleCardTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginTop: Theme.spacing.md,
+    marginBottom: 4,
+  },
+  workoutStyleCardTitleSelected: {
+    color: Theme.colors.accent.primary,
+  },
+  workoutStyleCardSubtitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  unitsGrid: {
+    gap: Theme.spacing.xl,
+  },
+  unitCard: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+    position: 'relative',
+  },
+  unitCardSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  unitCardTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginTop: Theme.spacing.md,
+    marginBottom: 4,
+  },
+  unitCardTitleSelected: {
+    color: Theme.colors.accent.primary,
+  },
+  unitCardSubtitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  genderListContainer: {
+    gap: Theme.spacing.lg,
+  },
+  genderListOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  genderListOptionSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  genderListContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  genderListTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginLeft: Theme.spacing.md,
+  },
+  ageSection: {
+    alignItems: 'center',
+    gap: Theme.spacing.xl,
+  },
+  ageListContainer: {
+    gap: Theme.spacing.md,
+    width: '100%',
+  },
+  ageListOption: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.xl,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    alignItems: 'center',
+  },
+  ageListOptionSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  ageListText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+  },
+  ageListTextSelected: {
+    color: Theme.colors.accent.primary,
+  },
+  notificationsSection: {
+    gap: Theme.spacing.xl,
+  },
+  notificationHeroSection: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  notificationMainTitle: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.md,
+    textAlign: 'center',
+  },
+  notificationMainDescription: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+  },
+  mockNotificationContainer: {
+    alignItems: 'center',
+    gap: Theme.spacing.lg,
+  },
+  mockNotificationDialog: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
+    width: '90%',
+    alignItems: 'center',
+  },
+  mockNotificationTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  mockNotificationBody: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+    lineHeight: 20,
+    marginBottom: Theme.spacing.lg,
+  },
+  mockNotificationButtons: {
+    flexDirection: 'row',
+    gap: Theme.spacing.md,
+    width: '100%',
+  },
+  mockButtonSecondary: {
+    flex: 1,
+    backgroundColor: Theme.colors.background.tertiary,
+    borderRadius: Theme.borderRadius.medium,
+    paddingVertical: Theme.spacing.md,
+    alignItems: 'center',
+  },
+  mockButtonSecondaryText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.tertiary,
+  },
+  mockButtonPrimary: {
+    flex: 1,
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: Theme.borderRadius.medium,
+    paddingVertical: Theme.spacing.md,
+    alignItems: 'center',
+  },
+  mockButtonPrimaryText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  mockNotificationArrow: {
+    alignItems: 'center',
+  },
+  mockNotificationArrowText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.accent.primary,
+  },
+  notificationChoiceContainer: {
+    gap: Theme.spacing.md,
+  },
+  notificationMainButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    gap: Theme.spacing.md,
+  },
+  notificationMainButtonSelected: {
+    borderColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.transparent.accent20,
+  },
+  notificationMainButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.tertiary,
+  },
+  notificationMainButtonTextSelected: {
+    color: Theme.colors.text.primary,
+  },
+  notificationSkipButton: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderRadius: Theme.borderRadius.large,
+  },
+  notificationSkipButtonSelected: {
+    borderColor: Theme.colors.text.tertiary,
+  },
+  notificationSkipButtonText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  notificationSkipButtonTextSelected: {
+    color: Theme.colors.text.primary,
+  },
+  authSection: {
+    gap: Theme.spacing.xl,
+  },
+  authHeroSection: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  authMainTitle: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.md,
+    textAlign: 'center',
+  },
+  authMainDescription: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
+  },
+  blazeAuthContainer: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  blazeAuthImage: {
+    width: 200,
+    height: 200,
+  },
+  authBenefitsList: {
+    gap: Theme.spacing.lg,
+  },
+  authBenefitItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  authBenefitCheck: {
+    width: 20,
+    height: 20,
+    borderRadius: Theme.borderRadius.full,
+    borderWidth: 2,
+    borderColor: Theme.colors.text.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: Theme.spacing.md,
+  },
+  authBenefitText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  authButtonsContainer: {
+    gap: Theme.spacing.md,
+  },
+  appleSignInButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#000000',
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    gap: Theme.spacing.sm,
+  },
+  appleSignInButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  googleSignInButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: '#DB4437',
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+  },
+  googleSignInButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  skipButton: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.lg,
+    borderWidth: 2,
+    borderColor: 'transparent',
+    borderRadius: Theme.borderRadius.large,
+  },
+  skipButtonText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  authPrivacyText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
   },
   footer: {
     padding: Theme.spacing.xl,
@@ -1308,143 +1325,39 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     backgroundColor: Theme.colors.accent.primary,
     borderRadius: Theme.borderRadius.large,
+    borderBottomWidth: 3,
+    borderBottomColor: Theme.colors.accent.secondary,
     paddingVertical: Theme.spacing.lg,
-    gap: Theme.spacing.sm,
-    ...Theme.shadows.medium,
   },
   nextButtonDisabled: {
     backgroundColor: Theme.colors.background.tertiary,
+    borderBottomColor: Theme.colors.background.secondary,
     opacity: 0.5,
   },
   nextButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
-  // Calendar Styles
-  calendarContainer: {
-    gap: Theme.spacing.xl,
-  },
-  datePickerButton: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  datePickerButtonSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  datePickerContent: {
-    flexDirection: 'row',
+  nameContainer: {
     alignItems: 'center',
-    flex: 1,
+    paddingTop: Theme.spacing.xl,
   },
-  datePickerTextContainer: {
-    flex: 1,
-    marginLeft: Theme.spacing.md,
-  },
-  datePickerText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  datePickerTextSelected: {
-    color: Theme.colors.text.primary,
-    fontFamily: Theme.fonts.semibold,
-  },
-  datePickerSubtext: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.accent.primary,
-    marginTop: Theme.spacing.xs,
-  },
-  selectedDateInfo: {
-    marginTop: Theme.spacing.lg,
-  },
-  selectedDateCard: {
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.medium,
-    padding: Theme.spacing.lg,
+  nameContent: {
     alignItems: 'center',
+    width: '100%',
   },
-  selectedDateTitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    marginBottom: Theme.spacing.xs,
-  },
-  selectedDateValue: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-  },
-  pushNotificationsContainer: {
-    gap: Theme.spacing.xl,
-  },
-  motivationFeatures: {
-    gap: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xl,
-  },
-  pushNotificationsCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-  },
-  pushNotificationsHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
-  },
-  pushNotificationsEmoji: {
+  nameInput: {
     fontSize: 24,
-    marginRight: Theme.spacing.md,
-  },
-  pushNotificationsContent: {
-    flex: 1,
-  },
-  pushNotificationsTitle: {
-    fontSize: 16,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  pushNotificationsSubtitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
-  pushNotificationsOptions: {
-    flexDirection: 'row',
-    gap: Theme.spacing.md,
-  },
-  pushNotificationsButton: {
-    flex: 1,
     backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.medium,
-    paddingVertical: Theme.spacing.md,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  pushNotificationsButtonSelected: {
-    borderColor: Theme.colors.accent.primary,
-  },
-  pushNotificationsButtonText: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.tertiary,
-  },
-  pushNotificationsButtonTextSelected: {
-    color: Theme.colors.text.primary,
-  },
-  pushNotificationsDisclaimer: {
-    alignItems: 'center',
-  },
-  pushNotificationsDisclaimerText: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
+    padding: Theme.spacing.lg,
+    marginTop: Theme.spacing.xl,
+    borderWidth: 3,
+    borderColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    width: '100%',
+    textAlign: 'center',
   },
 }); 
