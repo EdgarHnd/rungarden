@@ -5,6 +5,7 @@ import RestCelebrationModal from '@/components/RestCelebrationModal';
 import RunCelebrationModal from '@/components/RunCelebrationModal';
 import StreakDisplay from '@/components/StreakDisplay';
 import WeekView from '@/components/WeekView';
+import XPInfoModal from '@/components/XPInfoModal';
 import Theme from '@/constants/theme';
 import { getActivityType, SuggestedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
@@ -115,6 +116,9 @@ export default function HomeScreen() {
   // Health modal state
   const [showHealthModal, setShowHealthModal] = useState(false);
 
+  // XP Info modal state
+  const [showXPModal, setShowXPModal] = useState(false);
+
   // Refresh streak on first app load of the day
   const [streakRefreshed, setStreakRefreshed] = useState(false);
   useEffect(() => {
@@ -139,9 +143,6 @@ export default function HomeScreen() {
   const RIVE_URL_ANGRY = "https://fast-dragon-309.convex.cloud/api/storage/04bf0340-7d79-4865-8dd6-2966b4befaff";
   const RIVE_URL_RUNNING = "https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a";
   const RIVE_URL_CYCLE = "https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e";
-
-  const BG_IMAGE_STADIUM = require("@/assets/images/bg/bgstadium.jpg");
-  const BG_IMAGE_PARIS = require("@/assets/images/bg/bgparis.jpg");
 
   const RIVE_URLS = [
     RIVE_URL_RUNNING,
@@ -193,6 +194,12 @@ export default function HomeScreen() {
 
   // Handle triple tap on title for debug modal
   const handleTitlePress = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setShowXPModal(true);
+  };
+
+  // Handle debug modal (moved to level badge long press)
+  const handleDebugPress = () => {
     setTapCount(prev => prev + 1);
 
     if (tapTimeoutRef.current) {
@@ -715,21 +722,6 @@ export default function HomeScreen() {
     };
   }, []);
 
-  // Format helpers
-  const formatDistance = (meters: number) => {
-    const kilometers = meters / 1000;
-    return `${kilometers.toFixed(2)}`;
-  };
-
-  const formatPace = (duration: number, distance: number) => {
-    const paceMinPerKm = (duration / (distance / 1000));
-    const minutes = Math.floor(paceMinPerKm);
-    const seconds = Math.round((paceMinPerKm - minutes) * 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}`;
-  };
-
-
-
   // Helper function to calculate week-specific run progress
   const getWeekProgress = (weekIndex: number) => {
     if (!simpleSchedule?.isActive || !activities) {
@@ -764,6 +756,15 @@ export default function HomeScreen() {
     };
   };
 
+  // Memoized mascot image based on the user level
+  const mascotImageSource = React.useMemo(() => {
+    const lvl = levelInfo?.level ?? 0;
+    if (lvl < 100) return require('@/assets/images/flame/age0.gif');
+    if (lvl < 10) return require('@/assets/images/flame/age1.png');
+    if (lvl < 20) return require('@/assets/images/flame/age2.png');
+    return require('@/assets/images/flame/age3.png');
+  }, [levelInfo]);
+
   // Show loading state when queries are loading
   if (!profile || !activities || plannedWorkouts === undefined || restActivities === undefined || simpleSchedule === undefined) {
     return (
@@ -794,12 +795,20 @@ export default function HomeScreen() {
           <View style={styles.leftHeaderSection}>
             <View style={styles.titleContainer}>
               <TouchableOpacity onPress={handleTitlePress}>
-                <Text style={styles.title}>Blaze</Text>
+                <Text style={styles.title}>{profile?.mascotName || "Blaze"}</Text>
               </TouchableOpacity>
               {levelInfo && (
-                <View style={styles.levelBadge}>
+                <TouchableOpacity
+                  style={styles.levelBadge}
+                  onPress={() => {
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                    setShowXPModal(true);
+                  }}
+                  onLongPress={handleDebugPress}
+                  activeOpacity={0.7}
+                >
                   <Text style={styles.levelText}>LVL {levelInfo.level}</Text>
-                </View>
+                </TouchableOpacity>
               )}
             </View>
             <TouchableOpacity
@@ -816,7 +825,7 @@ export default function HomeScreen() {
                 return (
                   <Ionicons
                     key={index}
-                    name={isAlive ? "flash" : "flash-outline"}
+                    name={isAlive ? "heart" : "heart-outline"}
                     size={25}
                     color={isAlive ? Theme.colors.special.primary.coin : Theme.colors.text.primary}
                   />
@@ -844,7 +853,7 @@ export default function HomeScreen() {
         <View style={styles.animationContainer}>
           <View style={styles.shadowDisc} />
           <Image
-            source={require('@/assets/images/blaze/blazetr.gif')}
+            source={mascotImageSource}
             style={styles.blazeImage}
             resizeMode="contain"
           />
@@ -888,6 +897,7 @@ export default function HomeScreen() {
                 weeklyGoalMet: weekProgress.completed >= weekProgress.target,
               };
             })()}
+            metricSystem={profile?.metricSystem || 'metric'}
           />
 
           {/* Day Card */}
@@ -906,8 +916,6 @@ export default function HomeScreen() {
                   });
                   return restActivitiesMap.get(selectedDayData.date) || null;
                 })()}
-                formatDistance={formatDistance}
-                formatPace={formatPace}
                 streakInfo={{
                   currentStreak: profile?.currentStreak || 0,
                   longestStreak: profile?.longestStreak || 0,
@@ -1084,6 +1092,14 @@ export default function HomeScreen() {
           }}
           metricSystem={profile?.metricSystem || 'metric'}
         />
+
+        {/* XP Info Modal */}
+        <XPInfoModal
+          visible={showXPModal}
+          onClose={() => setShowXPModal(false)}
+          levelInfo={levelInfo}
+          metricSystem={profile?.metricSystem || 'metric'}
+        />
       </SafeAreaView >
     );
   } catch (error) {
@@ -1253,10 +1269,16 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   blazeImage: {
+    marginTop: 50,
     position: 'absolute',
-    width: 350,
-    height: 350,
+    width: 200,
+    height: 200,
     zIndex: 10,
+    shadowColor: Theme.colors.accent.primary,
+    shadowOffset: { width: 0, height: 0 },
+    //shadowOpacity: 0.2,
+    shadowRadius: 20,
+    elevation: 10,
   },
   shadowDisc: {
     position: 'absolute',

@@ -5,8 +5,17 @@ import {
   calculateLevelFromXP,
   distanceToXP
 } from "./utils/gamification";
-
-// Gamification functions moved to ./utils/gamification.ts
+ 
+export const currentUser = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (userId === null) {
+      return null;
+    }
+    return await ctx.db.get(userId);
+  },
+});
 
 // Get user profile
 export const getOrCreateProfile = query({
@@ -66,7 +75,12 @@ export const createProfile = mutation({
       lastStreakWeek: undefined,
       streakFreezeAvailable: 0,
       // Initialize mascot health
+      mascotName: "Blaze",
       mascotHealth: 4,
+      // Onboarding profile data (initially empty)
+      path: undefined,
+      gender: undefined,
+      age: undefined,
       // Default preferences
       weekStartDay: 1, // Monday
       metricSystem: "metric",
@@ -90,7 +104,15 @@ export const updateProfile = mutation({
     level: v.optional(v.number()),
     totalXP: v.optional(v.number()),
     coins: v.optional(v.number()),
+    mascotName: v.optional(v.string()),
+    path: v.optional(v.union(
+      v.literal("true-beginner"), v.literal("run-habit"),
+      v.literal("weight-loss"), v.literal("race-ready")
+    )),
+    gender: v.optional(v.union(v.literal("female"), v.literal("male"), v.literal("other"))),
+    age: v.optional(v.number()),
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
+    weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -157,8 +179,13 @@ export const updateProfile = mutation({
         currentStreak: 0,
         longestStreak: 0,
         streakFreezeAvailable: 0,
+        mascotName: args.mascotName ?? "Blaze",
         mascotHealth: 4,
+        path: args.path,
+        gender: args.gender,
+        age: args.age,
         metricSystem: args.metricSystem ?? "metric",
+        weekStartDay: args.weekStartDay ?? 1,
         updatedAt: now,
       });
     }
@@ -289,28 +316,7 @@ export const updateSyncPreferences = mutation({
 
       await ctx.db.patch(existingProfile._id, updateData);
       return existingProfile._id;
-    } else {
-      // Create new profile with sync preferences
-      return await ctx.db.insert("userProfiles", {
-        userId,
-        weeklyGoal: 10000, // Default 10km
-        totalDistance: 0,
-        totalWorkouts: 0,
-        totalCalories: 0,
-        level: 1,
-        totalXP: 0,
-        coins: 0,
-        currentStreak: 0,
-        longestStreak: 0,
-        streakFreezeAvailable: 0,
-        mascotHealth: 4,
-        healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
-        stravaSyncEnabled: args.stravaSyncEnabled ?? false,
-        lastHealthKitSync: args.lastHealthKitSync === null ? undefined : args.lastHealthKitSync,
-        lastStravaSync: args.lastStravaSync === null ? undefined : args.lastStravaSync,
-        updatedAt: now,
-      });
-    }
+    } 
   },
 });
 

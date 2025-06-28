@@ -16,6 +16,7 @@ import type {
 import type * as activities from "../activities.js";
 import type * as auth from "../auth.js";
 import type * as http from "../http.js";
+import type * as internal_verifyAppleToken from "../internal/verifyAppleToken.js";
 import type * as leaderboard from "../leaderboard.js";
 import type * as migrations from "../migrations.js";
 import type * as pushNotifications from "../pushNotifications.js";
@@ -43,6 +44,7 @@ declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   auth: typeof auth;
   http: typeof http;
+  "internal/verifyAppleToken": typeof internal_verifyAppleToken;
   leaderboard: typeof leaderboard;
   migrations: typeof migrations;
   pushNotifications: typeof pushNotifications;

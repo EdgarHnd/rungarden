@@ -33,6 +33,21 @@ export interface StravaActivity {
   max_heartrate?: number;
   calories?: number;
   kilojoules?: number;
+  // Additional fields for running performance and achievements
+  start_latlng?: [number, number];
+  end_latlng?: [number, number];
+  average_temp?: number;
+  elev_high?: number;
+  elev_low?: number;
+  average_cadence?: number;
+  average_watts?: number;
+  max_watts?: number;
+  map?: {
+    id: string;
+    polyline?: string;
+    summary_polyline?: string;
+    resource_state: number;
+  };
 }
 
 export interface StravaAthlete {
@@ -74,6 +89,23 @@ export interface RunningActivity {
   calories: number;
   averageHeartRate?: number;
   workoutName?: string;
+  // Enhanced fields for achievements and gamification
+  totalElevationGain?: number;
+  elevationHigh?: number;
+  elevationLow?: number;
+  averageTemp?: number;
+  startLatLng?: [number, number];
+  endLatLng?: [number, number];
+  timezone?: string;
+  isIndoor?: boolean;
+  isCommute?: boolean;
+  averageCadence?: number;
+  averageWatts?: number;
+  maxWatts?: number;
+  kilojoules?: number;
+  polyline?: string;
+  maxSpeed?: number;
+  averageSpeed?: number;
 }
 
 class StravaService {
@@ -443,6 +475,23 @@ class StravaService {
             calories: activity.calories || this.estimateCalories(activity.distance, activity.moving_time),
             averageHeartRate: activity.average_heartrate,
             workoutName: activity.name,
+            // Enhanced fields for achievements and gamification
+            totalElevationGain: activity.total_elevation_gain,
+            elevationHigh: activity.elev_high,
+            elevationLow: activity.elev_low,
+            averageTemp: activity.average_temp,
+            startLatLng: activity.start_latlng,
+            endLatLng: activity.end_latlng,
+            timezone: activity.timezone,
+            isIndoor: activity.trainer,
+            isCommute: activity.commute,
+            averageCadence: activity.average_cadence,
+            averageWatts: activity.average_watts,
+            maxWatts: activity.max_watts,
+            kilojoules: activity.kilojoules,
+            polyline: activity.map?.polyline || activity.map?.summary_polyline,
+            maxSpeed: activity.max_speed,
+            averageSpeed: activity.average_speed,
           };
         });
 

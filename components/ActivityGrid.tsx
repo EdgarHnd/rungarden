@@ -186,7 +186,10 @@ export const ActivityGrid = ({ activities, profile }: ActivityGridProps) => {
       <View style={styles.activityGridHeader}>
         <Text style={styles.activityGridPeriod}>{new Date().getFullYear()}</Text>
         <Text style={styles.activityGridStats}>
-          {totalActivities} runs • {totalDistance.toFixed(0)}km
+          {totalActivities} runs • {(profile?.metricSystem ?? 'metric') === 'metric'
+            ? `${totalDistance.toFixed(0)}km`
+            : `${(totalDistance * 0.621371).toFixed(0)}mi`
+          }
         </Text>
       </View>
 

@@ -56,6 +56,7 @@ interface WeekViewProps {
     runsNeeded: number;
     weeklyGoalMet: boolean;
   } | null;
+  metricSystem?: 'metric' | 'imperial';
 }
 
 const screenWidth = Dimensions.get('window').width; // This is the full window width
@@ -71,7 +72,8 @@ export default function WeekView({
   weekStartDay,
   streakInfo,
   simpleSchedule,
-  todaysRunStatus
+  todaysRunStatus,
+  metricSystem = 'metric'
 }: WeekViewProps) {
   const scrollViewRef = useRef<ScrollView>(null);
   const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
@@ -416,6 +418,7 @@ export default function WeekView({
         visible={showXPInfoModal}
         onClose={() => setShowXPInfoModal(false)}
         levelInfo={levelInfo}
+        metricSystem={metricSystem}
       />
 
       {/* Streak Modal */}

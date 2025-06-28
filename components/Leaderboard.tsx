@@ -1,6 +1,5 @@
 import Theme from '@/constants/theme';
 import { UserRankInfo } from '@/convex/leaderboard';
-import LevelingService from '@/services/LevelingService';
 import { useQuery } from "convex/react";
 import React, { useEffect, useState } from 'react';
 import { ActivityIndicator, Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -168,7 +167,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
                     {formatDistance(displayData.userRank.userStats.totalDistance)}
                   </Text>
                   <Text style={styles.userRankLevel}>
-                    {LevelingService.getLevelEmoji(displayData.userRank.userStats.level)} Level {displayData.userRank.userStats.level}
+                    Level {displayData.userRank.userStats.level}
                   </Text>
                 </View>
               )}
@@ -221,7 +220,6 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
                     <Text style={styles.entryName}>{entry.name}</Text>
                     {entry.level > 0 && (
                       <View style={styles.levelBadge}>
-                        <Text style={styles.levelEmoji}>{LevelingService.getLevelEmoji(entry.level)}</Text>
                         <Text style={styles.levelText}>Lv. {entry.level}</Text>
                       </View>
                     )}

@@ -135,7 +135,7 @@ export default function TrainingDetailScreen() {
       title: step.label || `Step ${index + 1}`,
       subtitle: step.notes || step.target || '',
       duration: step.duration || '',
-      distance: step.distance ? `${(step.distance / 1000).toFixed(1)}km` : '',
+      distance: step.distance ? (isMetric ? `${(step.distance / 1000).toFixed(1)}km` : `${((step.distance / 1000) * 0.621371).toFixed(1)}mi`) : '',
       pace: step.pace ? formatPace(step.pace) : '',
     }));
   }
@@ -607,7 +607,10 @@ export default function TrainingDetailScreen() {
                     {completedActivity.workoutName || 'Running Activity'}
                   </Text>
                   <Text style={styles.activityStats}>
-                    {(completedActivity.distance / 1000).toFixed(2)}km • {completedActivity.duration}min
+                    {isMetric
+                      ? `${(completedActivity.distance / 1000).toFixed(2)}km`
+                      : `${((completedActivity.distance / 1000) * 0.621371).toFixed(2)}mi`
+                    } • {completedActivity.duration}min
                   </Text>
                 </View>
                 <TouchableOpacity

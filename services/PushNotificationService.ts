@@ -1,5 +1,6 @@
 import { api } from '@/convex/_generated/api';
 import { ConvexReactClient } from 'convex/react';
+import Constants from 'expo-constants';
 import { Platform } from 'react-native';
 
 // Type definitions for notifications (for when expo-notifications is available)
@@ -113,9 +114,8 @@ export class PushNotificationService {
       }
 
       // Get the token
-      const token = await Notifications.getExpoPushTokenAsync({
-        projectId: '988570d0-675e-4305-b861-e82e8ff2e744', // Your actual Expo project ID
-      });
+      const projectId = Constants.expoConfig?.extra?.eas?.projectId ?? undefined;
+      const token = await Notifications.getExpoPushTokenAsync(projectId ? { projectId } : undefined);
 
       console.log('[PushNotifications] Push token:', token.data);
 
@@ -128,7 +128,12 @@ export class PushNotificationService {
 
         console.log('[PushNotifications] Successfully registered and stored push token');
         return { success: true, token: token.data };
-      } catch (error) {
+      } catch (error: any) {
+        // Ignore unauthenticated error during onboarding; token will be stored after sign-in
+        if (typeof error?.message === 'string' && error.message.includes('Not authenticated')) {
+          console.log('[PushNotifications] User not authenticated yet – skipping token upload for now');
+          return { success: true, token: token.data };
+        }
         console.error('[PushNotifications] Failed to store push token:', error);
         return { success: false, error: 'Failed to store token' };
       }

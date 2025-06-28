@@ -2,7 +2,7 @@ import Theme from '@/constants/theme';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface XPInfoModalProps {
   visible: boolean;
@@ -14,14 +14,24 @@ interface XPInfoModalProps {
     remainingXPForNextLevel: number;
     progressToNextLevel: number;
   } | null;
+  metricSystem?: 'metric' | 'imperial';
 }
 
-export default function XPInfoModal({ visible, onClose, levelInfo }: XPInfoModalProps) {
+export default function XPInfoModal({ visible, onClose, levelInfo, metricSystem = 'metric' }: XPInfoModalProps) {
+  const isMetric = metricSystem === 'metric';
+
   const examples = [
-    { distance: 1000, label: '1 km run' },
-    { distance: 2000, label: '2 km run' },
-    { distance: 5000, label: '5 km run' },
-    { distance: 10000, label: '10 km run' },
+    { distance: 1000, label: isMetric ? '1 km run' : '0.6 mi run' },
+    { distance: 2000, label: isMetric ? '2 km run' : '1.2 mi run' },
+    { distance: 5000, label: isMetric ? '5 km run' : '3.1 mi run' },
+    { distance: 10000, label: isMetric ? '10 km run' : '6.2 mi run' },
+  ];
+
+  // Mascot evolution images
+  const flameStages = [
+    require('@/assets/images/flame/age0.png'),
+    require('@/assets/images/flame/age3.png'),
+    require('@/assets/images/flame/age4.png'),
   ];
 
   return (
@@ -34,7 +44,7 @@ export default function XPInfoModal({ visible, onClose, levelInfo }: XPInfoModal
       <View style={styles.overlay}>
         <View style={styles.modalContainer}>
           <View style={styles.header}>
-            <Text style={styles.title}>🎯 How to Gain XP</Text>
+            <Text style={styles.title}>Leveling Up your Flame</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={Theme.colors.text.secondary} />
             </TouchableOpacity>
@@ -47,7 +57,7 @@ export default function XPInfoModal({ visible, onClose, levelInfo }: XPInfoModal
                 <Text style={styles.sectionTitle}>Current Progress</Text>
                 <View style={styles.currentLevelCard}>
                   <View style={styles.levelHeader}>
-                    <Text style={styles.currentLevelEmoji}>{LevelingService.getLevelEmoji(levelInfo.level)}</Text>
+                    <Image source={require('@/assets/images/flame/age0.png')} style={styles.mascotImage} />
                     <View style={styles.levelTextInfo}>
                       <Text style={styles.currentLevelTitle}>{LevelingService.getLevelTitle(levelInfo.level)}</Text>
                       <Text style={styles.currentLevelNumber}>Level {levelInfo.level}</Text>
@@ -70,26 +80,23 @@ export default function XPInfoModal({ visible, onClose, levelInfo }: XPInfoModal
                   </View>
                 </View>
 
-                {/* Upcoming Levels */}
-                <View style={styles.upcomingLevelsContainer}>
-                  <Text style={styles.upcomingLevelsTitle}>Next 3 Levels</Text>
-                  <View style={styles.upcomingLevelsRow}>
-                    {[1, 2, 3].map((offset) => {
-                      const nextLevel = levelInfo.level + offset;
-                      const levelRequirements = LevelingService.getLevelRequirements();
-                      const levelReq = levelRequirements.find(req => req.level === nextLevel);
-
-                      if (!levelReq) return null;
-
-                      return (
-                        <View key={nextLevel} style={styles.upcomingLevelCard}>
-                          <Text style={styles.upcomingLevelEmoji}>{levelReq.emoji}</Text>
-                          <Text style={styles.upcomingLevelNumber}>Level {nextLevel}</Text>
-                          <Text style={styles.upcomingLevelTitle} numberOfLines={2}>{levelReq.title}</Text>
-                          <Text style={styles.upcomingLevelDistance}>{LevelingService.formatXP(levelReq.xp)}</Text>
-                        </View>
-                      );
-                    })}
+                {/* Mascot Evolution */}
+                <View style={styles.mascotEvolutionContainer}>
+                  <Text style={styles.mascotEvolutionTitle}>Run to Level Up!</Text>
+                  <View style={styles.mascotEvolutionRow}>
+                    {flameStages.map((stage, idx) => (
+                      <React.Fragment key={idx}>
+                        <Image source={stage} style={styles.mascotImage} />
+                        {idx < flameStages.length - 1 && (
+                          <Ionicons
+                            name="chevron-forward"
+                            size={20}
+                            color={Theme.colors.text.secondary}
+                            style={styles.arrowIcon}
+                          />
+                        )}
+                      </React.Fragment>
+                    ))}
                   </View>
                 </View>
               </View>
@@ -101,33 +108,9 @@ export default function XPInfoModal({ visible, onClose, levelInfo }: XPInfoModal
                 You gain XP based on the distance you run. The formula is simple:
               </Text>
               <View style={styles.formulaContainer}>
-                <Text style={styles.formula}>1 kilometer = 100 XP</Text>
-                <Text style={styles.subFormula}>or 1 meter = 0.1 XP</Text>
-              </View>
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Examples</Text>
-              {examples.map((example, index) => (
-                <View key={index} style={styles.exampleRow}>
-                  <Text style={styles.exampleDistance}>{example.label}</Text>
-                  <Text style={styles.exampleXP}>
-                    = {LevelingService.formatXP(LevelingService.distanceToXP(example.distance))}
-                  </Text>
-                </View>
-              ))}
-            </View>
-
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>Level Up Rewards</Text>
-              <Text style={styles.description}>
-                As you level up, you'll unlock:
-              </Text>
-              <View style={styles.rewardsList}>
-                <Text style={styles.rewardItem}>🏆 New achievement titles</Text>
-                <Text style={styles.rewardItem}>🎖️ Special badges</Text>
-                <Text style={styles.rewardItem}>🔓 New challenges</Text>
-                <Text style={styles.rewardItem}>🍃 Bonus leaves</Text>
+                <Text style={styles.formula}>
+                  {isMetric ? '1 kilometer = 100 XP' : '1 mile = 161 XP'}
+                </Text>
               </View>
             </View>
           </ScrollView>
@@ -201,48 +184,12 @@ const styles = StyleSheet.create({
     color: Theme.colors.special.primary.exp,
     textAlign: 'center',
   },
-  subFormula: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
-    marginTop: Theme.spacing.xs,
-  },
-  exampleRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    paddingVertical: Theme.spacing.sm,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.border.primary,
-  },
-  exampleDistance: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
-  },
-  exampleXP: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.special.primary.exp,
-  },
-  rewardsList: {
-    gap: Theme.spacing.sm,
-  },
-  rewardItem: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
-    lineHeight: 24,
-  },
   // Level Progress Styles
   currentLevelCard: {
     borderRadius: Theme.borderRadius.medium,
     padding: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
     backgroundColor: Theme.colors.background.secondary,
-    borderWidth: 1,
-    borderColor: Theme.colors.border.primary,
   },
   levelHeader: {
     flexDirection: 'row',
@@ -286,51 +233,29 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
+    marginTop: Theme.spacing.xs,
   },
-  upcomingLevelsContainer: {
+  mascotEvolutionContainer: {
     marginTop: Theme.spacing.lg,
   },
-  upcomingLevelsTitle: {
+  mascotEvolutionTitle: {
     fontSize: 14,
     fontFamily: Theme.fonts.semibold,
     color: Theme.colors.text.primary,
     marginBottom: Theme.spacing.md,
   },
-  upcomingLevelsRow: {
+  mascotEvolutionRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
-  upcomingLevelCard: {
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.small,
-    padding: Theme.spacing.md,
-    alignItems: 'center',
-    flex: 1,
+  mascotImage: {
+    width: 60,
+    height: 60,
     marginHorizontal: 2,
   },
-  upcomingLevelEmoji: {
-    fontSize: 20,
-    marginBottom: Theme.spacing.xs,
-  },
-  upcomingLevelNumber: {
-    fontSize: 10,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  upcomingLevelTitle: {
-    fontSize: 9,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 4,
-    minHeight: 24,
-  },
-  upcomingLevelDistance: {
-    fontSize: 8,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
+  arrowIcon: {
+    alignSelf: 'center',
+    marginHorizontal: Theme.spacing.xs,
   },
   tipSection: {
     backgroundColor: Theme.colors.background.secondary,

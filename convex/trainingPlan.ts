@@ -376,6 +376,39 @@ export const regenerateTrainingPlan = mutation({
   },
 });
 
+// Delete training plan
+export const deleteTrainingPlan = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Delete existing planned workouts for this user
+    const existingWorkouts = await ctx.db
+      .query("plannedWorkouts")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    for (const workout of existingWorkouts) {
+      await ctx.db.delete(workout._id);
+    }
+
+    // Deactivate all existing plans
+    const existingPlans = await ctx.db
+      .query("trainingPlans")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    for (const plan of existingPlans) {
+      await ctx.db.patch(plan._id, { isActive: false });
+    }
+
+    return { message: "Training plan deleted successfully" };
+  },
+});
+
 // Shared training plan generation logic
 async function generateTrainingPlanInternal(ctx: any, userId: string) {
   // Get user's training profile

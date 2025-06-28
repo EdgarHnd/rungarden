@@ -80,26 +80,43 @@ export const setSimpleTrainingSchedule = mutation({
       .first();
 
     if (existingSchedule) {
-      // Calculate next Monday for the change to take effect
-      const nextWeekStart = getNextWeekStart(new Date(), weekStartDay);
+      // Calculate current week start for the change to take effect immediately
+      const thisWeekStart = getWeekStart(new Date(), weekStartDay).toISOString().split('T')[0];
 
-      // Add entry to schedule history for next week
-      await ctx.db.insert("scheduleHistory", {
-        userId,
-        runsPerWeek: args.runsPerWeek,
-        preferredDays: args.preferredDays,
-        effectiveFromDate: nextWeekStart,
-        createdAt: now
-      });
+      // Check if there's already a schedule history entry for this week
+      const existingHistoryForWeek = await ctx.db
+        .query("scheduleHistory")
+        .withIndex("by_user_date", (q: any) => 
+          q.eq("userId", userId).eq("effectiveFromDate", thisWeekStart)
+        )
+        .first();
 
-      // Update current schedule (for UI purposes)
+      if (existingHistoryForWeek) {
+        // Update existing history entry for this week
+        await ctx.db.patch(existingHistoryForWeek._id, {
+          runsPerWeek: args.runsPerWeek,
+          preferredDays: args.preferredDays,
+          createdAt: now
+        });
+      } else {
+        // Add new entry to schedule history for current week (effective immediately)
+        await ctx.db.insert("scheduleHistory", {
+          userId,
+          runsPerWeek: args.runsPerWeek,
+          preferredDays: args.preferredDays,
+          effectiveFromDate: thisWeekStart,
+          createdAt: now
+        });
+      }
+
+      // Update current schedule
       await ctx.db.patch(existingSchedule._id, {
         runsPerWeek: args.runsPerWeek,
         preferredDays: args.preferredDays,
         updatedAt: now
       });
 
-      return { message: "Training schedule updated. Changes take effect next week." };
+      return { message: "Training schedule updated. Changes apply to remaining days this week." };
     } else {
       // Create new schedule starting this week
       const thisWeekStart = getWeekStart(new Date(), weekStartDay).toISOString().split('T')[0];

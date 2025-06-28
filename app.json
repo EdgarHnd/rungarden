@@ -9,6 +9,7 @@
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
+      "appleSignIn": true,
       "supportsTablet": false,
       "bundleIdentifier": "com.edgarhnd.blaze",
       "entitlements": {
@@ -28,7 +29,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#192B31"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.edgarhnd.blaze",
@@ -52,7 +53,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#000000"
+          "backgroundColor": "#192B31"
         }
       ],
       [
@@ -72,13 +73,18 @@
         }
       ],
       "expo-font",
-      "expo-secure-store"
+      "expo-secure-store",
+      "expo-apple-authentication",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true
     },
     "extra": {
-      "router": {}
+      "router": {},
+      "eas": {
+        "projectId": "0b6e768e-a95d-4f3d-a6a3-bdaf57f52c99"
+      }
     }
   }
 }

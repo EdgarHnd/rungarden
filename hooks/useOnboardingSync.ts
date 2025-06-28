@@ -1,3 +1,8 @@
+import {
+    OnboardingTrainingProfileData,
+    OnboardingUserProfileData,
+    StoredOnboardingData
+} from '@/constants/types';
 import { api } from '@/convex/_generated/api';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMutation, useQuery } from 'convex/react';
@@ -32,57 +37,77 @@ export function useOnboardingSync() {
           return;
         }
 
-        const onboardingData = JSON.parse(pendingData);
+        const onboardingData: StoredOnboardingData = JSON.parse(pendingData);
         console.log('Found pending onboarding data, processing...', {
           hasExistingProfile: trainingProfile !== null,
           newData: onboardingData
         });
 
-        // Handle both old format (flat) and new format (separated)
-        let trainingProfileData, userProfileData;
-        
-        if (onboardingData.trainingProfile && onboardingData.userProfile) {
-          // New separated format
-          trainingProfileData = onboardingData.trainingProfile;
-          userProfileData = onboardingData.userProfile;
-        } else {
-          // Old flat format - extract only training profile fields
-          trainingProfileData = {
-            goalDistance: onboardingData.goalDistance,
-            goalDate: onboardingData.goalDate,
-            currentAbility: onboardingData.currentAbility,
-            longestDistance: onboardingData.longestDistance,
-            daysPerWeek: onboardingData.daysPerWeek,
-            preferredDays: onboardingData.preferredDays,
-            hasTreadmill: onboardingData.hasTreadmill || false,
-            preferTimeOverDistance: onboardingData.preferTimeOverDistance,
-            pushNotificationsEnabled: onboardingData.pushNotificationsEnabled,
-          };
-          userProfileData = {
-            name: onboardingData.name,
-            path: onboardingData.path,
-            metricSystem: onboardingData.metricSystem,
-            gender: onboardingData.gender,
-            age: onboardingData.age,
-          };
-        }
+        // Extract training and user profile data
+        const trainingProfileData: OnboardingTrainingProfileData = onboardingData.trainingProfile;
+        const userProfileData: OnboardingUserProfileData = onboardingData.userProfile;
 
         // Save the training profile (creates new or updates existing)
-        await saveTrainingProfile(trainingProfileData);
+        await saveTrainingProfile({
+          goalDistance: trainingProfileData.goalDistance,
+          goalDate: trainingProfileData.goalDate,
+          currentAbility: trainingProfileData.currentAbility ?? 'none',
+          longestDistance: trainingProfileData.longestDistance,
+          daysPerWeek: trainingProfileData.daysPerWeek,
+          preferredDays: trainingProfileData.preferredDays,
+          hasTreadmill: trainingProfileData.hasTreadmill,
+          preferTimeOverDistance: trainingProfileData.preferTimeOverDistance ?? false,
+          pushNotificationsEnabled: trainingProfileData.pushNotificationsEnabled ?? false
+        });
         console.log('Training profile saved successfully', {
           action: trainingProfile !== null ? 'updated' : 'created'
         });
 
         // Update user profile with onboarding data
+        const profileUpdates: any = {};
+        
+        console.log('[useOnboardingSync] Processing user profile data:', userProfileData);
+        
+        if (userProfileData.mascotName) {
+          profileUpdates.mascotName = userProfileData.mascotName;
+          console.log('[useOnboardingSync] Adding mascotName to updates:', userProfileData.mascotName);
+        }
+        
+        if (userProfileData.path) {
+          profileUpdates.path = userProfileData.path;
+          console.log('[useOnboardingSync] Adding path to updates:', userProfileData.path);
+        }
+        
+        if (userProfileData.gender) {
+          profileUpdates.gender = userProfileData.gender;
+          console.log('[useOnboardingSync] Adding gender to updates:', userProfileData.gender);
+        }
+        
+        if (userProfileData.age !== null && userProfileData.age !== undefined) {
+          profileUpdates.age = userProfileData.age;
+          console.log('[useOnboardingSync] Adding age to updates:', userProfileData.age);
+        }
+        
         if (userProfileData.metricSystem) {
-          await updateUserProfile({
-            metricSystem: userProfileData.metricSystem
-          });
-          console.log('User profile updated with metric system preference');
+          profileUpdates.metricSystem = userProfileData.metricSystem;
+          console.log('[useOnboardingSync] Adding metricSystem to updates:', userProfileData.metricSystem);
+        }
+        
+        if (userProfileData.weekStartDay !== undefined) {
+          profileUpdates.weekStartDay = userProfileData.weekStartDay;
+          console.log('[useOnboardingSync] Adding weekStartDay to updates:', userProfileData.weekStartDay);
+        }
+        
+        if (Object.keys(profileUpdates).length > 0) {
+          console.log('[useOnboardingSync] Updating user profile with:', profileUpdates);
+          await updateUserProfile(profileUpdates);
+          console.log('[useOnboardingSync] User profile updated successfully');
+        } else {
+          console.log('[useOnboardingSync] No user profile updates needed');
         }
 
         // Update push notification settings
-        if (trainingProfileData.pushNotificationsEnabled !== undefined) {
+        if (trainingProfileData.pushNotificationsEnabled !== null && trainingProfileData.pushNotificationsEnabled !== undefined) {
           await updateSyncPreferences({
             pushNotificationsEnabled: trainingProfileData.pushNotificationsEnabled
           });

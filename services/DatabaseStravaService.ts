@@ -197,7 +197,15 @@ class DatabaseStravaService {
       // Check if user is authenticated
       const isAuth = await this.isAuthenticated();
       if (!isAuth) {
-        throw new Error('Not authenticated with Strava');
+        console.warn('[DatabaseStravaService] Not authenticated with Strava – skipping activity sync.');
+        return {
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          lastSyncDate: new Date().toISOString(),
+          distanceGained: 0,
+          leveledUp: false,
+        };
       }
 
       // Ensure tokens are valid and refresh if needed
@@ -234,6 +242,23 @@ class DatabaseStravaService {
           calories: activity.calories,
           averageHeartRate: activity.averageHeartRate,
           workoutName: activity.workoutName,
+          // Enhanced fields for achievements and gamification
+          totalElevationGain: activity.totalElevationGain,
+          elevationHigh: activity.elevationHigh,
+          elevationLow: activity.elevationLow,
+          averageTemp: activity.averageTemp,
+          startLatLng: activity.startLatLng,
+          endLatLng: activity.endLatLng,
+          timezone: activity.timezone,
+          isIndoor: activity.isIndoor,
+          isCommute: activity.isCommute,
+          averageCadence: activity.averageCadence,
+          averageWatts: activity.averageWatts,
+          maxWatts: activity.maxWatts,
+          kilojoules: activity.kilojoules,
+          polyline: activity.polyline,
+          maxSpeed: activity.maxSpeed,
+          averageSpeed: activity.averageSpeed,
         };
       });
 

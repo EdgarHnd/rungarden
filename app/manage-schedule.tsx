@@ -19,7 +19,7 @@ export default function ManageScheduleScreen() {
   const currentSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
   const setSchedule = useMutation(api.simpleTrainingSchedule.setSimpleTrainingSchedule);
 
-  const [runsPerWeek, setRunsPerWeek] = useState(currentSchedule?.runsPerWeek || 3);
+  const [runsPerWeek, setRunsPerWeek] = useState(currentSchedule?.runsPerWeek || 1);
   const [preferredDays, setPreferredDays] = useState<string[]>(currentSchedule?.preferredDays || []);
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -48,7 +48,7 @@ export default function ManageScheduleScreen() {
       Alert.alert(
         "Schedule Updated!",
         currentSchedule
-          ? "Your training schedule has been updated. Changes take effect next week."
+          ? "Your training schedule has been updated. Changes apply to remaining days this week."
           : "Your training schedule has been created successfully!",
         [{ text: "OK", onPress: () => router.back() }]
       );
@@ -92,9 +92,9 @@ export default function ManageScheduleScreen() {
           </Text>
           <View style={styles.runsCounter}>
             <TouchableOpacity
-              style={[styles.counterButton, runsPerWeek <= 2 && styles.counterButtonDisabled]}
+              style={[styles.counterButton, runsPerWeek <= 1 && styles.counterButtonDisabled]}
               onPress={() => {
-                if (runsPerWeek > 2) {
+                if (runsPerWeek > 1) {
                   const newRuns = runsPerWeek - 1;
                   setRunsPerWeek(newRuns);
                   // Reset preferred days if we have too many selected
@@ -104,12 +104,12 @@ export default function ManageScheduleScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }
               }}
-              disabled={runsPerWeek <= 2}
+              disabled={runsPerWeek <= 1}
             >
               <Ionicons
                 name="remove"
                 size={24}
-                color={runsPerWeek <= 2 ? Theme.colors.text.disabled : Theme.colors.text.primary}
+                color={runsPerWeek <= 1 ? Theme.colors.text.disabled : Theme.colors.text.primary}
               />
             </TouchableOpacity>
 

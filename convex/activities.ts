@@ -3,14 +3,11 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { action, mutation, query } from "./_generated/server";
 import {
-  calculateCoinsFromDistance,
-  calculateLevelFromXP,
-  distanceToXP
+    calculateCoinsFromDistance,
+    calculateLevelFromXP,
+    distanceToXP
 } from "./utils/gamification";
 import { recalcStreak } from "./utils/streak";
-import {
-  checkStreakMilestones
-} from "./utils/streaks";
 
 // Sync result interface
 interface SyncResult {
@@ -611,63 +608,6 @@ async function updateLastSyncDate(ctx: any, userId: any, syncDate: string) {
   }
 }
 
-// Helper function to update streak when workout is completed
-async function updateStreakOnCompletion(
-  ctx: any,
-  userId: any,
-  workoutDate: string,
-  workoutType: string,
-  plannedWorkoutId: any
-) {
-  const profile = await ctx.db
-    .query("userProfiles")
-    .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .first();
-
-  if (!profile) {
-    throw new Error("Profile not found");
-  }
-
-  const beforeStreak = profile.currentStreak || 0;
-
-  // Centralized recalculation – streak only breaks on "missed"
-  await recalcStreak(ctx.db, userId, new Date().toISOString().split("T")[0]);
-
-  // Fetch updated profile
-  const updatedProfile = await ctx.db
-    .query("userProfiles")
-    .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .first();
-
-  if (!updatedProfile) {
-    return { streakUpdated: false, currentStreak: beforeStreak, streakIncreased: false };
-  }
-
-  const afterStreak = updatedProfile.currentStreak || 0;
-
-  const milestoneRewards = checkStreakMilestones(
-    beforeStreak,
-    afterStreak,
-    updatedProfile.streakFreezeAvailable || 0
-  );
-
-  // Apply freeze reward if any
-  if (milestoneRewards.freezesEarned > 0) {
-    await ctx.db.patch(updatedProfile._id, {
-      streakFreezeAvailable: milestoneRewards.newFreezes,
-    });
-  }
-
-  return {
-    streakUpdated: true,
-    currentStreak: afterStreak,
-    longestStreak: updatedProfile.longestStreak || afterStreak,
-    streakIncreased: afterStreak > beforeStreak,
-    milestoneMessage: milestoneRewards.milestoneMessage,
-    streakFreezesEarned: milestoneRewards.freezesEarned,
-  };
-}
-
 // Get activities that need celebration (new activities not yet celebrated)
 export const getActivitiesNeedingCelebration = query({
   args: {},
@@ -762,6 +702,7 @@ export const fetchStravaActivityFromServer = action({
 
       // Fetch the specific activity from Strava API
       const activityData = await fetchStravaActivity(accessToken, stravaActivityId);
+      console.log(`[fetchStravaActivityFromServer] Activity data:`, activityData);
       
       if (!activityData) {
         return { success: false, error: "Failed to fetch activity from Strava API" };
@@ -891,6 +832,23 @@ export const syncActivitiesFromStrava = mutation({
       calories: v.number(),
       averageHeartRate: v.optional(v.number()),
       workoutName: v.optional(v.string()),
+      // Enhanced fields for achievements and gamification
+      totalElevationGain: v.optional(v.number()),
+      elevationHigh: v.optional(v.number()),
+      elevationLow: v.optional(v.number()),
+      averageTemp: v.optional(v.number()),
+      startLatLng: v.optional(v.array(v.number())),
+      endLatLng: v.optional(v.array(v.number())),
+      timezone: v.optional(v.string()),
+      isIndoor: v.optional(v.boolean()),
+      isCommute: v.optional(v.boolean()),
+      averageCadence: v.optional(v.number()),
+      averageWatts: v.optional(v.number()),
+      maxWatts: v.optional(v.number()),
+      kilojoules: v.optional(v.number()),
+      polyline: v.optional(v.string()),
+      maxSpeed: v.optional(v.number()),
+      averageSpeed: v.optional(v.number()),
     })),
   },
   handler: async (ctx, args): Promise<SyncResult> => {
@@ -935,7 +893,24 @@ export const syncActivitiesFromStrava = mutation({
             existingActivity.calories !== activity.calories ||
             existingActivity.averageHeartRate !== activity.averageHeartRate ||
             existingActivity.workoutName !== activity.workoutName ||
-            Math.abs((existingActivity.pace || 0) - pace) > 0.1
+            Math.abs((existingActivity.pace || 0) - pace) > 0.1 ||
+            // Enhanced fields comparison
+            existingActivity.totalElevationGain !== activity.totalElevationGain ||
+            existingActivity.elevationHigh !== activity.elevationHigh ||
+            existingActivity.elevationLow !== activity.elevationLow ||
+            existingActivity.averageTemp !== activity.averageTemp ||
+            JSON.stringify(existingActivity.startLatLng) !== JSON.stringify(activity.startLatLng) ||
+            JSON.stringify(existingActivity.endLatLng) !== JSON.stringify(activity.endLatLng) ||
+            existingActivity.timezone !== activity.timezone ||
+            existingActivity.isIndoor !== activity.isIndoor ||
+            existingActivity.isCommute !== activity.isCommute ||
+            existingActivity.averageCadence !== activity.averageCadence ||
+            existingActivity.averageWatts !== activity.averageWatts ||
+            existingActivity.maxWatts !== activity.maxWatts ||
+            existingActivity.kilojoules !== activity.kilojoules ||
+            existingActivity.polyline !== activity.polyline ||
+            existingActivity.maxSpeed !== activity.maxSpeed ||
+            existingActivity.averageSpeed !== activity.averageSpeed
           );
 
           if (hasChanges) {
@@ -948,6 +923,23 @@ export const syncActivitiesFromStrava = mutation({
               averageHeartRate: activity.averageHeartRate,
               workoutName: activity.workoutName,
               pace,
+              // Enhanced fields
+              totalElevationGain: activity.totalElevationGain,
+              elevationHigh: activity.elevationHigh,
+              elevationLow: activity.elevationLow,
+              averageTemp: activity.averageTemp,
+              startLatLng: activity.startLatLng,
+              endLatLng: activity.endLatLng,
+              timezone: activity.timezone,
+              isIndoor: activity.isIndoor,
+              isCommute: activity.isCommute,
+              averageCadence: activity.averageCadence,
+              averageWatts: activity.averageWatts,
+              maxWatts: activity.maxWatts,
+              kilojoules: activity.kilojoules,
+              polyline: activity.polyline,
+              maxSpeed: activity.maxSpeed,
+              averageSpeed: activity.averageSpeed,
               syncedAt: now,
             });
             updated++;
@@ -970,6 +962,23 @@ export const syncActivitiesFromStrava = mutation({
             averageHeartRate: activity.averageHeartRate,
             workoutName: activity.workoutName,
             pace,
+            // Enhanced fields
+            totalElevationGain: activity.totalElevationGain,
+            elevationHigh: activity.elevationHigh,
+            elevationLow: activity.elevationLow,
+            averageTemp: activity.averageTemp,
+            startLatLng: activity.startLatLng,
+            endLatLng: activity.endLatLng,
+            timezone: activity.timezone,
+            isIndoor: activity.isIndoor,
+            isCommute: activity.isCommute,
+            averageCadence: activity.averageCadence,
+            averageWatts: activity.averageWatts,
+            maxWatts: activity.maxWatts,
+            kilojoules: activity.kilojoules,
+            polyline: activity.polyline,
+            maxSpeed: activity.maxSpeed,
+            averageSpeed: activity.averageSpeed,
             isNewActivity: true, // Don't mark initial sync activities as new
             syncedAt: now,
           });

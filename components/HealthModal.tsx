@@ -29,7 +29,7 @@ export default function HealthModal({ visible, mascotHealth, simpleSchedule, onC
       >
         <View style={styles.container}>
           <View style={styles.header}>
-            <Text style={styles.title}>Blaze's Energy System</Text>
+            <Text style={styles.title}>Your Flame's Health</Text>
             <TouchableOpacity onPress={onClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={Theme.colors.text.secondary} />
             </TouchableOpacity>
@@ -43,36 +43,32 @@ export default function HealthModal({ visible, mascotHealth, simpleSchedule, onC
                 return (
                   <Ionicons
                     key={index}
-                    name={isAlive ? "flash" : "flash-outline"}
+                    name={isAlive ? "heart" : "heart-outline"}
                     size={32}
                     color={isAlive ? Theme.colors.special.primary.coin : Theme.colors.text.muted}
                   />
                 );
               })}
             </View>
-            <Text style={styles.healthCurrentText}>
-              {mascotHealth}/4 Energy
-            </Text>
           </View>
 
           <View style={styles.healthInfoSection}>
-            <Text style={styles.healthSectionTitle}>How Health Works:</Text>
             <View style={styles.healthInfoItem}>
               <Text style={styles.healthInfoIcon}>⚡</Text>
               <Text style={styles.healthInfoText}>
-                Blaze starts with full energy
+                Your Flame starts with full health
               </Text>
             </View>
             <View style={styles.healthInfoItem}>
               <Text style={styles.healthInfoIcon}>📅</Text>
               <Text style={styles.healthInfoText}>
-                Energy decreases by 1 for each consecutive week you miss your running goal
+                Health decreases by 1 for each consecutive week you miss your running goal
               </Text>
             </View>
             <View style={styles.healthInfoItem}>
               <Text style={styles.healthInfoIcon}>🏃‍♂️</Text>
               <Text style={styles.healthInfoText}>
-                Hit your weekly goal to stop energy loss and maintain your streak
+                Hit your weekly goal to keep your flame healthy
               </Text>
             </View>
           </View>
@@ -126,9 +122,6 @@ const styles = StyleSheet.create({
   healthDisplay: {
     alignItems: 'center',
     marginBottom: Theme.spacing.xl,
-    paddingVertical: Theme.spacing.lg,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.large,
   },
   healthMascotIcon: {
     width: 100,

@@ -6,7 +6,8 @@ import Theme from '@/constants/theme';
 import { SuggestedActivity, getActivityType, isDatabasePlannedWorkout, isGeneratedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
 import { Doc } from '@/convex/_generated/dataModel';
-import { useMutation } from 'convex/react';
+import { formatDistanceValue, formatPace } from '@/utils/formatters';
+import { useMutation, useQuery } from 'convex/react';
 import { router } from 'expo-router';
 import React, { useState } from 'react';
 import { Alert, StyleSheet, Text, View } from 'react-native';
@@ -16,8 +17,6 @@ interface DayCardProps {
   activities: Doc<"activities">[];
   plannedWorkout?: SuggestedActivity | null;
   restActivity?: Doc<"restActivities">;
-  formatDistance: (meters: number) => string;
-  formatPace: (duration: number, distance: number) => string;
   streakInfo?: {
     currentStreak: number;
     longestStreak: number;
@@ -30,13 +29,13 @@ export default function DayCard({
   activities,
   plannedWorkout,
   restActivity,
-  formatDistance,
-  formatPace,
   streakInfo,
   isRestDayCompleted,
 }: DayCardProps) {
   const [showRestCelebrationModal, setShowRestCelebrationModal] = useState(false);
   const completeRestDay = useMutation(api.userProfile.completeRestDay);
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
 
   // Check if there are activities that match this planned workout
   const hasLinkedActivities = activities.length > 0 && plannedWorkout && isDatabasePlannedWorkout(plannedWorkout) && plannedWorkout.status === 'completed';
@@ -134,13 +133,14 @@ export default function DayCard({
                 ? `${getWorkoutDisplayName(workoutType)} (Completed)`
                 : (activity.workoutName || "Running")
             }
-            distance={formatDistance(activity.distance)}
+            distance={formatDistanceValue(activity.distance, metricSystem)}
             duration={`${activity.duration}`}
-            pace={formatPace(activity.duration, activity.distance)}
+            pace={formatPace(activity.duration, activity.distance, metricSystem)}
             calories={`${activity.calories}`}
-            weeklyProgress={parseFloat(formatDistance(activity.distance))}
+            weeklyProgress={parseFloat(formatDistanceValue(activity.distance, metricSystem))}
             weeklyGoal="20"
             onPress={() => handleActivityPress(activity)}
+            distanceInMeters={activity.distance}
           />
         </View>
       ))}

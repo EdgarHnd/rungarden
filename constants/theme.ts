@@ -19,7 +19,7 @@ export const Theme = {
     // Accent colors
     accent: {
       primary: '#FE580F',      // Orange - main accent color
-      secondary: '#EA580C',    // Darker orange
+      secondary: '#D4520B',    // Darker orange
       light: '#FDBA74',        // Light orange
     },
 

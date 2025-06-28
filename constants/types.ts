@@ -116,4 +116,57 @@ export function isDefaultActivity(activity: SuggestedActivity | null | undefined
   } else {
     return activity.isDefault === true;
   }
+}
+
+// Onboarding types for type safety between UI and sync hook
+export type UserPath = 'true-beginner' | 'run-habit' | 'weight-loss' | 'race-ready';
+export type CurrentAbility = 'none' | 'less1min' | '1to5min' | '5to15min' | '15to30min' | 'more30min';
+export type MetricSystem = 'metric' | 'imperial';
+export type Gender = 'female' | 'male' | 'other';
+export type GoalDistance = '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon';
+export type LongestDistance = 'never' | '1to2km' | '2to4km' | '5plusKm';
+
+// Main onboarding data interface
+export interface OnboardingData {
+  mascotName: string | null;
+  path: UserPath | null;
+  currentAbility: CurrentAbility | null;
+  daysPerWeek: number;
+  preferredDays: string[];
+  preferTimeOverDistance: boolean | null;
+  metricSystem: MetricSystem | null;
+  gender: Gender | null;
+  age: number | null;
+  pushNotificationsEnabled: boolean | null;
+  weekStartDay: 0 | 1; // 0 = Sunday, 1 = Monday
+  hasRated: boolean | null; // Whether user completed the rating step
+}
+
+// Training profile data extracted from onboarding
+export interface OnboardingTrainingProfileData {
+  goalDistance?: GoalDistance;
+  goalDate?: string;
+  currentAbility: CurrentAbility | null;
+  longestDistance: LongestDistance;
+  daysPerWeek: number;
+  preferredDays: string[];
+  hasTreadmill: boolean;
+  preferTimeOverDistance: boolean | null;
+  pushNotificationsEnabled: boolean | null;
+}
+
+// User profile data extracted from onboarding
+export interface OnboardingUserProfileData {
+  mascotName: string | null;
+  path: UserPath | null;
+  metricSystem: MetricSystem | null;
+  gender: Gender | null;
+  age: number | null;
+  weekStartDay: 0 | 1; // 0 = Sunday, 1 = Monday
+}
+
+// Combined onboarding data structure for storage
+export interface StoredOnboardingData {
+  trainingProfile: OnboardingTrainingProfileData;
+  userProfile: OnboardingUserProfileData;
 } 

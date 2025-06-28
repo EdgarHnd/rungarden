@@ -1,4 +1,7 @@
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
+import { formatDate, formatDistance, formatDuration, formatPace } from '@/utils/formatters';
+import { useQuery } from 'convex/react';
 import React from 'react';
 import {
   StyleSheet,
@@ -10,56 +13,55 @@ import {
 interface ActivityCardProps {
   activity: any;
   handleActivityPress: (activity: any) => void;
-  formatDistance: (kilometers: number) => string;
-  formatDate: (dateString: string) => string;
-  formatPace: (pace: number) => string;
 }
 
 export const ActivityCard = ({
   activity,
-  handleActivityPress,
-  formatDistance,
-  formatDate,
-  formatPace
-}: ActivityCardProps) => (
-  <TouchableOpacity
-    style={styles.activityCard}
-    onPress={() => handleActivityPress(activity)}
-    activeOpacity={0.7}
-  >
-    <View style={styles.activityHeader}>
-      <View style={styles.activityTitleContainer}>
-        <Text style={styles.activityType}>{activity.workoutName || 'Running'}</Text>
-        <Text style={styles.activityDate}>{formatDate(activity.startDate)}</Text>
+  handleActivityPress
+}: ActivityCardProps) => {
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
+
+  return (
+    <TouchableOpacity
+      style={styles.activityCard}
+      onPress={() => handleActivityPress(activity)}
+      activeOpacity={0.7}
+    >
+      <View style={styles.activityHeader}>
+        <View style={styles.activityTitleContainer}>
+          <Text style={styles.activityType}>{activity.workoutName || 'Running'}</Text>
+          <Text style={styles.activityDate}>{formatDate(activity.startDate)}</Text>
+        </View>
+        <Text style={styles.chevron}>›</Text>
       </View>
-      <Text style={styles.chevron}>›</Text>
-    </View>
-    <View style={styles.activityStats}>
-      <View style={styles.activityStat}>
-        <Text style={styles.activityValue}>
-          {formatDistance(activity.distance)}
-        </Text>
-        <Text style={styles.activityLabel}>Distance</Text>
-      </View>
-      <View style={styles.activityStat}>
-        <Text style={styles.activityValue}>{activity.duration} min</Text>
-        <Text style={styles.activityLabel}>Duration</Text>
-      </View>
-      <View style={styles.activityStat}>
-        <Text style={styles.activityValue}>{activity.calories}</Text>
-        <Text style={styles.activityLabel}>Calories</Text>
-      </View>
-      {activity.pace && (
+      <View style={styles.activityStats}>
         <View style={styles.activityStat}>
           <Text style={styles.activityValue}>
-            {formatPace(activity.pace)}
+            {formatDistance(activity.distance, metricSystem)}
           </Text>
-          <Text style={styles.activityLabel}>Pace</Text>
+          <Text style={styles.activityLabel}>Distance</Text>
         </View>
-      )}
-    </View>
-  </TouchableOpacity>
-);
+        <View style={styles.activityStat}>
+          <Text style={styles.activityValue}>{formatDuration(activity.duration)}</Text>
+          <Text style={styles.activityLabel}>Duration</Text>
+        </View>
+        <View style={styles.activityStat}>
+          <Text style={styles.activityValue}>{activity.calories}</Text>
+          <Text style={styles.activityLabel}>Calories</Text>
+        </View>
+        {activity.distance > 0 && activity.duration > 0 && (
+          <View style={styles.activityStat}>
+            <Text style={styles.activityValue}>
+              {formatPace(activity.duration, activity.distance, metricSystem)}
+            </Text>
+            <Text style={styles.activityLabel}>Pace</Text>
+          </View>
+        )}
+      </View>
+    </TouchableOpacity>
+  );
+};
 
 const styles = StyleSheet.create({
   activityCard: {

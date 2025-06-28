@@ -20,6 +20,7 @@ export default function ManagePlanScreen() {
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const updateTrainingProfile = useMutation(api.trainingProfile.updateTrainingProfile);
   const regenerateTrainingPlan = useMutation(api.trainingPlan.regenerateTrainingPlan);
+  const deleteTrainingPlan = useMutation(api.trainingPlan.deleteTrainingPlan);
 
   const [goalDistance, setGoalDistance] = useState(trainingProfile?.goalDistance || '5K');
   const [targetDate, setTargetDate] = useState(trainingProfile?.goalDate ? new Date(trainingProfile.goalDate) : new Date());
@@ -27,6 +28,7 @@ export default function ManagePlanScreen() {
   const [preferredDays, setPreferredDays] = useState<string[]>(trainingProfile?.preferredDays || []);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const canSaveChanges = preferredDays.length === daysPerWeek;
 
@@ -68,6 +70,45 @@ export default function ManagePlanScreen() {
     } finally {
       setIsUpdating(false);
     }
+  };
+
+  const handleDeletePlan = () => {
+    Alert.alert(
+      "Delete Training Plan",
+      "Are you sure you want to delete your current training plan? This action cannot be undone.",
+      [
+        {
+          text: "Cancel",
+          style: "cancel",
+          onPress: () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+        },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              setIsDeleting(true);
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+              await deleteTrainingPlan();
+
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert(
+                "Plan Deleted",
+                "Your training plan has been deleted successfully.",
+                [{ text: "OK", onPress: () => router.back() }]
+              );
+            } catch (error) {
+              console.error('Failed to delete plan:', error);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+              Alert.alert("Error", "Failed to delete your plan. Please try again.");
+            } finally {
+              setIsDeleting(false);
+            }
+          }
+        }
+      ]
+    );
   };
 
   const today = new Date();
@@ -214,6 +255,21 @@ export default function ManagePlanScreen() {
             {isUpdating ? 'Updating Plan...' : 'Save Changes & Regenerate Plan'}
           </Text>
         </TouchableOpacity>
+
+        {/* Delete Button */}
+        <TouchableOpacity
+          style={[
+            styles.deleteButton,
+            isDeleting && styles.deleteButtonDisabled
+          ]}
+          onPress={handleDeletePlan}
+          disabled={isDeleting}
+        >
+          <Ionicons name="trash-outline" size={20} color={Theme.colors.status.error} />
+          <Text style={styles.deleteButtonText}>
+            {isDeleting ? 'Deleting Plan...' : 'Delete Training Plan'}
+          </Text>
+        </TouchableOpacity>
       </ScrollView>
 
       <DatePicker
@@ -356,10 +412,11 @@ const styles = StyleSheet.create({
   saveButton: {
     backgroundColor: Theme.colors.accent.primary,
     borderRadius: Theme.borderRadius.large,
+    borderBottomWidth: 3,
+    borderColor: Theme.colors.accent.secondary,
     paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
     marginTop: Theme.spacing.xl,
-    marginBottom: 40,
   },
   saveButtonDisabled: {
     opacity: 0.6,
@@ -405,5 +462,26 @@ const styles = StyleSheet.create({
   },
   weekDayTextSelected: {
     color: Theme.colors.accent.primary,
+  },
+  deleteButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'transparent',
+    borderWidth: 2,
+    borderColor: Theme.colors.status.error,
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.lg,
+    gap: Theme.spacing.sm,
+    marginTop: Theme.spacing.lg,
+    marginBottom: 40,
+  },
+  deleteButtonDisabled: {
+    opacity: 0.6,
+  },
+  deleteButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.status.error,
   },
 });

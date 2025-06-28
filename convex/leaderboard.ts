@@ -47,7 +47,7 @@ export const getLeaderboard = query({
         leaderboard.push({
           rank: i + 1,
           userId: profile.userId,
-          name: (user as any)?.name || "Unknown User",
+          name: profile.mascotName || "Unknown User",
           totalDistance: profile.totalDistance || 0,
           level: profile.level || 1,
           totalWorkouts: profile.totalWorkouts || 0,

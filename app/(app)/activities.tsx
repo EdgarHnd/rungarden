@@ -3,6 +3,7 @@ import { ActivityGrid } from '@/components/ActivityGrid';
 import { MonthHeader } from '@/components/MonthHeader';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { formatDistanceValue, getDistanceUnit } from '@/utils/formatters';
 import { useConvexAuth, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -53,7 +54,7 @@ export default function ProgressScreen() {
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const simpleSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
   const completedWorkouts: any[] = [];
-  const isMetric = (profile?.metricSystem ?? 'metric') === 'metric';
+  const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
 
   const handleRefresh = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -72,26 +73,6 @@ export default function ProgressScreen() {
         [{ text: 'OK', style: 'default' }]
       );
     }
-  };
-
-  const formatDistance = (kilometers: number) => {
-    return `${kilometers.toFixed(0)}km`;
-  };
-
-  const formatDate = (dateString: string) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      month: 'short',
-      day: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-    });
-  };
-
-  const formatPace = (pace: number) => {
-    const minutes = Math.floor(pace);
-    const seconds = Math.round((pace - minutes) * 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
   };
 
   const handleActivityPress = (activity: any) => {
@@ -167,7 +148,7 @@ export default function ProgressScreen() {
   const getMonthlyDistance = (monthOffset: number = 0) => {
     const activities = getActivitiesForMonth(monthOffset);
     const distanceInMeters = activities.reduce((total, activity) => total + (activity.distance || 0), 0);
-    return distanceInMeters / 1000; // Return km
+    return distanceInMeters; // Return meters for consistent usage with centralized formatters
   };
 
   const getMonthName = (monthOffset: number = 0) => {
@@ -213,7 +194,7 @@ export default function ProgressScreen() {
       const monthOffset = (year - currentYear) * 12 + (month - currentMonth);
 
       const activities = getActivitiesForMonth(monthOffset);
-      const distance = getMonthlyDistance(monthOffset);
+      const distanceInMeters = getMonthlyDistance(monthOffset);
 
       // Generate title
       let title: string;
@@ -225,7 +206,7 @@ export default function ProgressScreen() {
 
       return {
         title,
-        distance: formatDistance(distance),
+        distance: `${formatDistanceValue(distanceInMeters, metricSystem)} ${getDistanceUnit(metricSystem)}`,
         runCount: activities.length,
         data: activities,
       };
@@ -257,9 +238,6 @@ export default function ProgressScreen() {
       <SafeAreaView style={styles.container}>
         <View style={styles.pageHeader}>
           <Text style={styles.headerTitle}>Progress</Text>
-          <TouchableOpacity style={styles.editButton}>
-            <Text style={styles.editButtonText}>edit</Text>
-          </TouchableOpacity>
         </View>
         <View style={styles.permissionContainer}>
           <Text style={styles.title}>Connect a Data Source</Text>
@@ -290,9 +268,6 @@ export default function ProgressScreen() {
             <ActivityCard
               activity={item}
               handleActivityPress={handleActivityPress}
-              formatDistance={formatDistance}
-              formatDate={formatDate}
-              formatPace={formatPace}
             />
           </View>
         )}

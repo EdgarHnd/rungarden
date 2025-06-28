@@ -1,70 +1,230 @@
 import Theme from '@/constants/theme';
+import {
+  OnboardingData
+} from '@/constants/types';
+import { PushNotificationService } from '@/services/PushNotificationService';
+import { requestRating as requestStoreRating } from '@/services/RatingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
+import { useConvex } from 'convex/react';
+import * as AppleAuth from 'expo-apple-authentication';
 import { makeRedirectUri } from "expo-auth-session";
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
+import { useVideoPlayer, VideoView } from 'expo-video';
 import { openAuthSessionAsync } from "expo-web-browser";
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   Alert,
   Animated,
   Dimensions,
   Image,
+  Keyboard,
   Platform,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  TouchableWithoutFeedback,
   View
 } from 'react-native';
 
 const redirectTo = makeRedirectUri();
-const { width: screenWidth } = Dimensions.get('window');
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
-interface OnboardingData {
-  name: string | null;
-  path: 'light-spark' | 'keep-fire' | 'run-melt' | 'race-ready' | null;
-  currentAbility: 'none' | 'less1min' | '1to5min' | '5to10min' | 'more10min' | null;
-  daysPerWeek: number;
-  preferredDays: string[];
-  preferTimeOverDistance: boolean | null;
-  metricSystem: 'metric' | 'imperial' | null;
-  gender: 'female' | 'male' | 'other' | null;
-  age: number | null;
-  pushNotificationsEnabled: boolean | null;
-}
-
-const TOTAL_STEPS = 12;
+const TOTAL_STEPS = 14;
 
 export default function OnboardingScreen() {
   const { signIn } = useAuthActions();
   const router = useRouter();
+  const convex = useConvex();
   const [currentStep, setCurrentStep] = useState(0);
   const [slideAnim] = useState(new Animated.Value(0));
   const nameInputRef = useRef<TextInput>(null);
+  const [pushService, setPushService] = useState<PushNotificationService | null>(null);
+
+  // Cinematic effect state for welcome step
+  const [cinematicPhase, setCinematicPhase] = useState<'zooming' | 'typing' | 'waiting' | 'transition'>('zooming');
+  const [typewriterText, setTypewriterText] = useState('');
+  const [zoomAnim] = useState(new Animated.Value(1)); // Start at normal scale (full screen)
+  const [textOpacityAnim] = useState(new Animated.Value(0));
+  const [textPulseAnim] = useState(new Animated.Value(1)); // For pulsing effect
+  const [gifOpacityAnim] = useState(new Animated.Value(1));
+  const [secondGifOpacityAnim] = useState(new Animated.Value(0));
+
   const [data, setData] = useState<OnboardingData>({
-    name: null,
+    mascotName: null,
     path: null,
     currentAbility: null,
-    daysPerWeek: 3,
+    daysPerWeek: 1,
     preferredDays: [],
     preferTimeOverDistance: null,
     metricSystem: null,
     gender: null,
     age: null,
     pushNotificationsEnabled: null,
+    weekStartDay: 1, // 0 = Sunday, 1 = Monday (default to Monday)
+    hasRated: null, // Whether user completed the rating step
   });
+
+  // --- Video players for cinematic welcome step ---
+  const extinctPlayer = useVideoPlayer(
+    require('@/assets/images/onboarding/extinct.mp4'),
+    player => {
+      player.loop = true;
+      player.play();
+    },
+  );
+
+  const appearsPlayer = useVideoPlayer(
+    require('@/assets/images/onboarding/appears.mp4'),
+    player => {
+      player.loop = true;
+    },
+  );
+
+  useEffect(() => {
+    if (convex) {
+      const pushSvc = new PushNotificationService(convex);
+      setPushService(pushSvc);
+
+      // Initialize push notification channels
+      pushSvc.configureNotificationChannels();
+    }
+  }, [convex]);
+
+  // Cinematic effect for welcome step
+  useEffect(() => {
+    if (currentStep === 0) {
+      // Reset all animations when entering welcome step
+      setCinematicPhase('zooming');
+      setTypewriterText('');
+      zoomAnim.setValue(1.5); // Start at normal scale (image is already full screen)
+      textOpacityAnim.setValue(0);
+      textPulseAnim.setValue(1);
+      gifOpacityAnim.setValue(1);
+      secondGifOpacityAnim.setValue(0);
+
+      // Start zoom animation
+      setTimeout(() => {
+        Animated.timing(zoomAnim, {
+          toValue: 1.6, // Subtle zoom in from full screen
+          duration: 2000,
+          useNativeDriver: true,
+        }).start(() => {
+          // Start typewriter effect
+          setCinematicPhase('typing');
+          startTypewriterEffect();
+        });
+      }, 500);
+    }
+  }, [currentStep]);
+
+  const startPulseAnimation = () => {
+    const pulseLoop = () => {
+      Animated.sequence([
+        Animated.timing(textPulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(textPulseAnim, {
+          toValue: 1.1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ]).start(pulseLoop);
+    };
+    pulseLoop();
+  };
+
+  const startTypewriterEffect = () => {
+    const text = "Tap to light up";
+    let index = 0;
+
+    // Fade in text container
+    Animated.timing(textOpacityAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
+    const typeInterval = setInterval(() => {
+      if (index <= text.length) {
+        setTypewriterText(text.slice(0, index));
+        // Add subtle haptic feedback for each character
+        if (index > 0 && index <= text.length) {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        }
+        index++;
+      } else {
+        clearInterval(typeInterval);
+        setCinematicPhase('waiting');
+        // Final haptic when typing completes
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        // Start pulsing animation
+        startPulseAnimation();
+      }
+    }, 100);
+  };
+
+  const handleCinematicTap = () => {
+    if (cinematicPhase === 'waiting') {
+      setCinematicPhase('transition');
+      // Strong haptic for the tap interaction
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+      // Start playing the second video when transition begins
+      if (appearsPlayer) {
+        appearsPlayer.play();
+      }
+
+      // Transition to second gif
+      Animated.parallel([
+        Animated.timing(gifOpacityAnim, {
+          toValue: 0,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(secondGifOpacityAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(textOpacityAnim, {
+          toValue: 0,
+          duration: 300,
+          useNativeDriver: true,
+        }),
+      ]).start(() => {
+        // Success haptic when second gif appears
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+        // Auto advance to next step after showing second gif
+        setTimeout(() => {
+          // Final transition haptic before moving to next step
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          nextStep();
+        }, 2000);
+      });
+    }
+  };
 
   const updateData = (updates: Partial<OnboardingData>) => {
     setData(prev => ({ ...prev, ...updates }));
   };
 
+  const handlePushNotificationChoice = async (enabled: boolean) => {
+    // Just store the user's preference - actual permission request will happen later
+    handleSelection(() => updateData({ pushNotificationsEnabled: enabled }));
+  };
+
   const nextStep = () => {
     if (currentStep < TOTAL_STEPS - 1) {
       // Blur the name input if we're leaving the name step
-      if (currentStep === 1 && nameInputRef.current) {
+      if (currentStep === 2 && nameInputRef.current) {
         nameInputRef.current.blur();
       }
 
@@ -78,10 +238,22 @@ export default function OnboardingScreen() {
     }
   };
 
+  const prevStep = () => {
+    if (currentStep > 1) { // Don't go back from welcome step (0) or flame intro (1)
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      Animated.timing(slideAnim, {
+        toValue: currentStep - 1,
+        duration: 300,
+        useNativeDriver: true,
+      }).start();
+      setCurrentStep(currentStep - 1);
+    }
+  };
+
   const handleSelection = (updateFn: () => void) => {
     updateFn();
-    // Auto-advance for most steps, except name (1), path (2), days per week (4), and preferred days (5)
-    if (currentStep !== 1 && currentStep !== 2 && currentStep !== 4 && currentStep !== 5) {
+    // Auto-advance for most steps, except name (2), path (3), days per week (5), and preferred days (6)
+    if (currentStep !== 2 && currentStep !== 3 && currentStep !== 5 && currentStep !== 6) {
       setTimeout(() => {
         nextStep();
       }, 300); // Small delay for visual feedback
@@ -91,17 +263,19 @@ export default function OnboardingScreen() {
   const canProceed = () => {
     switch (currentStep) {
       case 0: return true; // Welcome
-      case 1: return data.name !== null && data.name.trim() !== ''; // Name
-      case 2: return data.path !== null; // Path
-      case 3: return data.currentAbility !== null; // Current ability
-      case 4: return data.daysPerWeek >= 1; // Days per week
-      case 5: return data.preferredDays.length >= data.daysPerWeek; // Preferred days
-      case 6: return data.preferTimeOverDistance !== null; // Workout style
-      case 7: return data.metricSystem !== null; // Units
-      case 8: return data.gender !== null; // Gender
-      case 9: return data.age !== null; // Age
-      case 10: return data.pushNotificationsEnabled !== null; // Notifications
-      case 11: return true; // Auth step
+      case 1: return true; // Flame introduction
+      case 2: return data.mascotName !== null && data.mascotName.trim() !== ''; // Name
+      case 3: return data.path !== null; // Path
+      case 4: return data.currentAbility !== null; // Current ability
+      case 5: return data.daysPerWeek >= 1; // Days per week
+      case 6: return data.preferredDays.length >= data.daysPerWeek; // Preferred days
+      case 7: return data.preferTimeOverDistance !== null; // Workout style
+      case 8: return data.metricSystem !== null; // Units
+      case 9: return data.gender !== null; // Gender
+      case 10: return data.age !== null; // Age
+      case 11: return data.pushNotificationsEnabled !== null; // Notifications
+      case 12: return data.hasRated !== null; // Rating
+      case 13: return true; // Auth step
       default: return false;
     }
   };
@@ -117,9 +291,9 @@ export default function OnboardingScreen() {
         longestDistance = 'never';
       } else if (data.currentAbility === 'less1min' || data.currentAbility === '1to5min') {
         longestDistance = '1to2km';
-      } else if (data.currentAbility === '5to10min') {
+      } else if (data.currentAbility === '5to15min') {
         longestDistance = '2to4km';
-      } else if (data.currentAbility === 'more10min') {
+      } else if (data.currentAbility === '15to30min' || data.currentAbility === 'more30min') {
         longestDistance = '5plusKm';
       }
 
@@ -137,11 +311,12 @@ export default function OnboardingScreen() {
       };
 
       const userProfileData = {
-        name: data.name,
+        mascotName: data.mascotName,
         path: data.path,
         metricSystem: data.metricSystem,
         gender: data.gender,
         age: data.age,
+        weekStartDay: data.weekStartDay,
       };
 
       const onboardingData = {
@@ -165,8 +340,10 @@ export default function OnboardingScreen() {
       if (result.type === "success") {
         const { url } = result;
         const code = new URL(url).searchParams.get("code")!;
-        await signIn("google", { code });
-        router.replace('/(app)');
+        const signInResult = await signIn("google", { code });
+        if (signInResult) {
+          router.replace('/(app)');
+        }
       }
     } catch (error) {
       console.error("Google sign in error:", error);
@@ -178,67 +355,150 @@ export default function OnboardingScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await saveOnboardingDataToStorage();
-      await signIn("apple");
-      router.replace('/(app)');
+
+      // Native flow only
+      if (Platform.OS === 'ios' && await AppleAuth.isAvailableAsync()) {
+        try {
+          const credential = await AppleAuth.signInAsync({
+            requestedScopes: [
+              AppleAuth.AppleAuthenticationScope.FULL_NAME,
+              AppleAuth.AppleAuthenticationScope.EMAIL,
+            ],
+          });
+          const result = await signIn('native-apple', credential);
+          if (result) {
+            router.replace('/(app)');
+          }
+        } catch (nativeErr: any) {
+          if (nativeErr?.code === 'ERR_CANCELED') {
+            // User cancelled; silently ignore
+            return;
+          }
+          console.warn('Native Apple sign-in failed:', nativeErr);
+          Alert.alert('Apple Sign-In Error', 'Apple Sign-In failed. Please try again later.');
+        }
+      } else {
+        Alert.alert('Apple Sign-In Unavailable', 'Apple Sign-In is not available on this device.');
+      }
     } catch (error) {
-      console.error("Apple sign in error:", error);
-      Alert.alert("Error", "Failed to sign in with Apple");
+      console.error('Apple sign in error:', error);
+      Alert.alert('Apple Sign-In Error', 'Failed to sign in with Apple. Please try again.');
     }
   };
 
-  const renderProgressBar = () => (
-    <View style={styles.topRow}>
-      <View style={styles.backButtonPlaceholder} />
-      {currentStep > 0 && currentStep < TOTAL_STEPS - 1 && (
-        <View style={styles.progressBarContainer}>
-          <View style={styles.progressBar}>
-            <View style={[styles.progressFill, { width: `${(currentStep / (TOTAL_STEPS - 2)) * 100}%` }]} />
+  const renderProgressBar = () => {
+    // Don't render anything during the cinematic welcome step
+    if (currentStep === 0) return null;
+
+    return (
+      <View style={styles.topRow}>
+        {currentStep > 1 && currentStep < TOTAL_STEPS - 1 ? (
+          <TouchableOpacity style={styles.backButton} onPress={prevStep}>
+            <Ionicons name="chevron-back" size={24} color={Theme.colors.text.primary} />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.backButtonPlaceholder} />
+        )}
+        {currentStep >= 1 && currentStep < TOTAL_STEPS - 1 && (
+          <View style={styles.progressBarContainer}>
+            {currentStep > 1 && (
+              <View style={styles.progressBar}>
+                <LinearGradient
+                  colors={['#FF4500', '#FF6500', '#FF8C00', '#FFD700']} // Burning gradient: dark orange to bright gold
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={[styles.progressFill, { width: `${((currentStep - 2) / (TOTAL_STEPS - 4)) * 100}%` }]}
+                />
+              </View>
+            )}
           </View>
+        )}
+      </View>
+    );
+  };
+
+  const renderFlameIntroduction = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.flameIntroContainer}>
+        <View style={styles.blazeContainer}>
+          <Image source={require('@/assets/images/flame/age0.gif')} style={styles.blazeImage} resizeMode="contain" />
         </View>
-      )}
+
+        <View style={styles.flameIntroButtons}>
+          <TouchableOpacity
+            style={styles.getStartedButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              nextStep();
+            }}
+          >
+            <Text style={styles.getStartedButtonText}>Adopt it!</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.signInButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              // Jump directly to the auth step (step 13)
+              setCurrentStep(13);
+              Animated.timing(slideAnim, {
+                toValue: 13,
+                duration: 300,
+                useNativeDriver: true,
+              }).start();
+            }}
+          >
+            <Text style={styles.signInButtonText}>Already have an account? Sign in</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
     </View>
   );
 
   const renderName = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.blazeContainer}>
-        <Image source={require('@/assets/images/blaze/blazeidle.png')} style={styles.blazeImage} resizeMode="contain" />
-      </View>
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.stepContainer}>
+        <View style={styles.blazeContainer}>
+          <Image source={require('@/assets/images/flame/age0.gif')} style={styles.blazeImage} resizeMode="contain" />
+        </View>
 
-      <View style={styles.nameContent}>
-        <TextInput
-          ref={nameInputRef}
-          style={styles.nameInput}
-          placeholder="Enter name"
-          placeholderTextColor={Theme.colors.text.tertiary}
-          value={data.name || ''}
-          onChangeText={(text) => updateData({ name: text })}
-          returnKeyType="done"
-          onSubmitEditing={() => {
-            if (canProceed()) {
-              handleSelection(() => { });
-            }
-          }}
-        />
+        <View style={styles.nameContent}>
+          <TextInput
+            ref={nameInputRef}
+            style={styles.nameInput}
+            placeholder="Enter name"
+            placeholderTextColor={Theme.colors.text.tertiary}
+            value={data.mascotName || ''}
+            onChangeText={(text) => updateData({ mascotName: text })}
+            returnKeyType="done"
+            onSubmitEditing={() => {
+              if (canProceed()) {
+                handleSelection(() => { });
+              }
+            }}
+          />
+        </View>
       </View>
-    </View>
+    </TouchableWithoutFeedback>
   );
 
   const renderHeader = () => {
     const getStepInfo = () => {
       switch (currentStep) {
         case 0: return { title: '', subtitle: '' };
-        case 1: return { title: 'What should we call your flame?', subtitle: '' };
-        case 2: return { title: 'Choose your path', subtitle: '' };
-        case 3: return { title: 'How long can you run?', subtitle: '' };
-        case 4: return { title: 'How many days per week?', subtitle: '' };
-        case 5: return { title: 'Preferred training days', subtitle: '' };
-        case 6: return { title: 'Workout style', subtitle: '' };
-        case 7: return { title: 'Units', subtitle: '' };
-        case 8: return { title: 'Gender', subtitle: '' };
-        case 9: return { title: 'Age', subtitle: '' };
-        case 10: return { title: 'Notifications', subtitle: '' };
-        case 11: return { title: 'Save your progress', subtitle: '' };
+        case 1: return { title: 'You found a lost little flame', subtitle: '' };
+        case 2: return { title: 'What should we call your flame?', subtitle: '' };
+        case 3: return { title: 'Choose your path', subtitle: '' };
+        case 4: return { title: 'How long can you run now?', subtitle: '' };
+        case 5: return { title: 'How many days per week do you want to run?', subtitle: '' };
+        case 6: return { title: 'Preferred training days', subtitle: '' };
+        case 7: return { title: 'Workout style', subtitle: '' };
+        case 8: return { title: 'Units', subtitle: '' };
+        case 9: return { title: 'Gender', subtitle: '' };
+        case 10: return { title: 'What is your age range?', subtitle: '' };
+        case 11: return { title: 'Blaze works best with notifications', subtitle: '' };
+        case 12: return { title: 'We are a small team', subtitle: '' };
+        case 13: return { title: 'Save your progress', subtitle: '' };
         default: return { title: '', subtitle: '' };
       }
     };
@@ -253,17 +513,64 @@ export default function OnboardingScreen() {
   };
 
   const renderWelcome = () => (
-    <View style={styles.stepContainer}>
-      <View style={styles.welcomeContainer}>
-        <View style={styles.blazeContainer}>
-          <Image source={require('@/assets/images/blaze/blazeruncycle.gif')} style={styles.blazeGif} resizeMode="contain" />
+    <TouchableOpacity
+      style={styles.stepContainer}
+      activeOpacity={1}
+      onPress={handleCinematicTap}
+    >
+      <View style={styles.cinematicContainer}>
+        <View style={styles.cinematicImageContainer}>
+          <Animated.View
+            style={[
+              styles.cinematicImageWrapper,
+              {
+                transform: [{ scale: zoomAnim }],
+                opacity: gifOpacityAnim,
+              }
+            ]}
+          >
+            <VideoView
+              player={extinctPlayer as any}
+              style={styles.cinematicImage}
+              nativeControls={false}
+            />
+          </Animated.View>
+
+          {(cinematicPhase === 'transition') && (
+            <Animated.View
+              style={[
+                styles.cinematicImageWrapper,
+                {
+                  opacity: secondGifOpacityAnim,
+                  transform: [{ scale: 1.6 }], // Start at the same zoom level as first gif ends
+                }
+              ]}
+            >
+              <VideoView
+                player={appearsPlayer as any}
+                style={styles.cinematicImage}
+                nativeControls={false}
+              />
+            </Animated.View>
+          )}
         </View>
-        <View style={styles.welcomeContent}>
-          <Text style={styles.welcomeTitle}>Welcome to Blaze</Text>
-          <Text style={styles.welcomeSubtitle}>Your personal running companion</Text>
-        </View>
+
+        <Animated.View
+          style={[
+            styles.cinematicTextContainer,
+            {
+              opacity: textOpacityAnim,
+              transform: [{ scale: textPulseAnim }]
+            }
+          ]}
+        >
+          <Text style={styles.cinematicText}>
+            {typewriterText}
+            {cinematicPhase === 'typing' && <Text style={styles.cursor}>|</Text>}
+          </Text>
+        </Animated.View>
       </View>
-    </View>
+    </TouchableOpacity>
   );
 
   const renderChoosePath = () => (
@@ -271,26 +578,26 @@ export default function OnboardingScreen() {
       <View style={styles.pathGridContainer}>
         {[
           {
-            value: 'light-spark',
+            value: 'true-beginner',
             title: 'Light the Spark',
             description: 'From zero to first runs',
             image: require('@/assets/images/blaze/blazespark.png')
           },
           {
-            value: 'keep-fire',
+            value: 'run-habit',
             title: 'Keep the Fire',
             description: 'Build a lasting habit',
             image: require('@/assets/images/blaze/blazefriends.png')
           },
           {
-            value: 'run-melt',
-            title: 'Run to Melt',
+            value: 'weight-loss',
+            title: 'Run and Melt',
             description: 'Lose weight with running',
             image: require('@/assets/images/blaze/blazemelt.png')
           },
           {
             value: 'race-ready',
-            title: 'Race Ready',
+            title: 'Blaze the Race',
             description: 'Train for competitions',
             image: require('@/assets/images/blaze/blazerace.png')
           },
@@ -317,7 +624,7 @@ export default function OnboardingScreen() {
 
   const renderCurrentAbility = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.abilityListContainer}>
+      <View style={styles.listContainerWithTopMargin}>
         {[
           { value: 'less1min', title: 'Less than 1 min' },
           { value: '1to5min', title: '5 min without stopping' },
@@ -327,12 +634,12 @@ export default function OnboardingScreen() {
         ].map((option) => (
           <TouchableOpacity
             key={option.value}
-            style={[styles.abilityListOption, data.currentAbility === option.value && styles.abilityListOptionSelected]}
+            style={[styles.listOption, data.currentAbility === option.value && styles.listOptionSelected]}
             onPress={() => {
               handleSelection(() => updateData({ currentAbility: option.value as any }));
             }}
           >
-            <Text style={styles.abilityListTitle}>{option.title}</Text>
+            <Text style={[styles.listOptionText, data.currentAbility === option.value && styles.listOptionTextSelected]}>{option.title}</Text>
           </TouchableOpacity>
         ))}
       </View>
@@ -388,7 +695,8 @@ export default function OnboardingScreen() {
   );
 
   const renderPreferredDays = () => {
-    const daysOfWeek = [
+    // Define all days with Monday start and Sunday start orders
+    const allDays = [
       { short: 'Mon', full: 'Monday' },
       { short: 'Tue', full: 'Tuesday' },
       { short: 'Wed', full: 'Wednesday' },
@@ -398,17 +706,51 @@ export default function OnboardingScreen() {
       { short: 'Sun', full: 'Sunday' },
     ];
 
+    // Reorder days based on week start preference
+    const daysOfWeek = data.weekStartDay === 0
+      ? [allDays[6], ...allDays.slice(0, 6)] // Sunday first: [Sun, Mon, Tue, Wed, Thu, Fri, Sat]
+      : allDays; // Monday first: [Mon, Tue, Wed, Thu, Fri, Sat, Sun]
+
     return (
       <View style={styles.stepContainer}>
         <View style={styles.preferredDaysSection}>
-          <Text style={styles.sectionDescription}>
-            Select {data.daysPerWeek} or more days for flexibility.
-          </Text>
-          <View style={styles.preferredDaysList}>
+          {/* Week start toggle */}
+          <View style={styles.weekStartToggle}>
+            <Text style={styles.weekStartLabel}>Week starts on:</Text>
+            <View style={styles.weekStartButtons}>
+              <TouchableOpacity
+                style={[styles.weekStartButton, data.weekStartDay === 1 && styles.weekStartButtonSelected]}
+                onPress={() => {
+                  updateData({ weekStartDay: 1 });
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Text style={[styles.weekStartButtonText, data.weekStartDay === 1 && styles.weekStartButtonTextSelected]}>
+                  Monday
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.weekStartButton, data.weekStartDay === 0 && styles.weekStartButtonSelected]}
+                onPress={() => {
+                  updateData({ weekStartDay: 0 });
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                }}
+              >
+                <Text style={[styles.weekStartButtonText, data.weekStartDay === 0 && styles.weekStartButtonTextSelected]}>
+                  Sunday
+                </Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+
+          {/* <Text style={styles.sectionDescription}>
+              Select {data.daysPerWeek} or more days for flexibility.
+            </Text> */}
+          <View style={styles.listContainer}>
             {daysOfWeek.map((day, index) => (
               <TouchableOpacity
                 key={index}
-                style={[styles.preferredDayOption, data.preferredDays.includes(day.short) && styles.preferredDayOptionSelected]}
+                style={[styles.listOption, data.preferredDays.includes(day.short) && styles.listOptionSelected]}
                 onPress={() => {
                   const newPreferred = data.preferredDays.includes(day.short)
                     ? data.preferredDays.filter(d => d !== day.short)
@@ -417,7 +759,7 @@ export default function OnboardingScreen() {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}
               >
-                <Text style={[styles.preferredDayText, data.preferredDays.includes(day.short) && styles.preferredDayTextSelected]}>
+                <Text style={[styles.listOptionText, data.preferredDays.includes(day.short) && styles.listOptionTextSelected]}>
                   {day.full}
                 </Text>
               </TouchableOpacity>
@@ -476,7 +818,7 @@ export default function OnboardingScreen() {
 
   const renderGender = () => (
     <View style={styles.stepContainer}>
-      <View style={styles.genderListContainer}>
+      <View style={styles.listContainerWithTopMargin}>
         {[
           { value: 'female', title: 'Female', icon: 'person-outline' },
           { value: 'male', title: 'Male', icon: 'person-outline' },
@@ -484,14 +826,19 @@ export default function OnboardingScreen() {
         ].map((option) => (
           <TouchableOpacity
             key={option.value}
-            style={[styles.genderListOption, data.gender === option.value && styles.genderListOptionSelected]}
+            style={[styles.listOption, data.gender === option.value && styles.listOptionSelected]}
             onPress={() => {
               handleSelection(() => updateData({ gender: option.value as any }));
             }}
           >
-            <View style={styles.genderListContent}>
-              <Ionicons name={option.icon as any} size={20} color={data.gender === option.value ? Theme.colors.accent.primary : Theme.colors.text.tertiary} />
-              <Text style={styles.genderListTitle}>{option.title}</Text>
+            <View style={styles.listOptionContent}>
+              <Ionicons
+                name={option.icon as any}
+                size={20}
+                color={data.gender === option.value ? Theme.colors.accent.primary : Theme.colors.text.tertiary}
+                style={styles.listOptionIcon}
+              />
+              <Text style={[styles.listOptionText, data.gender === option.value && styles.listOptionTextSelected]}>{option.title}</Text>
             </View>
           </TouchableOpacity>
         ))}
@@ -502,10 +849,7 @@ export default function OnboardingScreen() {
   const renderAge = () => (
     <View style={styles.stepContainer}>
       <View style={styles.ageSection}>
-        <Text style={styles.sectionTitle}>What's your age range?</Text>
-        <Text style={styles.sectionDescription}>This helps us personalize your training plan</Text>
-
-        <View style={styles.ageListContainer}>
+        <View style={styles.listContainer}>
           {[
             { value: 15, label: 'Under 18' },
             { value: 20, label: '18-24' },
@@ -518,12 +862,12 @@ export default function OnboardingScreen() {
           ].map((range) => (
             <TouchableOpacity
               key={range.value}
-              style={[styles.ageListOption, data.age === range.value && styles.ageListOptionSelected]}
+              style={[styles.ageListOption, data.age === range.value && styles.listOptionSelected]}
               onPress={() => {
                 handleSelection(() => updateData({ age: range.value }));
               }}
             >
-              <Text style={[styles.ageListText, data.age === range.value && styles.ageListTextSelected]}>{range.label}</Text>
+              <Text style={[styles.ageListText, data.age === range.value && styles.listOptionTextSelected]}>{range.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -535,49 +879,83 @@ export default function OnboardingScreen() {
     <View style={styles.stepContainer}>
       <View style={styles.notificationsSection}>
         <View style={styles.notificationHeroSection}>
-          <Text style={styles.notificationMainTitle}>Stay motivated with notifications</Text>
           <Text style={styles.notificationMainDescription}>Get training reminders and celebrate your progress</Text>
         </View>
         <View style={styles.mockNotificationContainer}>
           <View style={styles.mockNotificationDialog}>
-            <Text style={styles.mockNotificationTitle}>"Koko" Would Like to Send You Notifications</Text>
+            <Text style={styles.mockNotificationTitle}>"Blaze" Would Like to Send You Notifications</Text>
             <Text style={styles.mockNotificationBody}>
               Notifications may include alerts, sounds, and icon badges. These can be configured in Settings.
             </Text>
             <View style={styles.mockNotificationButtons}>
-              <View style={styles.mockButtonSecondary}>
-                <Text style={styles.mockButtonSecondaryText}>Don't Allow</Text>
-              </View>
-              <View style={styles.mockButtonPrimary}>
-                <Text style={styles.mockButtonPrimaryText}>Allow</Text>
-              </View>
+              <TouchableOpacity
+                style={[styles.mockButtonSecondary, data.pushNotificationsEnabled === false && styles.mockButtonSecondarySelected]}
+                onPress={() => {
+                  handlePushNotificationChoice(false);
+                }}
+              >
+                <Text style={[styles.mockButtonSecondaryText, data.pushNotificationsEnabled === false && styles.mockButtonSecondaryTextSelected]}>Don't Allow</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.mockButtonPrimary, data.pushNotificationsEnabled === true && styles.mockButtonPrimarySelected]}
+                onPress={() => {
+                  handlePushNotificationChoice(true);
+                }}
+              >
+                <Text style={[styles.mockButtonPrimaryText, data.pushNotificationsEnabled === true && styles.mockButtonPrimaryTextSelected]}>Allow</Text>
+              </TouchableOpacity>
             </View>
           </View>
-          <View style={styles.mockNotificationArrow}>
-            <Text style={styles.mockNotificationArrowText}>👆 Tap "Allow" when this appears</Text>
-          </View>
+          {data.pushNotificationsEnabled === null && (
+            <View style={styles.mockNotificationArrow}>
+              <Text style={styles.mockNotificationArrowText}>Click "Allow" when this pops up ☝️</Text>
+            </View>
+          )}
         </View>
-        <View style={styles.notificationChoiceContainer}>
+      </View>
+    </View>
+  );
+
+  const requestRating = async (shouldRate: boolean) => {
+    if (shouldRate) {
+      // Use the RatingService to request a rating
+      await requestStoreRating(true); // Manual request from onboarding
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }
+
+    handleSelection(() => updateData({ hasRated: shouldRate }));
+  };
+
+  const renderRating = () => (
+    <View style={styles.stepContainer}>
+      <View style={styles.ratingSection}>
+        <View style={styles.ratingContainer}>
+          <Text style={styles.ratingText}>
+            So a rating goes a long way 💜
+          </Text>
+          <View style={styles.starsContainer}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Ionicons
+                key={star}
+                name="star"
+                size={40}
+                color={Theme.colors.accent.primary}
+                style={styles.starIcon}
+              />
+            ))}
+          </View>
           <TouchableOpacity
-            style={[styles.notificationMainButton, data.pushNotificationsEnabled === true && styles.notificationMainButtonSelected]}
-            onPress={() => {
-              handleSelection(() => updateData({ pushNotificationsEnabled: true }));
-            }}
+            style={styles.ratingButton}
+            onPress={() => requestRating(true)}
           >
-            <Ionicons name="notifications" size={24} color={data.pushNotificationsEnabled === true ? Theme.colors.text.primary : Theme.colors.text.tertiary} />
-            <Text style={[styles.notificationMainButtonText, data.pushNotificationsEnabled === true && styles.notificationMainButtonTextSelected]}>
-              Enable Notifications
-            </Text>
+            <Text style={styles.ratingButtonText}>Leave a rating</Text>
           </TouchableOpacity>
+
           <TouchableOpacity
-            style={[styles.notificationSkipButton, data.pushNotificationsEnabled === false && styles.notificationSkipButtonSelected]}
-            onPress={() => {
-              handleSelection(() => updateData({ pushNotificationsEnabled: false }));
-            }}
+            style={styles.skipRatingButton}
+            onPress={() => requestRating(false)}
           >
-            <Text style={[styles.notificationSkipButtonText, data.pushNotificationsEnabled === false && styles.notificationSkipButtonTextSelected]}>
-              Skip for now
-            </Text>
+            <Text style={styles.skipRatingButtonText}>Maybe later</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -594,7 +972,7 @@ export default function OnboardingScreen() {
         </View>
 
         <View style={styles.blazeAuthContainer}>
-          <Image source={require('@/assets/images/blaze/blazelove.png')} style={styles.blazeAuthImage} resizeMode="contain" />
+          <Image source={require('@/assets/images/flame/age0.gif')} style={styles.blazeAuthImage} resizeMode="contain" />
         </View>
 
         <View style={styles.authBenefitsList}>
@@ -619,13 +997,13 @@ export default function OnboardingScreen() {
         </View>
 
         <View style={styles.authButtonsContainer}>
+          <TouchableOpacity style={styles.googleSignInButton} onPress={handleGoogleSignIn}>
+            <Text style={styles.googleSignInButtonText}>Continue with Google</Text>
+          </TouchableOpacity>
+
           <TouchableOpacity style={styles.appleSignInButton} onPress={handleAppleSignIn}>
             <Ionicons name="logo-apple" size={20} color={Theme.colors.text.primary} />
             <Text style={styles.appleSignInButtonText}>Sign in with Apple</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.googleSignInButton} onPress={handleGoogleSignIn}>
-            <Text style={styles.googleSignInButtonText}>Continue with Google</Text>
           </TouchableOpacity>
         </View>
 
@@ -635,6 +1013,24 @@ export default function OnboardingScreen() {
       </View>
     </View>
   );
+
+  // ===== Lazy step renderer mapping =====
+  const stepRenderers = [
+    renderWelcome,
+    renderFlameIntroduction,
+    renderName,
+    renderChoosePath,
+    renderCurrentAbility,
+    renderDaysPerWeek,
+    renderPreferredDays,
+    renderWorkoutStyle,
+    renderUnits,
+    renderGender,
+    renderAge,
+    renderNotifications,
+    renderRating,
+    renderAuth,
+  ];
 
   return (
     <View style={styles.container}>
@@ -654,21 +1050,17 @@ export default function OnboardingScreen() {
             }
           ]}
         >
-          {renderWelcome()}
-          {renderName()}
-          {renderChoosePath()}
-          {renderCurrentAbility()}
-          {renderDaysPerWeek()}
-          {renderPreferredDays()}
-          {renderWorkoutStyle()}
-          {renderUnits()}
-          {renderGender()}
-          {renderAge()}
-          {renderNotifications()}
-          {renderAuth()}
+          {stepRenderers.map((stepFn, index) => {
+            // Render only the current step and its immediate neighbors to save memory
+            if (Math.abs(index - currentStep) <= 1) {
+              return <React.Fragment key={index}>{stepFn()}</React.Fragment>;
+            }
+            // Placeholder keeps layout width consistent
+            return <View key={index} style={{ width: screenWidth }} />;
+          })}
         </Animated.View>
       </View>
-      {(currentStep === 0 || currentStep === 1 || currentStep === 2 || currentStep === 4 || currentStep === 5) && (
+      {(currentStep === 2 || currentStep === 3 || currentStep === 5 || currentStep === 6) && (
         <View style={styles.footer}>
           <TouchableOpacity
             style={[styles.nextButton, !canProceed() && styles.nextButtonDisabled]}
@@ -676,7 +1068,7 @@ export default function OnboardingScreen() {
             disabled={!canProceed()}
           >
             <Text style={styles.nextButtonText}>
-              {currentStep === 0 ? 'Get Started' : 'Continue'}
+              Continue
             </Text>
           </TouchableOpacity>
         </View>
@@ -694,7 +1086,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Theme.spacing.xl,
-    paddingTop: 60,
+    paddingTop: 50,
     paddingBottom: Theme.spacing.md,
   },
   backButton: {
@@ -715,22 +1107,22 @@ const styles = StyleSheet.create({
   },
   progressFill: {
     height: '100%',
-    backgroundColor: Theme.colors.accent.primary,
     borderRadius: Theme.borderRadius.full,
   },
   header: {
     paddingHorizontal: Theme.spacing.xl,
     paddingBottom: Theme.spacing.md,
+    alignItems: 'center',
   },
   headerTitle: {
-    fontSize: 28,
+    fontSize: 30,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginTop: Theme.spacing.xs,
     textAlign: 'center',
+    maxWidth: screenWidth * 0.9,
   },
   headerSubtitle: {
-    fontSize: 14,
+    fontSize: 18,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
@@ -847,10 +1239,17 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     lineHeight: 20,
   },
-  abilityListContainer: {
-    gap: Theme.spacing.lg,
+
+  // Standardized list styles
+  listContainer: {
+    gap: Theme.spacing.md,
+    width: '100%',
   },
-  abilityListOption: {
+  listContainerWithTopMargin: {
+    gap: Theme.spacing.lg,
+    marginTop: 150,
+  },
+  listOption: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Theme.colors.background.secondary,
@@ -859,15 +1258,26 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: 'transparent',
   },
-  abilityListOptionSelected: {
+  listOptionSelected: {
     borderColor: Theme.colors.accent.primary,
     backgroundColor: Theme.colors.transparent.accent20,
   },
-  abilityListTitle: {
+  listOptionText: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     flex: 1,
+  },
+  listOptionTextSelected: {
+    color: Theme.colors.accent.primary,
+  },
+  listOptionContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    flex: 1,
+  },
+  listOptionIcon: {
+    marginRight: Theme.spacing.md,
   },
   scheduleSection: {
     gap: Theme.spacing.xxxl,
@@ -875,7 +1285,7 @@ const styles = StyleSheet.create({
   daysPerWeekSection: {
     alignItems: 'center',
     gap: Theme.spacing.xl,
-    marginTop: Theme.spacing.xxxl,
+    marginTop: 200,
   },
   sectionTitle: {
     fontSize: 20,
@@ -940,32 +1350,10 @@ const styles = StyleSheet.create({
     color: Theme.colors.accent.primary,
     textAlign: 'center',
   },
-  preferredDaysList: {
-    gap: Theme.spacing.md,
-  },
-  preferredDayOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  preferredDayOptionSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  preferredDayText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-  },
-  preferredDayTextSelected: {
-    color: Theme.colors.accent.primary,
-  },
+
   workoutStyleGrid: {
     gap: Theme.spacing.xl,
+    marginTop: 200,
   },
   workoutStyleCard: {
     backgroundColor: Theme.colors.background.secondary,
@@ -997,6 +1385,7 @@ const styles = StyleSheet.create({
   },
   unitsGrid: {
     gap: Theme.spacing.xl,
+    marginTop: 200,
   },
   unitCard: {
     backgroundColor: Theme.colors.background.secondary,
@@ -1026,62 +1415,24 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
   },
-  genderListContainer: {
-    gap: Theme.spacing.lg,
-  },
-  genderListOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  genderListOptionSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
-  },
-  genderListContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    flex: 1,
-  },
-  genderListTitle: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginLeft: Theme.spacing.md,
-  },
   ageSection: {
     alignItems: 'center',
     gap: Theme.spacing.xl,
   },
-  ageListContainer: {
-    gap: Theme.spacing.md,
-    width: '100%',
-  },
   ageListOption: {
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xxl,
+    alignItems: 'center',
     borderWidth: 2,
     borderColor: 'transparent',
-    alignItems: 'center',
-  },
-  ageListOptionSelected: {
-    borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
   },
   ageListText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     textAlign: 'center',
-  },
-  ageListTextSelected: {
-    color: Theme.colors.accent.primary,
   },
   notificationsSection: {
     gap: Theme.spacing.xl,
@@ -1090,20 +1441,15 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Theme.spacing.lg,
   },
-  notificationMainTitle: {
-    fontSize: 24,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
-    textAlign: 'center',
-  },
   notificationMainDescription: {
-    fontSize: 16,
+    fontSize: 18,
+    width: '80%',
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
   },
   mockNotificationContainer: {
+    marginTop: 100,
     alignItems: 'center',
     gap: Theme.spacing.lg,
   },
@@ -1141,10 +1487,16 @@ const styles = StyleSheet.create({
     paddingVertical: Theme.spacing.md,
     alignItems: 'center',
   },
+  mockButtonSecondarySelected: {
+    backgroundColor: Theme.colors.text.tertiary,
+  },
   mockButtonSecondaryText: {
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.tertiary,
+  },
+  mockButtonSecondaryTextSelected: {
+    color: Theme.colors.text.primary,
   },
   mockButtonPrimary: {
     flex: 1,
@@ -1153,9 +1505,15 @@ const styles = StyleSheet.create({
     paddingVertical: Theme.spacing.md,
     alignItems: 'center',
   },
+  mockButtonPrimarySelected: {
+    backgroundColor: Theme.colors.accent.secondary,
+  },
   mockButtonPrimaryText: {
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  mockButtonPrimaryTextSelected: {
     color: Theme.colors.text.primary,
   },
   mockNotificationArrow: {
@@ -1218,15 +1576,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Theme.spacing.lg,
   },
-  authMainTitle: {
-    fontSize: 24,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
-    textAlign: 'center',
-  },
   authMainDescription: {
-    fontSize: 16,
+    fontSize: 18,
+    width: '80%',
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
@@ -1335,7 +1687,7 @@ const styles = StyleSheet.create({
     opacity: 0.5,
   },
   nextButtonText: {
-    fontSize: 20,
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
@@ -1359,5 +1711,177 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.large,
     width: '100%',
     textAlign: 'center',
+  },
+  // Cinematic effect styles
+  cinematicContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: screenWidth,
+    height: screenHeight,
+    backgroundColor: Theme.colors.background.primary,
+  },
+  cinematicImageContainer: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: screenWidth,
+    height: screenHeight,
+    alignItems: 'center',
+    justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  cinematicImageWrapper: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    width: screenWidth,
+    height: screenHeight,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  cinematicImage: {
+    width: screenWidth,
+    height: screenHeight,
+  },
+  cinematicTextContainer: {
+    position: 'absolute',
+    top: 120,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    paddingHorizontal: Theme.spacing.xl,
+    zIndex: 10,
+  },
+  cinematicText: {
+    fontSize: 32,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+  },
+  cursor: {
+    color: Theme.colors.text.primary,
+  },
+  // Week start toggle styles
+  weekStartToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  weekStartLabel: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginRight: Theme.spacing.md,
+  },
+  weekStartButtons: {
+    flexDirection: 'row',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    padding: 4,
+  },
+  weekStartButton: {
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.lg,
+    borderRadius: Theme.borderRadius.medium,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  weekStartButtonSelected: {
+    backgroundColor: Theme.colors.accent.primary,
+  },
+  weekStartButtonText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.tertiary,
+  },
+  weekStartButtonTextSelected: {
+    color: Theme.colors.text.primary,
+  },
+  // Rating styles
+  ratingSection: {
+    gap: Theme.spacing.xl,
+    marginTop: 200,
+  },
+  ratingContainer: {
+    alignItems: 'center',
+    gap: Theme.spacing.xl,
+  },
+  ratingText: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    gap: Theme.spacing.sm,
+    marginVertical: Theme.spacing.lg,
+  },
+  starIcon: {
+    // Additional styling can be added here if needed
+  },
+  ratingButton: {
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.xl,
+    borderBottomWidth: 3,
+    borderBottomColor: Theme.colors.accent.secondary,
+    minWidth: 200,
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  ratingButtonText: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  skipRatingButton: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.xl,
+    minWidth: 200,
+  },
+  skipRatingButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  // Flame introduction styles
+  flameIntroContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 150,
+  },
+  flameIntroButtons: {
+    width: '100%',
+    gap: Theme.spacing.lg,
+    marginTop: 100,
+  },
+  getStartedButton: {
+    borderRadius: Theme.borderRadius.large,
+    paddingVertical: Theme.spacing.lg,
+    alignItems: 'center',
+    borderColor: Theme.colors.accent.primary,
+    borderBottomWidth: 3,
+    borderBottomColor: Theme.colors.accent.secondary,
+    backgroundColor: Theme.colors.accent.primary,
+  },
+  getStartedButtonText: {
+    fontSize: 30,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  signInButton: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.lg,
+  },
+  signInButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textDecorationLine: 'underline',
   },
 }); 

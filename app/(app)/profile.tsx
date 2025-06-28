@@ -17,7 +17,7 @@ export default function ProfileScreen() {
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
-
+  const currentUser = useQuery(api.userProfile.currentUser);
   // Convex queries
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const profileStats = useQuery(api.activities.getProfileStats);
@@ -196,8 +196,8 @@ export default function ProfileScreen() {
         {/* Profile Info Section */}
         <View style={styles.profileInfoSection}>
           {/* User Info */}
-          <Text style={styles.userName}>Edgar Hnd</Text>
-          <Text style={styles.userMeta}>@EdgarHnd • Joined December 2024</Text>
+          <Text style={styles.userName}>{currentUser?.name || profile?.mascotName}</Text>
+          <Text style={styles.userMeta}>Joined {new Date(profile?._creationTime || '').toLocaleDateString()}</Text>
 
           {/* Stats Row */}
           {/* <View style={styles.statsRow}>
@@ -316,7 +316,6 @@ export default function ProfileScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.levelHeader}>
-                <Text style={styles.currentLevelEmoji}>{LevelingService.getLevelEmoji(levelInfo.level)}</Text>
                 <View style={styles.levelTextInfo}>
                   <Text style={styles.currentLevelTitle}>{LevelingService.getLevelTitle(levelInfo.level)}</Text>
                   <Text style={styles.currentLevelNumber}>Level {levelInfo.level}</Text>
@@ -350,6 +349,7 @@ export default function ProfileScreen() {
               setShowLevelModal(false);
             }}
             levelInfo={levelInfo}
+            metricSystem={profile?.metricSystem || 'metric'}
           />
         )}
 
@@ -360,7 +360,7 @@ export default function ProfileScreen() {
             streakInfo={profile ? {
               currentStreak: profile.currentStreak,
               longestStreak: profile.longestStreak,
-              lastStreakDate: profile.lastStreakDate || null,
+              lastStreakWeek: profile.lastStreakWeek || null,
             } : null}
             onClose={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -431,7 +431,7 @@ export default function ProfileScreen() {
                 style={styles.goalInput}
                 value={newGoal}
                 onChangeText={setNewGoal}
-                placeholder="Enter goal in km"
+                placeholder={(profile?.metricSystem ?? "metric") === "metric" ? "Enter goal in km" : "Enter goal in miles"}
                 keyboardType="numeric"
                 autoFocus
               />
@@ -920,50 +920,5 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
-  },
-  upcomingLevelsContainer: {
-    marginTop: 8,
-  },
-  upcomingLevelsTitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-    marginBottom: 12,
-  },
-  upcomingLevelsRow: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  upcomingLevelCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: 12,
-    padding: 12,
-    alignItems: 'center',
-    flex: 1,
-    marginHorizontal: 4,
-  },
-  upcomingLevelEmoji: {
-    fontSize: 24,
-    marginBottom: 8,
-  },
-  upcomingLevelNumber: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  upcomingLevelTitle: {
-    fontSize: 10,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
-    textAlign: 'center',
-    marginBottom: 4,
-    minHeight: 32, // Ensure consistent height
-  },
-  upcomingLevelDistance: {
-    fontSize: 10,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
   },
 }); 

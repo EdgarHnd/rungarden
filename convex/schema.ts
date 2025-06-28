@@ -27,7 +27,16 @@ const schema = defineSchema({
     streakFreezeAvailable: v.number(),
 
     // Mascot health system
+    mascotName: v.optional(v.string()),
     mascotHealth: v.number(),        // 0-4, loses 1 per missed week
+
+    // Onboarding profile data
+    path: v.optional(v.union(
+      v.literal("true-beginner"), v.literal("run-habit"),
+      v.literal("weight-loss"), v.literal("race-ready")
+    )),
+    gender: v.optional(v.union(v.literal("female"), v.literal("male"), v.literal("other"))),
+    age: v.optional(v.number()),
 
     // Preferences
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
@@ -200,6 +209,24 @@ const schema = defineSchema({
     pace: v.optional(v.number()),        // min/km numeric
     plannedWorkoutId: v.optional(v.id("plannedWorkouts")),  // 🔗
     type: v.optional(v.literal("rest")),                    // inserted by app
+
+    // Enhanced running data for achievements and gamification
+    totalElevationGain: v.optional(v.number()),      // meters gained
+    elevationHigh: v.optional(v.number()),           // highest elevation
+    elevationLow: v.optional(v.number()),            // lowest elevation
+    averageTemp: v.optional(v.number()),             // average temperature (celsius)
+    startLatLng: v.optional(v.array(v.number())),    // [lat, lng] start coordinates
+    endLatLng: v.optional(v.array(v.number())),      // [lat, lng] end coordinates
+    timezone: v.optional(v.string()),                // timezone info
+    isIndoor: v.optional(v.boolean()),               // trainer/treadmill vs outdoor
+    isCommute: v.optional(v.boolean()),              // commute run
+    averageCadence: v.optional(v.number()),          // steps per minute
+    averageWatts: v.optional(v.number()),            // power data
+    maxWatts: v.optional(v.number()),                // peak power
+    kilojoules: v.optional(v.number()),              // energy expenditure
+    polyline: v.optional(v.string()),                // route polyline for mapping
+    maxSpeed: v.optional(v.number()),                // peak speed
+    averageSpeed: v.optional(v.number()),            // average speed
 
     isNewActivity: v.optional(v.boolean()),
     syncedAt: v.string()

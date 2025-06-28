@@ -96,19 +96,6 @@ class LevelingService {
     return LEVELS[levelIndex] || "Walker";
   }
 
-  // Get level emoji
-  static getLevelEmoji(level: number): string {
-    if (level >= 50) return "👑";
-    if (level >= 40) return "🏆";
-    if (level >= 30) return "🥇";
-    if (level >= 25) return "🥈";
-    if (level >= 20) return "🥉";
-    if (level >= 15) return "⭐";
-    if (level >= 10) return "🔥";
-    if (level >= 5) return "💪";
-    return "🐨";
-  }
-
   // Helper to format distance for display
   static formatDistance(meters: number, metricSystem: 'metric' | 'imperial' = 'metric'): string {
     if (metricSystem === 'imperial') {
@@ -126,14 +113,13 @@ class LevelingService {
   }
 
   // Get level requirements for display
-  static getLevelRequirements(): Array<{ level: number; xp: number; title: string; emoji: string }> {
+  static getLevelRequirements(): Array<{ level: number; xp: number; title: string }> {
     const levels = [];
     for (let i = 1; i <= 100; i++) {
       levels.push({
         level: i,
         xp: this.getXPForLevel(i),
         title: this.getLevelTitle(i),
-        emoji: this.getLevelEmoji(i),
       });
     }
     return levels;

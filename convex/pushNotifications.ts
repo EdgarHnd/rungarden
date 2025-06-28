@@ -90,6 +90,8 @@ export const sendActivityNotification = action({
         body = "New run completed - check it out!";
       } else {
         // Detailed notification with data (for test notifications)
+        // Note: Push notifications use metric by default since we don't have user context here
+        // This could be enhanced to include user preference in the notification args
         const distanceKm = (activityData.distance / 1000).toFixed(2);
         const durationMin = Math.round(activityData.duration);
         

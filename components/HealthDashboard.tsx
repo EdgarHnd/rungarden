@@ -84,11 +84,15 @@ export default function HealthDashboard() {
   };
 
   const formatDistance = (meters: number) => {
+    // Note: HealthDashboard doesn't have direct access to user profile
+    // This is a simplified version - ideally this component should receive metricSystem as a prop
     const kilometers = meters / 1000;
     return `${kilometers.toFixed(2)} km`;
   };
 
   const formatPace = (pace: number) => {
+    // Note: HealthDashboard doesn't have direct access to user profile
+    // This is a simplified version - ideally this component should receive metricSystem as a prop
     const minutes = Math.floor(pace);
     const seconds = Math.round((pace - minutes) * 60);
     return `${minutes}:${seconds.toString().padStart(2, '0')} /km`;
