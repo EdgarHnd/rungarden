@@ -162,11 +162,8 @@ export const getSimpleTrainingSchedule = query({
 
 // Get schedule history for a user (for streak calculation)
 export const getScheduleHistory = query({
-  args: {
-    userId: v.optional(v.id("users")), // Optional for internal use
-  },
-  handler: async (ctx, args) => {
-    const userId = args.userId || await getAuthUserId(ctx);
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }

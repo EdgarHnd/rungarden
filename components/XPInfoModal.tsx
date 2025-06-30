@@ -175,8 +175,6 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.background.secondary,
     padding: Theme.spacing.lg,
     borderRadius: Theme.borderRadius.medium,
-    borderLeftWidth: 4,
-    borderLeftColor: Theme.colors.special.primary.exp,
   },
   formula: {
     fontSize: 18,

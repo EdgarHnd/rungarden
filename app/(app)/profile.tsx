@@ -372,7 +372,7 @@ export default function ProfileScreen() {
         {/* Challenges Section */}
         <View style={styles.achievementsSection}>
           <View style={styles.achievementsHeader}>
-            <Text style={styles.sectionTitle}>Latest Achievements</Text>
+            <Text style={styles.sectionTitle}>Latest Challenges</Text>
             <TouchableOpacity
               activeOpacity={0.7}
               onPress={() => {

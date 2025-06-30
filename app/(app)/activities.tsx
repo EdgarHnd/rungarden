@@ -623,7 +623,7 @@ const styles = StyleSheet.create({
     marginTop: Theme.spacing.lg,
   },
   actionButtonText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     textAlign: 'center',
@@ -636,9 +636,9 @@ const styles = StyleSheet.create({
     borderColor: Theme.colors.background.tertiary,
   },
   inCardButtonText: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
+    fontSize: 16,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
   },
   planInfo: {
     flex: 1,

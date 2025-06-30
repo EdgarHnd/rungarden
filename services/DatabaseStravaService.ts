@@ -1,10 +1,6 @@
 import { ConvexReactClient } from "convex/react";
 import { api } from '../convex/_generated/api';
-import { Doc } from '../convex/_generated/dataModel';
 import StravaService, { RunningActivity } from './StravaService';
-
-// Use proper Convex type instead of custom interface
-type DatabaseActivity = Doc<"activities">;
 
 export interface SyncResult {
   created: number;
@@ -166,6 +162,7 @@ class DatabaseStravaService {
       await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
         stravaSyncEnabled: false,
         lastStravaSync: null,
+        stravaInitialSyncCompleted: false, // Reset so they can get initial sync modal again if they reconnect
         stravaAccessToken: undefined,
         stravaRefreshToken: undefined,
         stravaTokenExpiresAt: undefined,
@@ -259,6 +256,7 @@ class DatabaseStravaService {
           polyline: activity.polyline,
           maxSpeed: activity.maxSpeed,
           averageSpeed: activity.averageSpeed,
+          isNewActivity: false,
         };
       });
 
@@ -300,40 +298,6 @@ class DatabaseStravaService {
    */
   async forceSyncFromStrava(days: number = 30): Promise<SyncResult> {
     return this.syncActivitiesFromStrava(days, false);
-  }
-
-  /**
-   * Get Strava activities from database (filtered by source)
-   */
-  async getStravaActivitiesFromDatabase(days: number = 30, limit: number = 30): Promise<DatabaseActivity[]> {
-    try {
-      
-      // Get all activities first, then filter by source
-      const allActivities = await this.convexClient.query(api.activities.getUserActivities, {
-        days,
-        limit: limit * 2, // Get more since we'll filter
-      });
-      
-      // Filter for Strava activities only
-      const stravaActivities = allActivities.filter(activity => activity.source === 'strava');
-      
-      return stravaActivities.slice(0, limit) as DatabaseActivity[];
-    } catch (error) {
-      console.error('Error fetching Strava activities from database:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get Strava athlete stats
-   */
-  async getAthleteStats() {
-    try {
-      return await StravaService.getAthleteStats();
-    } catch (error) {
-      console.error('Error fetching Strava athlete stats:', error);
-      throw error;
-    }
   }
 
   /**
@@ -537,9 +501,10 @@ class DatabaseStravaService {
    */
   async createWebhook(): Promise<boolean> {
     try {
-      // Use the current Convex site URL
-      const callbackUrl = 'https://fast-dragon-309.convex.site/strava/webhooks';
-      const verifyToken = 'koko-webhook-token';
+      // Use the current Convex site URLSearchParams
+      const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_SITE_URL;
+      const callbackUrl = `${CONVEX_URL}/strava/webhooks`;
+      const verifyToken = 'blaze-webhook-token';
       
       // First check if there are existing subscriptions
       const existingSubscriptions = await this.viewWebhookSubscription();
@@ -668,6 +633,7 @@ class DatabaseStravaService {
       // Clear database tokens
       await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
         stravaSyncEnabled: false,
+        stravaInitialSyncCompleted: false, // Reset so they can get initial sync modal again if they reconnect
         stravaAccessToken: undefined,
         stravaRefreshToken: undefined,
         stravaTokenExpiresAt: undefined,

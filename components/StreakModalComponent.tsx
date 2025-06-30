@@ -49,7 +49,7 @@ export default function StreakModalComponent({
   const getWeekNumbers = () => {
     // Show last 8 weeks, with current streak filled
     const weeks = [];
-    for (let i = 7; i >= 0; i--) {
+    for (let i = 0; i < 8; i++) {
       weeks.push({
         weekNumber: i + 1,
         isCompleted: i < currentStreak
@@ -127,6 +127,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Theme.spacing.xxxl,
     paddingHorizontal: Theme.spacing.lg,
+    gap: Theme.spacing.md,
   },
   streakWeekColumn: {
     alignItems: 'center',

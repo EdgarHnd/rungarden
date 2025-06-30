@@ -277,12 +277,14 @@ const styles = StyleSheet.create({
     paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
     marginTop: Theme.spacing.xl,
+    borderBottomWidth: 3,
+    borderBottomColor: Theme.colors.accent.secondary,
   },
   saveButtonDisabled: {
     opacity: 0.6,
   },
   saveButtonText: {
-    fontSize: 16,
+    fontSize: 20,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },

@@ -17,7 +17,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { router } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { RiveRef } from 'rive-react-native';
@@ -44,6 +44,7 @@ interface WeekData {
 export default function HomeScreen() {
   const { isAuthenticated } = useConvexAuth();
   const convex = useConvex();
+  const router = useRouter();
 
   // Sync pending onboarding data when user becomes authenticated
   useOnboardingSync();
@@ -62,10 +63,11 @@ export default function HomeScreen() {
     endDate: new Date(Date.now() + 20 * 24 * 60 * 60 * 1000).toISOString().split('T')[0]    // 20 days ahead
   });
   const simpleSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
+  const scheduleHistory = useQuery(api.simpleTrainingSchedule.getScheduleHistory);
   const createProfile = useMutation(api.userProfile.createProfile);
   const markCelebrationShown = useMutation(api.activities.markCelebrationShown);
   const refreshStreak = useMutation(api.streak.refreshStreak);
-  const setSimpleSchedule = useMutation(api.simpleTrainingSchedule.setSimpleTrainingSchedule);
+  const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
   // const processAchievements = useMutation(api.achievements.processAchievementsForActivity);
 
   // Proper state management for week navigation
@@ -187,15 +189,21 @@ export default function HomeScreen() {
   // Add jump trigger function
   const handleJump = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    setShowXPModal(true);
+
     // Trigger the jump in the active Rive animation
-    const activeRef = currentAnimationType === 'running' ? runningRiveRef : idleRiveRef;
-    activeRef.current?.fireState('State Machine 1', 'jump');
+    // const activeRef = currentAnimationType === 'running' ? runningRiveRef : idleRiveRef;
+    // activeRef.current?.fireState('State Machine 1', 'jump');
   };
 
   // Handle triple tap on title for debug modal
   const handleTitlePress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setShowXPModal(true);
+    if (__DEV__) {
+      setShowDebugModal(true);
+    } else {
+      setShowXPModal(true);
+    }
   };
 
   // Handle debug modal (moved to level badge long press)
@@ -340,56 +348,64 @@ export default function HomeScreen() {
               workout: { type: "rest", steps: [] },
               isDefault: true
             };
-          } else if (simpleSchedule?.isActive) {
-            // For simple schedule users, create rest days when:
-            // 1. Weekly goal is already met, OR
-            // 2. It's not a preferred day AND they've done some runs this week (for current/past weeks)
-            // 3. It's not a preferred day AND it's a future week (show planned rest days)
-            const dayName = getDayName(dateString);
-            const isPreferredDay = simpleSchedule.preferredDays.includes(dayName);
-            const isFutureWeek = weekOffset > 0; // Next week is weekOffset = 1
-            const isPastOrCurrentWeek = weekOffset <= 0;
+          } else if (simpleSchedule?.isActive && scheduleHistory && scheduleHistory.length > 0) {
+            // Only create planned workouts for days on or after the schedule was actually created
+            // Find the earliest creation date from schedule history
+            const earliestScheduleEntry = [...scheduleHistory]
+              .sort((a, b) => a.createdAt.localeCompare(b.createdAt))[0];
+            const actualCreationDate = earliestScheduleEntry?.createdAt?.split('T')[0] || simpleSchedule.startDate;
+            const isBeforeScheduleCreation = dateString < actualCreationDate;
 
-            const shouldShowRestDay =
-              weekProgress.weeklyGoalMet || // Goal already met
-              (!isPreferredDay && weekProgress.hasRunsThisWeek && isPastOrCurrentWeek) || // Non-preferred day with some runs (current/past weeks)
-              (!isPreferredDay && isFutureWeek); // Non-preferred day in future weeks
+            if (!isBeforeScheduleCreation) {
+              // For simple schedule users, create rest days when:
+              // 1. Weekly goal is already met, OR
+              // 2. It's not a preferred day AND they've done some runs this week (for current/past weeks)
+              // 3. It's not a preferred day AND it's a future week (show planned rest days)
+              const dayName = getDayName(dateString);
+              const isPreferredDay = simpleSchedule.preferredDays.includes(dayName);
+              const isFutureWeek = weekOffset > 0; // Next week is weekOffset = 1
+              const isPastOrCurrentWeek = weekOffset <= 0;
 
-            if (shouldShowRestDay) {
-              finalPlannedWorkout = {
-                scheduledDate: dateString,
-                type: "rest",
-                duration: "15-30 min",
-                description: weekProgress.weeklyGoalMet
-                  ? "Great job! You've hit your weekly goal. Time to rest and recover! 🎉"
-                  : isFutureWeek
-                    ? "Planned rest day - Perfect time for gentle stretching, foam rolling, or mobility work."
-                    : "Rest day - Perfect time for gentle stretching, foam rolling, or mobility work. Listen to your body and recover well!",
-                target: "Active recovery",
-                status: "scheduled",
-                distance: 0,
-                workoutId: null,
-                workout: { type: "rest" },
-                isDefault: true,
-                isSimpleScheduleRest: true
-              };
-            } else {
-              // Create a simple run workout for preferred days or when weekly goal isn't met
-              finalPlannedWorkout = {
-                scheduledDate: dateString,
-                type: "run",
-                duration: "30-45 min",
-                description: isPreferredDay
-                  ? "Go for a run! Perfect day for your weekly training."
-                  : "Optional run day - Go for a run if you have time and energy.",
-                target: "Easy run",
-                status: "scheduled",
-                distance: 3000, // 3km default
-                workoutId: null,
-                workout: { type: "run" },
-                isDefault: true,
-                isSimpleScheduleRun: true
-              };
+              const shouldShowRestDay =
+                weekProgress.weeklyGoalMet || // Goal already met
+                !isPreferredDay; // Non-preferred days always get rest days
+
+              if (shouldShowRestDay) {
+                finalPlannedWorkout = {
+                  scheduledDate: dateString,
+                  type: "rest",
+                  duration: "15-30 min",
+                  description: weekProgress.weeklyGoalMet
+                    ? "Great job! You've hit your weekly goal. Time to rest and recover! 🎉"
+                    : isFutureWeek
+                      ? "Planned rest day - Perfect time for gentle stretching, foam rolling, or mobility work."
+                      : "Rest day - Perfect time for gentle stretching, foam rolling, or mobility work. Listen to your body and recover well!",
+                  target: "Active recovery",
+                  status: "scheduled",
+                  distance: 0,
+                  workoutId: null,
+                  workout: { type: "rest" },
+                  isDefault: true,
+                  isSimpleScheduleRest: true
+                };
+              } else {
+                // Create a simple run workout for preferred days or when weekly goal isn't met
+                finalPlannedWorkout = {
+                  scheduledDate: dateString,
+                  type: "run",
+                  duration: "30-45 min",
+                  description: isPreferredDay
+                    ? "Go for a run! Perfect day for your weekly training."
+                    : "Optional run day - Go for a run if you have time and energy.",
+                  target: "Easy run",
+                  status: "scheduled",
+                  distance: 3000, // 3km default
+                  workoutId: null,
+                  workout: { type: "run" },
+                  isDefault: true,
+                  isSimpleScheduleRun: true
+                };
+              }
             }
           }
         }
@@ -476,6 +492,87 @@ export default function HomeScreen() {
     oldLevel?: number;
   } | null>(null);
 
+  // Check for initial sync modal - this should trigger every time we navigate to index
+  const checkInitialSyncModal = useCallback(async () => {
+    // Only check if user has Strava enabled but hasn't completed initial sync
+    if (!isAuthenticated || !profile?.stravaSyncEnabled || profile?.stravaInitialSyncCompleted) {
+      return;
+    }
+
+    console.log('[Index] Checking for initial sync modal...');
+
+    try {
+      // Get recent activities to check if we have data to celebrate
+      const recentActivities = await convex.query(api.activities.getUserActivities, { days: 30, limit: 100 });
+
+      if (recentActivities && recentActivities.length > 0) {
+        // Get all Strava activities that were synced (not just current year)
+        const stravaActivities = recentActivities.filter(activity => activity.source === 'strava');
+        const totalDistance = stravaActivities.reduce((sum, activity) => sum + (activity.distance || 0), 0);
+
+        // Get the actual sync result from the last sync to show correct before/after levels
+        // The profile should contain the sync information we need
+        const lastSyncResult = {
+          created: profile?.totalWorkouts || stravaActivities.length, // Use total workouts from profile
+          totalDistance: profile?.totalDistance || totalDistance, // Use total distance from profile
+          oldLevel: 1, // Level before any sync (new user)
+          newLevel: profile?.level || 1, // Current level after sync
+        };
+
+        // Calculate if they leveled up (from 1 to their current level)
+        const leveledUp = lastSyncResult.newLevel > lastSyncResult.oldLevel;
+        const targetXP = LevelingService.distanceToXP(lastSyncResult.totalDistance);
+
+        console.log('[Index] Initial sync data found:', {
+          allStravaActivities: stravaActivities.length,
+          totalWorkoutsFromProfile: profile?.totalWorkouts,
+          totalDistanceFromProfile: profile?.totalDistance,
+          oldLevel: lastSyncResult.oldLevel,
+          newLevel: lastSyncResult.newLevel,
+          leveledUp,
+          targetXP
+        });
+
+        // Show modal if we have Strava activities to celebrate
+        if (stravaActivities.length > 0 && lastSyncResult.totalDistance > 0) {
+          setInitialSyncResult({
+            created: lastSyncResult.created,
+            updated: 0,
+            skipped: 0,
+            distanceGained: lastSyncResult.totalDistance,
+            leveledUp,
+            newLevel: lastSyncResult.newLevel,
+            oldLevel: lastSyncResult.oldLevel,
+          });
+          setInitialSyncModalVisible(true);
+
+          console.log('[Index] Showing InitialSyncModal for all Strava data');
+        }
+      }
+    } catch (error) {
+      console.error('[Index] Error checking for initial sync modal:', error);
+    }
+  }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.stravaInitialSyncCompleted, profile?.totalWorkouts, profile?.totalDistance, profile?.level, convex]);
+
+  useEffect(() => {
+    // Use a small delay to ensure everything is loaded
+    const timeoutId = setTimeout(checkInitialSyncModal, 100); // Reduced delay for immediate response
+    return () => clearTimeout(timeoutId);
+  }, [checkInitialSyncModal]);
+
+  // Also check when screen comes into focus (e.g., navigating back from settings)
+  useFocusEffect(
+    useCallback(() => {
+      if (isAuthenticated && profile?.stravaSyncEnabled && !profile?.stravaInitialSyncCompleted) {
+        // Small delay to ensure navigation is complete
+        const timeoutId = setTimeout(() => {
+          checkInitialSyncModal();
+        }, 50);
+        return () => clearTimeout(timeoutId);
+      }
+    }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.stravaInitialSyncCompleted, checkInitialSyncModal])
+  );
+
   // Check for data source connection
   useEffect(() => {
     const checkDataSource = async () => {
@@ -502,70 +599,6 @@ export default function HomeScreen() {
 
     checkDataSource();
   }, [isAuthenticated, profile]);
-
-  useEffect(() => {
-    const performInitialSync = async () => {
-      // Only perform initial connection sync for new Strava users
-      if (!isAuthenticated || !profile?.stravaSyncEnabled || hasPerformedInitialSync) {
-        return;
-      }
-
-      // Check if this is the initial connection (no previous sync and no recent activities)
-      const lastSync = profile.lastStravaSync;
-      const isInitialConnection = !lastSync;
-
-      if (isInitialConnection) {
-        try {
-          setHasPerformedInitialSync(true);
-
-          const { default: DatabaseStravaService } = await import('@/services/DatabaseStravaService');
-          const stravaService = new DatabaseStravaService(convex);
-
-          const syncResult = await stravaService.syncActivitiesFromStrava(30); // Sync last 30 days for initial connection
-
-          if (syncResult && syncResult.created > 0) {
-            // Show modal for first-time sync with significant results
-            if (syncResult.created >= 5 || (syncResult.distanceGained && syncResult.distanceGained > 10000)) {
-              setInitialSyncResult({
-                created: syncResult.created,
-                updated: syncResult.updated || 0,
-                skipped: syncResult.skipped || 0,
-                distanceGained: syncResult.distanceGained || 0,
-                leveledUp: syncResult.leveledUp,
-                newLevel: syncResult.newLevel,
-                oldLevel: syncResult.oldLevel,
-              });
-              setInitialSyncModalVisible(true);
-            }
-          } else {
-          }
-        } catch (error) {
-          // Show alert if authentication error
-          if (error instanceof Error && error.message.includes('Not authenticated with Strava')) {
-            Alert.alert(
-              'Strava Connection Required',
-              'Please connect to Strava in Settings to enable activity syncing.',
-              [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                  text: 'Open Settings',
-                  onPress: () => router.push('/settings')
-                }
-              ]
-            );
-          }
-        }
-      } else {
-        // Already connected - webhooks handle new activities automatically
-        setHasPerformedInitialSync(true);
-      }
-    };
-
-    const timeoutId = setTimeout(performInitialSync, 1000); // Small delay to ensure profile is loaded
-    return () => clearTimeout(timeoutId);
-  }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.lastStravaSync, hasPerformedInitialSync, convex]);
-
-
 
   // Check for activities needing celebration
   useEffect(() => {
@@ -602,7 +635,7 @@ export default function HomeScreen() {
   // Memoize week data generation to prevent unnecessary recalculations
   const weekData = useMemo(() => {
     return generateWeekData();
-  }, [activities, plannedWorkouts, restActivities, simpleSchedule, trainingPlan, weekStartDay]);
+  }, [activities, plannedWorkouts, restActivities, simpleSchedule, scheduleHistory, trainingPlan, weekStartDay]);
 
   const { weeks, allDays } = weekData;
 
@@ -766,7 +799,7 @@ export default function HomeScreen() {
   }, [levelInfo]);
 
   // Show loading state when queries are loading
-  if (!profile || !activities || plannedWorkouts === undefined || restActivities === undefined || simpleSchedule === undefined) {
+  if (!profile || !activities || plannedWorkouts === undefined || restActivities === undefined || simpleSchedule === undefined || scheduleHistory === undefined) {
     return (
       <View style={styles.loadingContainer}>
         <Text style={styles.loadingText}>Loading...</Text>
@@ -1054,23 +1087,6 @@ export default function HomeScreen() {
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.debugButton}
-                onPress={async () => {
-                  try {
-                    await setSimpleSchedule({
-                      runsPerWeek: 3,
-                      preferredDays: ['Mon', 'Wed', 'Fri']
-                    });
-                    Alert.alert('Success', 'Simple training schedule created: 3 runs per week on Mon/Wed/Fri');
-                  } catch (error) {
-                    Alert.alert('Error', 'Failed to create simple schedule: ' + error);
-                  }
-                }}
-              >
-                <Text style={styles.debugButtonText}>🏃‍♂️ Create Simple Schedule</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
                 style={[styles.debugButton, styles.debugCloseButton]}
                 onPress={() => {
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -1089,6 +1105,8 @@ export default function HomeScreen() {
           onClose={() => {
             setInitialSyncModalVisible(false);
             setInitialSyncResult(null);
+            // Mark initial sync as completed so it doesn't show again
+            updateSyncPreferences({ stravaInitialSyncCompleted: true });
           }}
           metricSystem={profile?.metricSystem || 'metric'}
         />
@@ -1173,11 +1191,17 @@ const styles = StyleSheet.create({
   coinContainer: {
     flexDirection: 'row',
     alignItems: 'center',
+    shadowColor: Theme.colors.accent.primary,
+    shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.5,
+    shadowRadius: 4,
+    elevation: 10,
   },
   coinIcon: {
     width: 24,
     height: 24,
     marginRight: 4,
+
   },
   coinText: {
     fontSize: 18,

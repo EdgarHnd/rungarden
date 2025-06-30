@@ -30,7 +30,6 @@ import type * as userProfile from "../userProfile.js";
 import type * as utils_challenges from "../utils/challenges.js";
 import type * as utils_gamification from "../utils/gamification.js";
 import type * as utils_streak from "../utils/streak.js";
-import type * as utils_streaks from "../utils/streaks.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -58,7 +57,6 @@ declare const fullApi: ApiFromModules<{
   "utils/challenges": typeof utils_challenges;
   "utils/gamification": typeof utils_gamification;
   "utils/streak": typeof utils_streak;
-  "utils/streaks": typeof utils_streaks;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

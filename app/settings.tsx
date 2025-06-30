@@ -1,4 +1,3 @@
-import InitialSyncModal from '@/components/InitialSyncModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import DatabaseHealthService from '@/services/DatabaseHealthService';
@@ -11,7 +10,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Alert, Image, Linking, Platform, ScrollView, StyleSheet, Switch, Text, TouchableOpacity, View } from 'react-native';
 
 export default function SettingsScreen() {
   const router = useRouter();
@@ -26,7 +25,6 @@ export default function SettingsScreen() {
   const updateMetricSystem = useMutation(api.userProfile.updateMetricSystem);
   const updateTrainingProfile = useMutation(api.trainingProfile.updateTrainingProfile);
   const pushNotificationSettings = useQuery(api.userProfile.getPushNotificationSettings);
-  const updatePushSettings = useMutation(api.userProfile.updatePushNotificationSettings);
 
   const [isLoading, setIsLoading] = useState(true);
   const [healthService, setHealthService] = useState<DatabaseHealthService | null>(null);
@@ -35,16 +33,6 @@ export default function SettingsScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isStravaAuthenticated, setIsStravaAuthenticated] = useState(false);
   const [isDeduplicating, setIsDeduplicating] = useState(false);
-  const [initialSyncModalVisible, setInitialSyncModalVisible] = useState(false);
-  const [initialSyncResult, setInitialSyncResult] = useState<{
-    created: number;
-    updated: number;
-    skipped: number;
-    distanceGained: number;
-    leveledUp?: boolean;
-    newLevel?: number;
-    oldLevel?: number;
-  } | null>(null);
 
   useEffect(() => {
     if (isAuthenticated && convex) {
@@ -210,33 +198,28 @@ export default function SettingsScreen() {
           console.log('[Settings] Performing initial Strava sync for existing activities...');
           const syncResult = await stravaService.forceSyncFromStrava(30);
 
-          console.log('[Settings] Sync result:', {
+          console.log('[Settings] Raw sync result:', syncResult);
+          console.log('[Settings] Sync result details:', {
             created: syncResult?.created,
             updated: syncResult?.updated,
             skipped: syncResult?.skipped,
             distanceGained: syncResult?.distanceGained,
             leveledUp: syncResult?.leveledUp,
             newLevel: syncResult?.newLevel,
-            oldLevel: syncResult?.oldLevel
+            oldLevel: syncResult?.oldLevel,
+            hasAnyActivities: (syncResult?.created > 0 || syncResult?.updated > 0),
+            hasDistance: (syncResult?.distanceGained && syncResult?.distanceGained > 0),
+            shouldShowModal: (syncResult && (syncResult.created > 0 || syncResult.updated > 0 || (syncResult.distanceGained && syncResult.distanceGained > 0)))
           });
 
           // Show modal if any activities were processed (created OR updated) or if we gained distance
-          if (syncResult && (syncResult.created > 0 || syncResult.updated > 0 || (syncResult.distanceGained && syncResult.distanceGained > 0))) {
+          // BUT only if initial sync hasn't been completed yet
+          if (syncResult && (syncResult.created > 0 || syncResult.updated > 0 || (syncResult.distanceGained && syncResult.distanceGained > 0)) && !profile?.stravaInitialSyncCompleted) {
+            console.log('[Settings] Initial sync has activities - celebration will show on main screen');
+            // Don't show alert here - let the main screen modal handle the celebration
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-
-            // Show the new modal instead of Alert
-            setInitialSyncResult({
-              created: syncResult.created,
-              updated: syncResult.updated || 0,
-              skipped: syncResult.skipped || 0,
-              distanceGained: syncResult.distanceGained || 0,
-              leveledUp: syncResult.leveledUp,
-              newLevel: syncResult.newLevel,
-              oldLevel: syncResult.oldLevel,
-            });
-            setInitialSyncModalVisible(true);
           } else {
-            console.log('[Settings] No activities to sync or no distance gained');
+            console.log('[Settings] No activities to sync, no distance gained, or initial sync already completed - showing simple success alert');
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             Alert.alert('Success', 'Successfully connected to Strava!');
           }
@@ -715,8 +698,6 @@ export default function SettingsScreen() {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Preferences Section */}
         <View style={styles.sectionGroup}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-
           {/* Metric System Toggle */}
           <View style={styles.section}>
             <View style={styles.sectionContent}>
@@ -878,7 +859,7 @@ export default function SettingsScreen() {
             <View style={styles.sectionContent}>
               <View style={styles.syncOptionContent}>
                 <View style={styles.syncOptionHeader}>
-                  <FontAwesome5 name="running" size={20} color={Theme.colors.accent.primary} />
+                  <Image source={require('@/assets/images/icons/strava.png')} style={styles.iconImage} />
                   <Text style={styles.syncOptionTitle}>Strava</Text>
                   {isStravaAuthenticated && profile?.stravaSyncEnabled && (
                     <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.status.success }]}>
@@ -969,7 +950,7 @@ export default function SettingsScreen() {
               <View style={styles.sectionContent}>
                 <View style={styles.syncOptionContent}>
                   <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="heartbeat" size={20} color={Theme.colors.status.error} />
+                    <Image source={require('@/assets/images/icons/apple-health.png')} style={styles.iconImage} />
                     <Text style={styles.syncOptionTitle}>Apple HealthKit</Text>
                     {profile?.healthKitSyncEnabled && (
                       <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.status.success }]}>
@@ -992,7 +973,6 @@ export default function SettingsScreen() {
               </View>
             </TouchableOpacity>
           )}
-
 
           {/* Manual Sync Buttons - Only show for connected sources */}
           {profile?.healthKitSyncEnabled && (
@@ -1222,8 +1202,6 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
 
-
-
         {/* Legal Section */}
         <View style={styles.sectionGroup}>
           <Text style={styles.sectionTitle}>Legal</Text>
@@ -1286,16 +1264,6 @@ export default function SettingsScreen() {
           </TouchableOpacity>
         </View>
       </ScrollView >
-
-      <InitialSyncModal
-        visible={initialSyncModalVisible}
-        syncResult={initialSyncResult}
-        onClose={() => {
-          setInitialSyncModalVisible(false);
-          setInitialSyncResult(null);
-        }}
-        metricSystem={profile?.metricSystem || 'metric'}
-      />
     </LinearGradient >
   );
 }
@@ -1350,12 +1318,9 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   section: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     marginBottom: Theme.spacing.md,
-    borderWidth: 1,
-    borderColor: Theme.colors.border.primary,
-    ...Theme.shadows.small,
   },
   sectionContent: {
     flexDirection: 'row',
@@ -1370,16 +1335,11 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   infoSection: {
-    backgroundColor: Theme.colors.background.secondary,
     marginHorizontal: Theme.spacing.xl,
     marginBottom: Theme.spacing.sm,
-    borderRadius: Theme.borderRadius.medium,
     padding: Theme.spacing.lg,
     flexDirection: 'row',
     alignItems: 'flex-start',
-    ...Theme.shadows.small,
-    borderWidth: 1,
-    borderColor: Theme.colors.border.primary,
   },
   infoText: {
     fontSize: 14,
@@ -1441,5 +1401,9 @@ const styles = StyleSheet.create({
   },
   closeButton: {
     padding: Theme.spacing.sm,
+  },
+  iconImage: {
+    width: 20,
+    height: 20,
   },
 }); 

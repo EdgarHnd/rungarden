@@ -354,7 +354,7 @@ export default function TrainingPlanScreen() {
   const progress = calculateOverallProgress();
   const progressPercent = progress.totalWeeks > 0 ? (progress.weeksCompleted / progress.totalWeeks) * 100 : 0;
 
-  const planName = `${getGoalDisplayName(trainingProfile.goalDistance)} Plan`;
+  const planName = `${getGoalDisplayName(trainingProfile.goalDistance ?? 'just-run-more')} Plan`;
 
   const handleWeekPress = (weekNumber: number) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);

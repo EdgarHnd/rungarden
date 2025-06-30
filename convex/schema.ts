@@ -53,6 +53,7 @@ const schema = defineSchema({
     // Strava tokens
     stravaAthleteId: v.optional(v.number()),
     stravaAccessRevoked: v.optional(v.boolean()),
+    stravaInitialSyncCompleted: v.optional(v.boolean()), // Track if initial sync modal has been shown
     stravaAccessToken: v.optional(v.string()),
     stravaRefreshToken: v.optional(v.string()),
     stravaTokenExpiresAt: v.optional(v.number()),

@@ -1,4 +1,5 @@
 import StatsBadges from '@/components/StatsBadges';
+import StreakModalComponent from '@/components/StreakModalComponent';
 import Theme from '@/constants/theme';
 import { Doc } from '@/convex/_generated/dataModel';
 import LevelingService from '@/services/LevelingService';
@@ -574,41 +575,16 @@ export default function RunCelebrationModal({
 
   const renderStreakStep = () => (
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
-      <View style={styles.centeredGroup}>
-        <Reanimated.View style={[styles.streakDisplay, streakAnimatedStyle]}>
-          <Text style={styles.streakFlameIcon}>🔥</Text>
-          <Text style={styles.streakMainNumber}>{streakInfo?.currentStreak || 0}</Text>
-          <Text style={styles.streakMainLabel}>day streak</Text>
-        </Reanimated.View>
-
-        <View style={styles.streakWeekView}>
-          {['Th', 'Fr', 'Sa', 'Su', 'Mo', 'Tu', 'We'].map((dayName, index) => (
-            <Reanimated.View
-              key={dayName}
-              style={[styles.streakDayColumn, streakDayAnimatedStyle]}
-            >
-              <Text style={styles.streakDayName}>{dayName}</Text>
-              <View style={[
-                styles.streakDayCircle,
-                index < (streakInfo?.currentStreak || 0) ? styles.streakDayCompleted : styles.streakDayIncomplete
-              ]}>
-                {index < (streakInfo?.currentStreak || 0) && (
-                  <Text style={styles.streakCheckmark}>✓</Text>
-                )}
-              </View>
-            </Reanimated.View>
-          ))}
-        </View>
-
-        <Text style={styles.streakEncouragement}>
-          {(streakInfo?.currentStreak || 0) >= 6 ?
+      <StreakModalComponent 
+        currentStreak={streakInfo?.currentStreak || 0}
+        customMessage={
+          (streakInfo?.currentStreak || 0) >= 6 ?
             "You've been learning for almost a week straight!" :
             (streakInfo?.currentStreak || 0) >= 3 ?
               "You're building an amazing habit!" :
               "Keep going to build your streak!"
-          }
-        </Text>
-      </View>
+        }
+      />
 
       <TouchableOpacity
         style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}

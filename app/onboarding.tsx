@@ -486,8 +486,8 @@ export default function OnboardingScreen() {
     const getStepInfo = () => {
       switch (currentStep) {
         case 0: return { title: '', subtitle: '' };
-        case 1: return { title: 'You found a lost little flame', subtitle: '' };
-        case 2: return { title: 'What should we call your flame?', subtitle: '' };
+        case 1: return { title: 'You found a lost flame', subtitle: '' };
+        case 2: return { title: 'What should we call it?', subtitle: '' };
         case 3: return { title: 'Choose your path', subtitle: '' };
         case 4: return { title: 'How long can you run now?', subtitle: '' };
         case 5: return { title: 'How many days per week do you want to run?', subtitle: '' };
@@ -1087,7 +1087,6 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: Theme.spacing.xl,
     paddingTop: 50,
-    paddingBottom: Theme.spacing.md,
   },
   backButton: {
     padding: Theme.spacing.sm,
@@ -1247,7 +1246,7 @@ const styles = StyleSheet.create({
   },
   listContainerWithTopMargin: {
     gap: Theme.spacing.lg,
-    marginTop: 150,
+    marginTop: 100,
   },
   listOption: {
     flexDirection: 'row',

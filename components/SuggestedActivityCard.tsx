@@ -204,7 +204,7 @@ export default function SuggestedActivityCard({
         )}
         <View style={styles.headerText}>
           <Text style={[styles.title, isMissed && styles.missedText]}>
-            {isToday && ((preferTimeOverDistance && workoutDuration) || (!preferTimeOverDistance && workoutDistance && workoutDistance > 0))
+            {isToday && !isDefaultActivity(plannedWorkout) && ((preferTimeOverDistance && workoutDuration) || (!preferTimeOverDistance && workoutDistance && workoutDistance > 0))
               ? preferTimeOverDistance
                 ? `${workoutTitle} • ${workoutDuration || 'Flexible'}`
                 : `${workoutTitle} • ${formatDistance(workoutDistance!, isMetric)}`

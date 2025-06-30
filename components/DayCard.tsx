@@ -1,3 +1,4 @@
+import RecordingModal from '@/components/RecordingModal';
 import RestCelebrationModal from '@/components/RestCelebrationModal';
 import RestWorkoutCard from '@/components/RestWorkoutCard';
 import SuggestedActivityCard from '@/components/SuggestedActivityCard';
@@ -33,6 +34,7 @@ export default function DayCard({
   isRestDayCompleted,
 }: DayCardProps) {
   const [showRestCelebrationModal, setShowRestCelebrationModal] = useState(false);
+  const [showRecordingModal, setShowRecordingModal] = useState(false);
   const completeRestDay = useMutation(api.userProfile.completeRestDay);
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
@@ -108,12 +110,25 @@ export default function DayCard({
   };
 
   const handleSimpleRunPress = async () => {
-    // nice alert saying the recording feature is coming soon
-    Alert.alert("Recording coming soon", "For now, use the Strava or Apple Health integration to log your runs.");
+    if (!isToday && !isDatabasePlannedWorkout(plannedWorkout)) {
+      router.push({
+        pathname: '/activities',
+      });
+    } else {
+      // Show the recording modal
+      setShowRecordingModal(true);
+    }
   };
 
-  // Check if this day is today
-  const isToday = date === new Date().toISOString().split('T')[0];
+  // Check if this day is today (using local timezone for consistency)
+  const getTodayString = () => {
+    const today = new Date();
+    const year = today.getFullYear();
+    const month = String(today.getMonth() + 1).padStart(2, '0');
+    const day = String(today.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+  const isToday = date === getTodayString();
 
   return (
     <View style={styles.dayCard}>
@@ -165,6 +180,12 @@ export default function DayCard({
           isRestDayCompleted={isRestDayCompleted}
         />
       )}
+
+      {/* Recording Modal */}
+      <RecordingModal
+        visible={showRecordingModal}
+        onClose={() => setShowRecordingModal(false)}
+      />
 
       {/* Rest Celebration Modal */}
       <RestCelebrationModal

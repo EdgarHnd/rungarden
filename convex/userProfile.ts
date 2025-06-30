@@ -2,8 +2,8 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import {
-  calculateLevelFromXP,
-  distanceToXP
+    calculateLevelFromXP,
+    distanceToXP
 } from "./utils/gamification";
  
 export const currentUser = query({
@@ -280,6 +280,7 @@ export const updateSyncPreferences = mutation({
     lastStravaSync: v.optional(v.union(v.string(), v.null())),
     stravaAthleteId: v.optional(v.number()),
     stravaAccessRevoked: v.optional(v.boolean()),
+    stravaInitialSyncCompleted: v.optional(v.boolean()),
     stravaAccessToken: v.optional(v.string()),
     stravaRefreshToken: v.optional(v.string()),
     stravaTokenExpiresAt: v.optional(v.number()),
@@ -494,230 +495,6 @@ export const getPushNotificationSettings = query({
   },
 });
 
-// Update streak when workout is completed
-export const updateStreakOnCompletion = mutation({
-  args: { 
-    workoutDate: v.string(),
-    workoutType: v.string(),
-    plannedWorkoutId: v.optional(v.id("plannedWorkouts"))
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!profile) {
-      throw new Error("Profile not found");
-    }
-
-    // Only training days count toward streak
-    if (args.workoutType === 'rest' || args.workoutType === 'cross-train') {
-      return {
-        streakUpdated: false,
-        currentStreak: profile.currentStreak || 0,
-        streakIncreased: false
-      };
-    }
-
-    const currentStreak = profile.currentStreak || 0;
-    const longestStreak = profile.longestStreak || 0;
-    const lastStreakWeek = profile.lastStreakWeek;
-
-    // Calculate new streak values
-    let newCurrentStreak = currentStreak;
-    let streakIncreased = false;
-    const today = new Date().toISOString().split('T')[0];
-
-    // Only count workouts completed today or in the past
-    if (args.workoutDate > today) {
-      return {
-        streakUpdated: false,
-        currentStreak,
-        streakIncreased: false
-      };
-    }
-
-    if (!lastStreakWeek) {
-      // First ever training day completed
-      newCurrentStreak = 1;
-      streakIncreased = true;
-    } else {
-      const lastStreakDateTime = new Date(lastStreakWeek).getTime();
-      const workoutDateTime = new Date(args.workoutDate).getTime();
-      const daysBetween = Math.floor((workoutDateTime - lastStreakDateTime) / (1000 * 60 * 60 * 24));
-
-      if (daysBetween <= 3) { // Allow some flexibility for training plans
-        newCurrentStreak = currentStreak + 1;
-        streakIncreased = true;
-      } else {
-        // Gap is too large, reset streak
-        newCurrentStreak = 1;
-        streakIncreased = false;
-      }
-    }
-
-    const newLongestStreak = Math.max(newCurrentStreak, longestStreak);
-
-    // Check for milestone rewards
-    let newStreakFreezes = profile.streakFreezeAvailable || 0;
-    let milestoneMessage: string | undefined;
-
-    const milestones = [7, 14, 30, 60, 100, 365];
-    for (const milestone of milestones) {
-      if (newCurrentStreak >= milestone && currentStreak < milestone) {
-        // Award streak freezes at certain milestones
-        if (milestone === 7) {
-          newStreakFreezes += 1;
-          milestoneMessage = "7 day streak! Earned 1 streak freeze! 🧊";
-        } else if (milestone === 30) {
-          newStreakFreezes += 2;
-          milestoneMessage = "30 day streak! Earned 2 streak freezes! 🧊🧊";
-        } else if (milestone === 100) {
-          newStreakFreezes += 3;
-          milestoneMessage = "100 day streak! Earned 3 streak freezes! 🧊🧊🧊";
-        } else {
-          milestoneMessage = `${milestone} day streak milestone! Amazing! 🏆`;
-        }
-        break;
-      }
-    }
-
-    // Update profile with new streak values
-    await ctx.db.patch(profile._id, {
-      currentStreak: newCurrentStreak,
-      longestStreak: newLongestStreak,
-      lastStreakWeek: args.workoutDate,
-      streakFreezeAvailable: newStreakFreezes,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return {
-      streakUpdated: true,
-      currentStreak: newCurrentStreak,
-      longestStreak: newLongestStreak,
-      streakIncreased,
-      milestoneMessage,
-      streakFreezesEarned: newStreakFreezes - (profile.streakFreezeAvailable || 0)
-    };
-  },
-});
-
-// Mark missed workouts and update streak accordingly
-export const handleMissedWorkouts = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const today = new Date().toISOString().split('T')[0];
-    const yesterday = new Date();
-    yesterday.setDate(yesterday.getDate() - 1);
-    const yesterdayStr = yesterday.toISOString().split('T')[0];
-
-    // Find scheduled workouts that are now overdue
-    const overdueWorkouts = await ctx.db
-      .query("plannedWorkouts")
-      .withIndex("by_user_date", (q) => 
-        q.eq("userId", userId)
-         .lt("scheduledDate", today)
-      )
-      .filter((q) => q.eq(q.field("status"), "scheduled"))
-      .collect();
-
-    let streakBroken = false;
-    let brokenBy: string[] = [];
-
-    // Mark overdue workouts as missed
-    for (const workout of overdueWorkouts) {
-      // Get workout details to check type
-      const workoutDetails = await ctx.db.get(workout.workoutId);
-      const workoutType = workoutDetails?.type || "run";
-      
-      // Only training days can break streak
-      if (workoutType !== 'rest' && workoutType !== 'cross-train') {
-        streakBroken = true;
-        brokenBy.push(workout.scheduledDate);
-      }
-
-      await ctx.db.patch(workout._id, {
-        status: "missed",
-      });
-    }
-
-    // If streak was broken, reset it
-    if (streakBroken) {
-      const profile = await ctx.db
-        .query("userProfiles")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .first();
-
-      if (profile && profile.currentStreak && profile.currentStreak > 0) {
-        await ctx.db.patch(profile._id, {
-          currentStreak: 0,
-          updatedAt: new Date().toISOString(),
-        });
-
-        return {
-          streakBroken: true,
-          missedWorkouts: brokenBy.length,
-          message: `Streak broken due to ${brokenBy.length} missed training day(s). Time to start fresh! 💪`
-        };
-      }
-    }
-
-    return {
-      streakBroken: false,
-      missedWorkouts: overdueWorkouts.length,
-      message: overdueWorkouts.length > 0 ? `${overdueWorkouts.length} workout(s) marked as missed.` : null
-    };
-  },
-});
-
-// Use a streak freeze
-export const useStreakFreeze = mutation({
-  args: { reason: v.optional(v.string()) },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!profile) {
-      throw new Error("Profile not found");
-    }
-
-    const availableFreezes = profile.streakFreezeAvailable || 0;
-    if (availableFreezes <= 0) {
-      throw new Error("No streak freezes available");
-    }
-
-    await ctx.db.patch(profile._id, {
-      streakFreezeAvailable: availableFreezes - 1,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return {
-      success: true,
-      remainingFreezes: availableFreezes - 1,
-      message: "Streak freeze used! Your streak is protected. 🧊"
-    };
-  },
-});
-
-
 // Get rest activities for a user within a date range
 export const getRestActivities = query({
   args: {
@@ -789,10 +566,18 @@ export const completeRestDay = mutation({
       throw new Error("Profile not found");
     }
 
-    const today = new Date().toISOString().split('T')[0];
-    
-    // Only allow completing today's rest day
-    if (args.date !== today) {
+    const todayUtc = new Date();
+    const todayUtcStr = todayUtc.toISOString().split('T')[0];
+
+    // Also calculate the previous day in UTC to account for users behind UTC timezone
+    const yesterdayUtc = new Date(todayUtc.getTime() - 24 * 60 * 60 * 1000);
+    const yesterdayUtcStr = yesterdayUtc.toISOString().split('T')[0];
+
+    // Allow completing rest day if the supplied date matches either today's date (in UTC) or yesterday's date.
+    // This small tolerance handles cases where the user's local date is still "yesterday" while the server is already on the next UTC day.
+    const allowedDates = new Set([todayUtcStr, yesterdayUtcStr]);
+
+    if (!allowedDates.has(args.date)) {
       throw new Error("Can only complete today's rest day");
     }
 
@@ -962,60 +747,6 @@ export const getOrCreateProfileByUserId = query({
     return null;
   },
 });
-
-// Helper function to update user profile totals
-async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
-  const allActivities = await ctx.db
-    .query("activities")
-    .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .collect();
-
-  const totalDistance = allActivities.reduce((sum: number, a: any) => sum + a.distance, 0);
-  const totalCalories = allActivities.reduce((sum: number, a: any) => sum + a.calories, 0);
-  const totalWorkouts = allActivities.length;
-  
-  // Calculate XP and level from total distance
-  const totalXP = distanceToXP(totalDistance);
-  const level = calculateLevelFromXP(totalXP);
-  
-  // Don't calculate coins automatically
-  const coins = 0;
-
-  const existingProfile = await ctx.db
-    .query("userProfiles")
-    .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .first();
-
-  const now = new Date().toISOString();
-
-  if (existingProfile) {
-    await ctx.db.patch(existingProfile._id, {
-      totalDistance,
-      totalWorkouts,
-      totalCalories,
-      totalXP,
-      level,
-      coins,
-      updatedAt: now,
-    });
-  } else {
-    await ctx.db.insert("userProfiles", {
-      userId,
-      weeklyGoal: 10000, // Default 10km
-      totalDistance,
-      totalWorkouts,
-      totalCalories,
-      totalXP,
-      level,
-      coins,
-      currentStreak: 0,
-      longestStreak: 0,
-      streakFreezeAvailable: 0,
-      mascotHealth: 4,
-      updatedAt: now,
-    });
-  }
-}
 
 // Delete a rest activity (for corrections or testing)
 export const deleteRestActivity = mutation({

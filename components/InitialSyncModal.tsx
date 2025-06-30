@@ -113,6 +113,9 @@ export default function InitialSyncModal({
       setAnimatedXPValue(0);
       setAnimatedProgress(0);
 
+      // Reset to first step when modal opens
+      setCurrentStep('sync');
+
       // Initial entrance animation
       animateStepEntrance();
 
@@ -181,12 +184,44 @@ export default function InitialSyncModal({
   const animateProgressBar = () => {
     if (!syncResult) return;
 
-    // Calculate progress percentage based on user's current level
+    // Calculate actual progress percentage based on user's level progression
     const currentLevel = syncResult.oldLevel || 1;
-    const nextLevel = (syncResult.newLevel || currentLevel);
+    const newLevel = syncResult.newLevel || currentLevel;
 
-    // Show progress towards next level (simplified to 60% for animation)
-    progressValue.value = withTiming(60, {
+    // Calculate XP gained from sync
+    const xpGained = LevelingService.distanceToXP(syncResult.distanceGained);
+
+    // Get level info for current level to understand progress
+    const currentLevelInfo = LevelingService.calculateLevelInfo((currentLevel - 1) * 500); // Rough estimate for current level base XP
+    const nextLevelInfo = LevelingService.calculateLevelInfo(currentLevelInfo.xpForNextLevel);
+
+    // Calculate progress percentage
+    let progressPercentage = 0;
+    if (syncResult.leveledUp && newLevel > currentLevel) {
+      // If leveled up, show 100% progress
+      progressPercentage = 100;
+    } else {
+      // Show progress based on XP gained relative to what's needed for next level
+      // Use a reasonable percentage based on XP gained
+      const xpForNextLevelGap = currentLevelInfo.remainingXPForNextLevel || 500; // Fallback to 500 if no data
+      progressPercentage = Math.min(100, (xpGained / xpForNextLevelGap) * 100);
+
+      // Ensure at least 20% progress is shown if they gained any XP
+      if (xpGained > 0 && progressPercentage < 20) {
+        progressPercentage = 20;
+      }
+    }
+
+    console.log('[InitialSyncModal] Progress calculation:', {
+      currentLevel,
+      newLevel,
+      xpGained,
+      progressPercentage,
+      leveledUp: syncResult.leveledUp,
+      remainingXPForNextLevel: currentLevelInfo.remainingXPForNextLevel
+    });
+
+    progressValue.value = withTiming(progressPercentage, {
       duration: 1000,
     });
   };
@@ -259,7 +294,7 @@ export default function InitialSyncModal({
           <View style={styles.syncStatsContainer}>
             <View style={styles.syncStatCard}>
               <Text style={styles.syncStatNumber}>{(syncResult.created || 0) + (syncResult.updated || 0)}</Text>
-              <Text style={styles.syncStatLabel}>runs synced from {getCurrentYear()}</Text>
+              <Text style={styles.syncStatLabel}>total runs synced</Text>
             </View>
 
             <View style={styles.syncStatCard}>
@@ -270,7 +305,7 @@ export default function InitialSyncModal({
 
           <Text style={styles.syncDescription}>
             {syncResult.created > 0
-              ? "We've imported all your runs from this year. Let's see how much XP you've earned!"
+              ? "We've imported all your runs from Strava! Let's see how much XP you've earned!"
               : "We've synced your existing runs with the latest data. Let's see your XP!"
             }
           </Text>
@@ -306,11 +341,13 @@ export default function InitialSyncModal({
             </Text>
 
             <View style={styles.progressSection}>
-              <Text style={styles.progressLabel}>lvl {syncResult.oldLevel || 1}</Text>
+              <Text style={styles.progressLabel}>lvl {Math.max(1, syncResult.oldLevel || 1)}</Text>
               <View style={styles.progressBar}>
                 <Reanimated.View style={[styles.progressFill, progressAnimatedStyle]} />
               </View>
-              <Text style={styles.progressLabel}>lvl {(syncResult.newLevel || syncResult.oldLevel || 1)}</Text>
+              <Text style={styles.progressLabel}>
+                lvl {Math.max(syncResult.oldLevel || 1, syncResult.newLevel || syncResult.oldLevel || 1)}
+              </Text>
             </View>
           </View>
         </View>
@@ -338,15 +375,18 @@ export default function InitialSyncModal({
         <View style={styles.contentSection}>
           <View style={styles.centerContent}>
             <Reanimated.View style={[styles.levelBadge, levelIconAnimatedStyle]}>
-              <Text style={styles.levelNumber}>{syncResult.newLevel}</Text>
+              <Text style={styles.levelNumber}>{Math.max(1, syncResult.newLevel || 1)}</Text>
             </Reanimated.View>
 
             <Text style={styles.levelTitle}>
-              {LevelingService.getLevelTitle(syncResult.newLevel || 1)}
+              {LevelingService.getLevelTitle(Math.max(1, syncResult.newLevel || 1))}
             </Text>
 
             <Text style={styles.levelDescription}>
-              You jumped from level {syncResult.oldLevel} to level {syncResult.newLevel}!
+              {syncResult.newLevel && syncResult.oldLevel && syncResult.newLevel > syncResult.oldLevel
+                ? `You jumped from level ${syncResult.oldLevel} to level ${syncResult.newLevel}!`
+                : `You've reached level ${Math.max(1, syncResult.newLevel || 1)}!`
+              }
             </Text>
           </View>
         </View>

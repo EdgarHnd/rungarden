@@ -3,9 +3,9 @@ import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { action, mutation, query } from "./_generated/server";
 import {
-    calculateCoinsFromDistance,
-    calculateLevelFromXP,
-    distanceToXP
+  calculateCoinsFromDistance,
+  calculateLevelFromXP,
+  distanceToXP
 } from "./utils/gamification";
 import { recalcStreak } from "./utils/streak";
 
@@ -265,6 +265,23 @@ export const syncActivitiesFromStravaServer = mutation({
       calories: v.number(),
       averageHeartRate: v.optional(v.number()),
       workoutName: v.optional(v.string()),
+      totalElevationGain: v.optional(v.number()),
+      elevationHigh: v.optional(v.number()),
+      elevationLow: v.optional(v.number()),
+      averageTemp: v.optional(v.number()),
+      startLatLng: v.optional(v.array(v.number())),
+      endLatLng: v.optional(v.array(v.number())),
+      timezone: v.optional(v.string()),
+      isIndoor: v.optional(v.boolean()),
+      isCommute: v.optional(v.boolean()),
+      averageCadence: v.optional(v.number()),
+      averageWatts: v.optional(v.number()),
+      maxWatts: v.optional(v.number()),
+      kilojoules: v.optional(v.number()),
+      polyline: v.optional(v.string()),
+      maxSpeed: v.optional(v.number()),
+      averageSpeed: v.optional(v.number()),
+      isNewActivity: v.optional(v.boolean()),
     })),
   },
   handler: async (ctx, args): Promise<SyncResult> => {
@@ -720,9 +737,26 @@ export const fetchStravaActivityFromServer = action({
         endDate: new Date(new Date(activityData.start_date).getTime() + activityData.elapsed_time * 1000).toISOString(),
         duration: Math.round(activityData.moving_time / 60), // Convert seconds to minutes
         distance: Math.round(activityData.distance), // Already in meters
-        calories: activityData.calories || estimateCalories(activityData.distance, activityData.moving_time),
+        calories: activityData.calories,
         averageHeartRate: activityData.average_heartrate,
         workoutName: activityData.name,
+        totalElevationGain: activityData.total_elevation_gain,      // meters gained
+        elevationHigh: activityData.elev_high,           // highest elevation
+        elevationLow: activityData.elev_low,            // lowest elevation
+        averageTemp: activityData.average_temp,             // average temperature (celsius)
+        startLatLng: activityData.start_latlng,    // [lat, lng] start coordinates
+        endLatLng: activityData.end_latlng,      // [lat, lng] end coordinates
+        timezone: activityData.timezone,                // timezone info
+        isIndoor: activityData.is_indoor,               // trainer/treadmill vs outdoor
+        isCommute: activityData.is_commute,              // commute run
+        averageCadence: activityData.average_cadence,          // steps per minute
+        averageWatts: activityData.average_watts,            // power data
+        maxWatts: activityData.max_watts,                // peak power
+        kilojoules: activityData.kilojoules,              // energy expenditure
+        polyline: activityData.map?.polyline,                // route polyline for mapping
+        maxSpeed: activityData.max_speed,                // peak speed
+        averageSpeed: activityData.average_speed,            // average speed
+        isNewActivity: true
       };
 
       // Sync to database using the existing mutation
@@ -812,13 +846,6 @@ async function fetchStravaActivity(accessToken: string, activityId: number): Pro
   }
 }
 
-// Helper function to estimate calories if not provided by Strava
-function estimateCalories(distance: number, duration: number): number {
-  // Assume average weight of 70kg for estimation
-  const averageWeight = 70;
-  const distanceKm = distance / 1000;
-  return Math.round(averageWeight * distanceKm * 0.75);
-}
 
 // Sync activities from Strava (client-side version with authentication)
 export const syncActivitiesFromStrava = mutation({
@@ -849,6 +876,7 @@ export const syncActivitiesFromStrava = mutation({
       polyline: v.optional(v.string()),
       maxSpeed: v.optional(v.number()),
       averageSpeed: v.optional(v.number()),
+      isNewActivity: v.optional(v.boolean()),
     })),
   },
   handler: async (ctx, args): Promise<SyncResult> => {
@@ -910,7 +938,8 @@ export const syncActivitiesFromStrava = mutation({
             existingActivity.kilojoules !== activity.kilojoules ||
             existingActivity.polyline !== activity.polyline ||
             existingActivity.maxSpeed !== activity.maxSpeed ||
-            existingActivity.averageSpeed !== activity.averageSpeed
+            existingActivity.averageSpeed !== activity.averageSpeed ||
+            existingActivity.isNewActivity !== activity.isNewActivity
           );
 
           if (hasChanges) {
@@ -940,6 +969,7 @@ export const syncActivitiesFromStrava = mutation({
               polyline: activity.polyline,
               maxSpeed: activity.maxSpeed,
               averageSpeed: activity.averageSpeed,
+              isNewActivity: activity.isNewActivity,
               syncedAt: now,
             });
             updated++;
@@ -979,7 +1009,7 @@ export const syncActivitiesFromStrava = mutation({
             polyline: activity.polyline,
             maxSpeed: activity.maxSpeed,
             averageSpeed: activity.averageSpeed,
-            isNewActivity: true, // Don't mark initial sync activities as new
+            isNewActivity: activity.isNewActivity, // Use the value from the client (false for initial sync)
             syncedAt: now,
           });
 

@@ -115,7 +115,7 @@ class StravaService {
   private static readonly AUTH_URL = 'https://www.strava.com/oauth/authorize';
   private static readonly MOBILE_AUTH_URL = 'https://www.strava.com/oauth/mobile/authorize';
   private static readonly TOKEN_URL = 'https://www.strava.com/oauth/token';
-  private static readonly APP_DOMAIN = 'www.trykoko.app';
+  private static readonly APP_DOMAIN = 'www.blaze.run';
   
   private static readonly SECURE_STORE_KEYS = {
     ACCESS_TOKEN: 'strava_access_token',
@@ -149,7 +149,7 @@ class StravaService {
    */
   static async authenticate(): Promise<boolean> {
     try {
-      const redirectUri = 'koko://' + this.APP_DOMAIN;
+      const redirectUri = 'blaze://' + this.APP_DOMAIN;
       const scope = 'read,activity:read_all';
       
       // Try to open Strava app first (like the iOS implementation)
@@ -528,46 +528,6 @@ class StravaService {
       console.log('[StravaService] Successfully disconnected');
     } catch (error) {
       console.error('[StravaService] Error disconnecting:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Get athlete stats (similar to HealthService calculateHealthStats)
-   */
-  static async getAthleteStats(): Promise<{
-    totalDistance: number;
-    totalWorkouts: number;
-    averagePace: number;
-    totalCalories: number;
-  }> {
-    try {
-      const activities = await this.getRunningActivities(); // Get all data from 2025
-      
-      if (activities.length === 0) {
-        return {
-          totalDistance: 0,
-          totalWorkouts: 0,
-          averagePace: 0,
-          totalCalories: 0,
-        };
-      }
-
-      const totalDistance = activities.reduce((sum, activity) => sum + activity.distance, 0);
-      const totalCalories = activities.reduce((sum, activity) => sum + activity.calories, 0);
-      const totalTime = activities.reduce((sum, activity) => sum + activity.duration, 0);
-
-      // Calculate average pace in minutes per kilometer
-      const averagePace = totalDistance > 0 ? (totalTime / (totalDistance / 1000)) : 0;
-
-      return {
-        totalDistance: Math.round(totalDistance),
-        totalWorkouts: activities.length,
-        averagePace: Math.round(averagePace * 10) / 10,
-        totalCalories: Math.round(totalCalories),
-      };
-    } catch (error) {
-      console.error('[StravaService] Error calculating stats:', error);
       throw error;
     }
   }

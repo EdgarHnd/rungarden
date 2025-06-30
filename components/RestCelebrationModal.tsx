@@ -44,15 +44,26 @@ export default function RestCelebrationModal({
   const stepOpacity = useSharedValue(0);
   const rewardScale = useSharedValue(0);
   const xpCounterValue = useSharedValue(0);
+  const coinsCounterValue = useSharedValue(0);
 
   // Live counter state
   const [animatedXPValue, setAnimatedXPValue] = useState(0);
+  const [animatedCoinsValue, setAnimatedCoinsValue] = useState(0);
 
   // XP counter animation
   useAnimatedReaction(
     () => xpCounterValue.value,
     (value) => {
       runOnJS(setAnimatedXPValue)(Math.floor(value));
+    },
+    []
+  );
+
+  // Coins counter animation
+  useAnimatedReaction(
+    () => coinsCounterValue.value,
+    (value) => {
+      runOnJS(setAnimatedCoinsValue)(Math.floor(value));
     },
     []
   );
@@ -88,7 +99,9 @@ export default function RestCelebrationModal({
       stepOpacity.value = 0;
       rewardScale.value = 0;
       xpCounterValue.value = 0;
+      coinsCounterValue.value = 0;
       setAnimatedXPValue(0);
+      setAnimatedCoinsValue(0);
 
       // Success haptic
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
@@ -114,6 +127,10 @@ export default function RestCelebrationModal({
         rewardScale.value = withSpring(1, { damping: 12, stiffness: 100 });
         // Animate XP counter
         xpCounterValue.value = withTiming(100, { duration: 1500 });
+        // Animate coins counter with slight delay for staggered effect
+        setTimeout(() => {
+          coinsCounterValue.value = withTiming(10, { duration: 1500 });
+        }, 200);
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }, 300);
     }
@@ -129,7 +146,7 @@ export default function RestCelebrationModal({
 
       try {
         const result = await completeRestDay({
-          date: new Date().toISOString().split('T')[0],
+          date: new Date().toLocaleDateString('en-CA'),
           notes: undefined // Could add note support in the future
         });
 
@@ -276,7 +293,7 @@ export default function RestCelebrationModal({
                 source={require('@/assets/images/icons/coal.png')}
                 style={styles.leafIcon}
               />
-              <Text style={[styles.rewardValue, styles.rewardLeavesValue]}>+10</Text>
+              <Text style={[styles.rewardValue, styles.rewardLeavesValue]}>+{animatedCoinsValue}</Text>
               <Text style={styles.rewardLabel}>Embers</Text>
             </View>
           </Reanimated.View>
