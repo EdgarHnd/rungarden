@@ -1,5 +1,5 @@
 import StatsBadges from '@/components/StatsBadges';
-import StreakModalComponent from '@/components/StreakModalComponent';
+import StreakModalComponent from '@/components/modals/StreakModalComponent';
 import Theme from '@/constants/theme';
 import { Doc } from '@/convex/_generated/dataModel';
 import LevelingService from '@/services/LevelingService';
@@ -384,6 +384,19 @@ export default function RunCelebrationModal({
     }
   };
 
+  const cleanupAfterClose = () => {
+    onClose();
+    // local state resets will happen in useEffect after modal closes
+  };
+
+  // Reset local state once the modal is actually closed
+  useEffect(() => {
+    if (!visible) {
+      setCurrentStep('stats');
+      setSelectedFeeling(null);
+    }
+  }, [visible]);
+
   const handleClose = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
@@ -392,17 +405,14 @@ export default function RunCelebrationModal({
       duration: 200,
     });
 
+    // Animate opacity and trigger cleanup once the animation has finished
     stepOpacity.value = withTiming(0, {
       duration: 200,
+    }, (finished) => {
+      if (finished) {
+        runOnJS(cleanupAfterClose)();
+      }
     });
-    onClose();
-
-    // Use setTimeout for cleanup instead of animation callback
-    // setTimeout(() => {
-    //   setCurrentStep('stats');
-    //   setSelectedFeeling(null);
-    //   onClose();
-    // }, 200);
   };
 
   const formatDistance = (meters: number) => {
@@ -575,7 +585,7 @@ export default function RunCelebrationModal({
 
   const renderStreakStep = () => (
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
-      <StreakModalComponent 
+      <StreakModalComponent
         currentStreak={streakInfo?.currentStreak || 0}
         customMessage={
           (streakInfo?.currentStreak || 0) >= 6 ?
@@ -609,7 +619,7 @@ export default function RunCelebrationModal({
               style={[styles.rewardIcon, rewardIconAnimatedStyle]}
             />
             <Text style={styles.rewardMessage}>You earned {animatedCoinValue} embers</Text>
-            <Text style={styles.rewardSubtitle}>Spend them on new clothes and accessories for Koko!</Text>
+            <Text style={styles.rewardSubtitle}>Spend them on new clothes and accessories for Blaze!</Text>
           </View>
         </View>
       </View>

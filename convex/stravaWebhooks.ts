@@ -1,6 +1,6 @@
 import { v } from "convex/values";
 import { api } from "./_generated/api";
-import { mutation, query } from "./_generated/server";
+import { action, mutation, query } from "./_generated/server";
 
 // Interface for Strava webhook events
 interface StravaWebhookEvent {
@@ -77,12 +77,6 @@ async function handleActivityEvent(ctx: any, event: StravaWebhookEvent) {
         console.log(`[StravaWebhooks] Scheduling push notification for userId: ${userId}`);
         await ctx.scheduler.runAfter(5000, api.pushNotifications.sendActivityNotification, {
           userId,
-          activityData: {
-            workoutName: "🎉 Congrats! New run completed - check it out!",
-            distance: 5000, // Dummy data for notification structure
-            duration: 30, // Dummy data for notification structure
-            type: "run",
-          },
         });
         console.log(`[StravaWebhooks] Scheduled push notification for user ${userId}, activity ${event.object_id}`);
       } catch (error) {
@@ -94,7 +88,6 @@ async function handleActivityEvent(ctx: any, event: StravaWebhookEvent) {
       
       // Fallback to queue-based sync if there's an error
       console.log(`[StravaWebhooks] Falling back to queue-based sync for activity ${event.object_id}`);
-      await markUserForStravaSync(ctx, userId, event.object_id);
     }
     
   } else if (event.aspect_type === "update") {
@@ -102,7 +95,6 @@ async function handleActivityEvent(ctx: any, event: StravaWebhookEvent) {
     console.log("[StravaWebhooks] Activity updated:", event.object_id, event.updates);
     
     try {
-      await markUserForStravaSync(ctx, userId, event.object_id);
       console.log(`[StravaWebhooks] Marked updated activity ${event.object_id} for sync`);
     } catch (error) {
       console.error(`[StravaWebhooks] Failed to mark updated activity ${event.object_id} for sync:`, error);
@@ -139,48 +131,6 @@ async function handleAthleteEvent(ctx: any, event: StravaWebhookEvent) {
   }
 }
 
-// Mark user for Strava sync (we'll create a pending sync queue)
-async function markUserForStravaSync(ctx: any, userId: string, activityId?: number) {
-  const now = new Date().toISOString();
-  
-  // Check if there's already a pending sync for this user
-  const existingSync = await ctx.db
-    .query("stravaSyncQueue")
-    .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .filter((q: any) => q.eq(q.field("status"), "pending"))
-    .first();
-
-  if (existingSync) {
-    // Update existing sync with new activity ID if provided
-    const activityIds = existingSync.activityIds || [];
-    if (activityId && !activityIds.includes(activityId)) {
-      activityIds.push(activityId);
-      await ctx.db.patch(existingSync._id, {
-        activityIds,
-        updatedAt: now,
-      });
-    }
-  } else {
-    // Create new sync request
-    await ctx.db.insert("stravaSyncQueue", {
-      userId,
-      activityIds: activityId ? [activityId] : [],
-      status: "pending",
-      updatedAt: now,
-    });
-  }
-
-  // Send push notification for new activity (with 5 second delay to allow sync to complete first)
-  if (activityId) {
-    try {
-      // Removed duplicate notification - this is handled in handleActivityEvent
-      console.log(`[StravaWebhooks] Activity ${activityId} queued for sync for user ${userId}`);
-    } catch (error) {
-      console.warn(`[StravaWebhooks] Failed to queue activity ${activityId} for sync:`, error);
-    }
-  }
-}
-
 // Delete activity by Strava ID
 async function deleteActivityByStravaId(ctx: any, stravaId: number) {
   const activity = await ctx.db
@@ -198,45 +148,6 @@ async function deleteActivityByStravaId(ctx: any, stravaId: number) {
   }
 }
 
-// Get pending Strava syncs for a user
-export const getPendingStravaSyncs = query({
-  args: {
-    userId: v.id("users"),
-  },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("stravaSyncQueue")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .filter((q) => q.eq(q.field("status"), "pending"))
-      .collect();
-  },
-});
-
-// Mark sync as completed
-export const markSyncCompleted = mutation({
-  args: {
-    syncId: v.id("stravaSyncQueue"),
-  },
-  handler: async (ctx, args) => {
-    await ctx.db.patch(args.syncId, {
-      status: "completed",
-      completedAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-    });
-  },
-});
-
-// Get all pending syncs (for background processing)
-export const getAllPendingSyncs = query({
-  args: {},
-  handler: async (ctx) => {
-    return await ctx.db
-      .query("stravaSyncQueue")
-      .filter((q) => q.eq(q.field("status"), "pending"))
-      .order("desc")
-      .take(20); // Limit to 20 for performance
-  },
-});
 
 // Admin functions for webhook management
 // Create webhook subscription (admin only)
@@ -292,5 +203,78 @@ export const deleteWebhookSubscription = mutation({
       success: true,
       message: "Use DatabaseStravaService.deleteWebhookSubscription() method directly",
     };
+  },
+});
+
+// -----------------------------------------------------------------------------
+// Ensure webhook subscription exists (admin only)
+export const ensureWebhook = action({
+  handler: async (ctx) => {
+    const clientId = process.env.STRAVA_CLIENT_ID;
+    const clientSecret = process.env.STRAVA_CLIENT_SECRET;
+    const verifyToken = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || "blaze-webhook-token";
+    const callbackUrl = process.env.CONVEX_SITE_URL + "/strava/webhooks";
+
+    if (!clientId || !clientSecret) {
+      throw new Error("Strava client credentials not configured. Please set STRAVA_CLIENT_ID and STRAVA_CLIENT_SECRET in your Convex env");
+    }
+
+    // Step 1: fetch existing subscriptions
+    const listUrl = new URL("https://www.strava.com/api/v3/push_subscriptions");
+    listUrl.searchParams.append("client_id", clientId);
+    listUrl.searchParams.append("client_secret", clientSecret);
+
+    const listResp = await fetch(listUrl.toString());
+    if (!listResp.ok) {
+      const errorText = await listResp.text();
+      console.error("[StravaWebhooks] Failed listing subscriptions:", errorText);
+      return { success: false, message: "Failed to list existing subscriptions" };
+    }
+
+    const existingSubs: any[] = await listResp.json();
+
+    // If matching subscription already exists, return early
+    const matchingSub = existingSubs.find((sub) => sub.callback_url === callbackUrl);
+    if (matchingSub) {
+      console.log("[StravaWebhooks] Matching webhook already exists:", matchingSub.id);
+      return { success: true, id: matchingSub.id, existing: true };
+    }
+
+    // Delete any other subscriptions (Strava only allows 1 per app)
+    for (const sub of existingSubs) {
+      const delUrl = new URL(`https://www.strava.com/api/v3/push_subscriptions/${sub.id}`);
+      delUrl.searchParams.append("client_id", clientId);
+      delUrl.searchParams.append("client_secret", clientSecret);
+
+      const delResp = await fetch(delUrl.toString(), { method: "DELETE" });
+      if (delResp.status === 204) {
+        console.log(`[StravaWebhooks] Deleted old webhook ${sub.id}`);
+      } else {
+        const delText = await delResp.text();
+        console.warn(`[StravaWebhooks] Failed to delete webhook ${sub.id}:`, delText);
+      }
+    }
+
+    // Create new subscription
+    const createResp = await fetch("https://www.strava.com/api/v3/push_subscriptions", {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: new URLSearchParams({
+        client_id: clientId,
+        client_secret: clientSecret,
+        callback_url: callbackUrl,
+        verify_token: verifyToken,
+      }).toString(),
+    });
+
+    const createText = await createResp.text();
+    if (!createResp.ok) {
+      console.error("[StravaWebhooks] Failed to create webhook:", createText);
+      return { success: false, message: "Failed to create webhook" };
+    }
+
+    const created = JSON.parse(createText);
+    console.log("[StravaWebhooks] Created new webhook:", created.id);
+    return { success: true, id: created.id, existing: false };
   },
 }); 

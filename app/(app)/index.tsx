@@ -1,11 +1,11 @@
 import DayCard from '@/components/DayCard';
-import HealthModal from '@/components/HealthModal';
-import InitialSyncModal from '@/components/InitialSyncModal';
-import RestCelebrationModal from '@/components/RestCelebrationModal';
-import RunCelebrationModal from '@/components/RunCelebrationModal';
-import StreakDisplay from '@/components/StreakDisplay';
+import HealthModal from '@/components/modals/HealthModal';
+import InitialSyncModal from '@/components/modals/InitialSyncModal';
+import RestCelebrationModal from '@/components/modals/RestCelebrationModal';
+import RunCelebrationModal from '@/components/modals/RunCelebrationModal';
+import StreakDisplay from '@/components/modals/StreakDisplay';
+import XPInfoModal from '@/components/modals/XPInfoModal';
 import WeekView from '@/components/WeekView';
-import XPInfoModal from '@/components/XPInfoModal';
 import Theme from '@/constants/theme';
 import { getActivityType, SuggestedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
@@ -494,71 +494,53 @@ export default function HomeScreen() {
 
   // Check for initial sync modal - this should trigger every time we navigate to index
   const checkInitialSyncModal = useCallback(async () => {
-    // Only check if user has Strava enabled but hasn't completed initial sync
-    if (!isAuthenticated || !profile?.stravaSyncEnabled || profile?.stravaInitialSyncCompleted) {
-      return;
-    }
+    // Check Strava initial sync
+    const needsStrava = isAuthenticated && profile?.stravaSyncEnabled && !profile?.stravaInitialSyncCompleted;
+    const needsHealth = isAuthenticated && profile?.healthKitSyncEnabled && !(profile as any)?.healthKitInitialSyncCompleted;
+    if (!needsStrava && !needsHealth) return;
 
     console.log('[Index] Checking for initial sync modal...');
 
     try {
-      // Get recent activities to check if we have data to celebrate
-      const recentActivities = await convex.query(api.activities.getUserActivities, { days: 30, limit: 100 });
+      // Get recent activities to compute stats (30d window sufficient for modal)
+      const recentActivities = await convex.query(api.activities.getUserActivities, { days: 365, limit: 1000 });
 
-      if (recentActivities && recentActivities.length > 0) {
-        // Get all Strava activities that were synced (not just current year)
-        const stravaActivities = recentActivities.filter(activity => activity.source === 'strava');
-        const totalDistance = stravaActivities.reduce((sum, activity) => sum + (activity.distance || 0), 0);
+      if (!recentActivities || recentActivities.length === 0) return;
 
-        // Get the actual sync result from the last sync to show correct before/after levels
-        // The profile should contain the sync information we need
-        const lastSyncResult = {
-          created: profile?.totalWorkouts || stravaActivities.length, // Use total workouts from profile
-          totalDistance: profile?.totalDistance || totalDistance, // Use total distance from profile
-          oldLevel: 1, // Level before any sync (new user)
-          newLevel: profile?.level || 1, // Current level after sync
-        };
+      let sourceFilter: 'strava' | 'healthkit' | null = null;
+      if (needsStrava) sourceFilter = 'strava';
+      else if (needsHealth) sourceFilter = 'healthkit';
 
-        // Calculate if they leveled up (from 1 to their current level)
-        const leveledUp = lastSyncResult.newLevel > lastSyncResult.oldLevel;
-        const targetXP = LevelingService.distanceToXP(lastSyncResult.totalDistance);
+      const sourceActivities = recentActivities.filter(a => a.source === sourceFilter);
+      if (sourceActivities.length === 0) return;
 
-        console.log('[Index] Initial sync data found:', {
-          allStravaActivities: stravaActivities.length,
-          totalWorkoutsFromProfile: profile?.totalWorkouts,
-          totalDistanceFromProfile: profile?.totalDistance,
-          oldLevel: lastSyncResult.oldLevel,
-          newLevel: lastSyncResult.newLevel,
-          leveledUp,
-          targetXP
-        });
+      const totalDistance = sourceActivities.reduce((sum, a) => sum + (a.distance || 0), 0);
+      const createdRuns = sourceActivities.length;
 
-        // Show modal if we have Strava activities to celebrate
-        if (stravaActivities.length > 0 && lastSyncResult.totalDistance > 0) {
-          setInitialSyncResult({
-            created: lastSyncResult.created,
-            updated: 0,
-            skipped: 0,
-            distanceGained: lastSyncResult.totalDistance,
-            leveledUp,
-            newLevel: lastSyncResult.newLevel,
-            oldLevel: lastSyncResult.oldLevel,
-          });
-          setInitialSyncModalVisible(true);
+      // Before-sync level assumed 1, after-sync from profile
+      const oldLevel = 1;
+      const newLevel = profile?.level || 1;
+      const leveledUp = newLevel > oldLevel;
 
-          console.log('[Index] Showing InitialSyncModal for all Strava data');
-        }
-      }
-    } catch (error) {
-      console.error('[Index] Error checking for initial sync modal:', error);
+      setInitialSyncResult({
+        created: createdRuns,
+        updated: 0,
+        skipped: 0,
+        distanceGained: totalDistance,
+        leveledUp,
+        newLevel,
+        oldLevel,
+      });
+      setInitialSyncModalVisible(true);
+      console.log('[Index] Showing InitialSyncModal for', sourceFilter);
+    } catch (err) {
+      console.error('[Index] Error building initial sync modal:', err);
     }
-  }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.stravaInitialSyncCompleted, profile?.totalWorkouts, profile?.totalDistance, profile?.level, convex]);
+  }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.healthKitSyncEnabled, profile?.stravaInitialSyncCompleted, (profile as any)?.healthKitInitialSyncCompleted, profile?.level, convex]);
 
   useEffect(() => {
-    // Use a small delay to ensure everything is loaded
-    const timeoutId = setTimeout(checkInitialSyncModal, 100); // Reduced delay for immediate response
-    return () => clearTimeout(timeoutId);
-  }, [checkInitialSyncModal]);
+    checkInitialSyncModal();
+  }, [activities?.length, checkInitialSyncModal]);
 
   // Also check when screen comes into focus (e.g., navigating back from settings)
   useFocusEffect(
@@ -608,7 +590,7 @@ export default function HomeScreen() {
       // Calculate rewards for this activity
       const mockRewards = {
         distanceGained: activityTocelebrate.distance,
-        coinsGained: 0, // No coins for initial sync
+        coinsGained: Math.floor(activityTocelebrate.distance / 100), // 10 coins per km
         leveledUp: false,
         challengesUnlocked: [],
       };
@@ -821,7 +803,7 @@ export default function HomeScreen() {
     return (
       <SafeAreaView style={styles.container}>
         <LinearGradient
-          colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.tertiary]}
+          colors={[Theme.colors.background.tertiary, Theme.colors.background.secondary, Theme.colors.background.primary]}
           style={styles.solidBackground}
         />
         <View style={styles.headerContainer}>
@@ -1106,7 +1088,7 @@ export default function HomeScreen() {
             setInitialSyncModalVisible(false);
             setInitialSyncResult(null);
             // Mark initial sync as completed so it doesn't show again
-            updateSyncPreferences({ stravaInitialSyncCompleted: true });
+            updateSyncPreferences({ stravaInitialSyncCompleted: true, healthKitInitialSyncCompleted: true });
           }}
           metricSystem={profile?.metricSystem || 'metric'}
         />

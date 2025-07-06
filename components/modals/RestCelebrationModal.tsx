@@ -15,7 +15,6 @@ import {
   withSpring,
   withTiming
 } from 'react-native-reanimated';
-import StreakModalComponent from './StreakModalComponent';
 
 interface RestCelebrationModalProps {
   visible: boolean;
@@ -31,7 +30,7 @@ export default function RestCelebrationModal({
   onClose,
   streakInfo
 }: RestCelebrationModalProps) {
-  const [currentStep, setCurrentStep] = useState<'info' | 'streak' | 'rewards'>('info');
+  const [currentStep, setCurrentStep] = useState<'info' | 'rewards'>('info');
   const [isCompleting, setIsCompleting] = useState(false);
   const [completionResult, setCompletionResult] = useState<any>(null);
   const [hasAttemptedCompletion, setHasAttemptedCompletion] = useState(false);
@@ -153,13 +152,13 @@ export default function RestCelebrationModal({
         if (result.success) {
           setCompletionResult(result);
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-          setCurrentStep('streak');
+          setCurrentStep('rewards');
         } else if (result.alreadyCompleted) {
           // Handle the "already completed" case from backend
           console.log('Rest day already completed, using returned data');
           setCompletionResult(result);
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-          setCurrentStep('streak');
+          setCurrentStep('rewards');
         }
       } catch (error: any) {
         console.log('Rest day completion error:', error);
@@ -181,7 +180,7 @@ export default function RestCelebrationModal({
             }
           });
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-          setCurrentStep('streak');
+          setCurrentStep('rewards');
         } else {
           // Handle other errors
           console.error('Unexpected rest day error:', error);
@@ -191,9 +190,6 @@ export default function RestCelebrationModal({
       } finally {
         setIsCompleting(false);
       }
-    } else if (currentStep === 'streak') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setCurrentStep('rewards');
     } else if (currentStep === 'rewards') {
       handleClose();
     }
@@ -257,23 +253,6 @@ export default function RestCelebrationModal({
     </Reanimated.View>
   );
 
-  const renderStreakStep = () => (
-    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
-      <StreakModalComponent
-        currentStreak={completionResult?.streak?.currentStreak || streakInfo?.currentStreak || 0}
-        streakIncreased={completionResult?.streak?.streakIncreased}
-      />
-
-      <TouchableOpacity
-        style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
-        onPress={handleContinue}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.actionButtonText}>VIEW REWARDS</Text>
-      </TouchableOpacity>
-    </Reanimated.View>
-  );
-
   const renderRewardsStep = () => (
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <View style={styles.centeredGroup}>
@@ -319,8 +298,6 @@ export default function RestCelebrationModal({
     switch (currentStep) {
       case 'info':
         return renderInfoStep();
-      case 'streak':
-        return renderStreakStep();
       case 'rewards':
         return renderRewardsStep();
       default:

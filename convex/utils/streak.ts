@@ -59,27 +59,7 @@ export async function recalcStreak(db: DatabaseReader & DatabaseWriter, userId: 
     .unique();
   if (!profile) return;
 
-  // Get user's simple training schedule
-  const simpleSchedule = await db
-    .query("simpleTrainingSchedule")
-    .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .first();
-  
-  if (!simpleSchedule || !simpleSchedule.isActive) {
-    console.log("No active simple training schedule found");
-    return;
-  }
-
-  // Get schedule history for this user
-  const scheduleHistory = await db
-    .query("scheduleHistory")
-    .withIndex("by_user_date", (q: any) => q.eq("userId", userId))
-    .collect();
-
-  if (scheduleHistory.length === 0) {
-    console.log("No schedule history found");
-    return;
-  }
+  // Previously we required an active simple schedule; streak is now based solely on past runs, so this check is no longer needed.
 
   // Get all activities for this user
   const activities = await db
@@ -101,20 +81,12 @@ export async function recalcStreak(db: DatabaseReader & DatabaseWriter, userId: 
   while (true) {
     const weekStartISO = currentWeekStart.toISOString().split('T')[0];
     
-    // Don't check weeks before the schedule started
-    if (weekStartISO < simpleSchedule.startDate) {
-      break;
-    }
-
-    // Get the effective schedule for this week
-    const weekSchedule = getScheduleForWeek(weekStartISO, scheduleHistory);
-    if (!weekSchedule) {
-      break; // No schedule data for this week
-    }
+    // No schedule start-date restriction — past runs count towards streak
 
     // Count run days in this week
     const runDaysInWeek = countRunDaysInWeek(activities, weekStartISO);
-    const goalMet = runDaysInWeek >= weekSchedule.runsPerWeek;
+    // Streak requirement: at least 1 run in the week
+    const goalMet = runDaysInWeek >= 1;
 
     if (goalMet) {
       // Goal met - extend streak

@@ -52,12 +52,6 @@ export const logNotification = internalMutation({
 export const sendActivityNotification = action({
   args: {
     userId: v.string(),
-    activityData: v.object({
-      workoutName: v.string(),
-      distance: v.number(),
-      duration: v.number(),
-      type: v.string(),
-    }),
   },
   handler: async (ctx, args) => {
     try {
@@ -78,28 +72,10 @@ export const sendActivityNotification = action({
         return { success: false, reason: "Push notifications not enabled or no token" };
       }
 
-      const { activityData } = args;
-      
       // Create notification message
-      let title = "🎉 Congrats!";
-      let body = "New run completed - check it out!";
-      
-      if (activityData.workoutName.includes("Congrats!")) {
-        // Simple webhook notification - always use the simple message
-        title = "🎉 Congrats!";
-        body = "New run completed - check it out!";
-      } else {
-        // Detailed notification with data (for test notifications)
-        // Note: Push notifications use metric by default since we don't have user context here
-        // This could be enhanced to include user preference in the notification args
-        const distanceKm = (activityData.distance / 1000).toFixed(2);
-        const durationMin = Math.round(activityData.duration);
-        
-        title = "New Run Synced! 🏃‍♂️";
-        body = activityData.workoutName 
-          ? `${activityData.workoutName} - ${distanceKm}km in ${durationMin}min`
-          : `${distanceKm}km run completed in ${durationMin}min`;
-      }
+      // Always use a simple congrats message for new activities
+      const title = "🎉 Congrats!";
+      const body = "New run completed - check it out!";
 
       const message: ExpoPushMessage = {
         to: profile.pushNotificationToken,
@@ -109,12 +85,6 @@ export const sendActivityNotification = action({
         data: {
           type: 'new_activity',
           action: 'open_celebration',
-          activityData: {
-            workoutName: activityData.workoutName,
-            distance: activityData.distance,
-            duration: activityData.duration,
-            type: activityData.type,
-          },
         },
         badge: 1,
         channelId: 'activities',
@@ -242,12 +212,6 @@ export const sendTestNotification = action({
   handler: async (ctx, args): Promise<any> => {
     return await ctx.runAction(api.pushNotifications.sendActivityNotification, {
       userId: args.userId,
-      activityData: {
-        workoutName: "Test Run",
-        distance: 5000, // 5km
-        duration: 25, // 25 minutes
-        type: "run",
-      },
     });
   },
 }); 

@@ -1,4 +1,4 @@
-import RecordingModal from '@/components/RecordingModal';
+import RecordingModal from '@/components/modals/RecordingModal';
 import Theme from '@/constants/theme';
 import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';

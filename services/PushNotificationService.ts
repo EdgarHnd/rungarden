@@ -210,21 +210,10 @@ export class PushNotificationService {
   /**
    * Send a test notification
    */
-  async sendTestNotification(userId: string, activityData?: any): Promise<boolean> {
+  async sendTestNotification(userId: string): Promise<boolean> {
     try {
       const result = await this.convex.action(api.pushNotifications.sendActivityNotification, {
         userId,
-        activityData: activityData ? {
-          workoutName: activityData.workoutName || "Test Run",
-          distance: activityData.distance || 5000,
-          duration: activityData.duration || 25,
-          type: "run",
-        } : {
-          workoutName: "Test Run",
-          distance: 5000,
-          duration: 25,
-          type: "run",
-        }
       });
       return result.success;
     } catch (error) {

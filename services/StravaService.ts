@@ -1,54 +1,8 @@
+import { ConvexReactClient } from 'convex/react';
 import * as SecureStore from 'expo-secure-store';
 import { openAuthSessionAsync } from 'expo-web-browser';
 import { Linking } from 'react-native';
-
-export interface StravaActivity {
-  id: number;
-  name: string;
-  distance: number; // in meters
-  moving_time: number; // in seconds
-  elapsed_time: number; // in seconds
-  total_elevation_gain: number;
-  type: string;
-  start_date: string;
-  start_date_local: string;
-  timezone: string;
-  location_city?: string;
-  location_state?: string;
-  location_country?: string;
-  achievement_count: number;
-  kudos_count: number;
-  comment_count: number;
-  athlete_count: number;
-  photo_count: number;
-  trainer: boolean;
-  commute: boolean;
-  manual: boolean;
-  private: boolean;
-  flagged: boolean;
-  gear_id?: string;
-  average_speed: number;
-  max_speed: number;
-  average_heartrate?: number;
-  max_heartrate?: number;
-  calories?: number;
-  kilojoules?: number;
-  // Additional fields for running performance and achievements
-  start_latlng?: [number, number];
-  end_latlng?: [number, number];
-  average_temp?: number;
-  elev_high?: number;
-  elev_low?: number;
-  average_cadence?: number;
-  average_watts?: number;
-  max_watts?: number;
-  map?: {
-    id: string;
-    polyline?: string;
-    summary_polyline?: string;
-    resource_state: number;
-  };
-}
+import { api } from '../convex/_generated/api';
 
 export interface StravaAthlete {
   id: number;
@@ -80,34 +34,6 @@ export interface StravaTokens {
   scope: string;
 }
 
-export interface RunningActivity {
-  uuid: string;
-  startDate: string;
-  endDate: string;
-  duration: number; // in minutes
-  distance: number; // in meters
-  calories: number;
-  averageHeartRate?: number;
-  workoutName?: string;
-  // Enhanced fields for achievements and gamification
-  totalElevationGain?: number;
-  elevationHigh?: number;
-  elevationLow?: number;
-  averageTemp?: number;
-  startLatLng?: [number, number];
-  endLatLng?: [number, number];
-  timezone?: string;
-  isIndoor?: boolean;
-  isCommute?: boolean;
-  averageCadence?: number;
-  averageWatts?: number;
-  maxWatts?: number;
-  kilojoules?: number;
-  polyline?: string;
-  maxSpeed?: number;
-  averageSpeed?: number;
-}
-
 class StravaService {
   private static readonly CLIENT_ID = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID || 'your_strava_client_id';
   private static readonly CLIENT_SECRET = process.env.EXPO_PUBLIC_STRAVA_CLIENT_SECRET || 'your_strava_client_secret';
@@ -123,6 +49,9 @@ class StravaService {
     EXPIRES_AT: 'strava_expires_at',
     SCOPE: 'strava_scope',
   };
+
+  // We temporarily store the convex client used for the current auth attempt
+  private static _convex: ConvexReactClient | null = null;
 
   /**
    * Check if user is authenticated with Strava
@@ -147,10 +76,13 @@ class StravaService {
   /**
    * Authenticate with Strava using OAuth 2.0 Mobile Flow (similar to iOS implementation)
    */
-  static async authenticate(): Promise<boolean> {
+  static async authenticate(convexClient: ConvexReactClient): Promise<boolean> {
     try {
       const redirectUri = 'blaze://' + this.APP_DOMAIN;
       const scope = 'read,activity:read_all';
+      
+      // Save convex client so handleOAuthCallback can use it
+      this._convex = convexClient;
       
       // Try to open Strava app first (like the iOS implementation)
       const appOAuthUrl = `strava://oauth/mobile/authorize?client_id=${this.CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&approval_prompt=auto&scope=${scope}`;
@@ -255,12 +187,10 @@ class StravaService {
       
       if (code) {
         console.log('[StravaService] Received authorization code');
-        const success = await this.exchangeCodeForTokens(code);
-        if (this.authPromiseResolve) {
-          this.authPromiseResolve(success);
-          this.authPromiseResolve = null;
-        }
-        return success;
+        // Send the code to backend to exchange for tokens securely
+        if (!this._convex) throw new Error('Convex client missing');
+        const res = await this._convex.action(api.stravaAuth.exchangeCode, { code });
+        return !!res?.success;
       }
       
       console.log('[StravaService] No code received in callback');
@@ -276,40 +206,6 @@ class StravaService {
         this.authPromiseResolve(false);
         this.authPromiseResolve = null;
       }
-      return false;
-    }
-  }
-
-  /**
-   * Exchange authorization code for access tokens
-   */
-  private static async exchangeCodeForTokens(code: string): Promise<boolean> {
-    try {
-      const response = await fetch(this.TOKEN_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: new URLSearchParams({
-          client_id: this.CLIENT_ID,
-          client_secret: this.CLIENT_SECRET,
-          code,
-          grant_type: 'authorization_code',
-        }).toString(),
-      });
-
-      if (!response.ok) {
-        throw new Error(`Token exchange failed: ${response.status}`);
-      }
-
-      const tokens: StravaTokens = await response.json();
-      
-      await this.storeTokens(tokens);
-      console.log('[StravaService] Successfully stored tokens');
-      
-      return true;
-    } catch (error) {
-      console.error('[StravaService] Error exchanging code for tokens:', error);
       return false;
     }
   }
@@ -441,79 +337,6 @@ class StravaService {
       throw error;
     }
   }
-
-  /**
-   * Get running activities from Strava (from January 1st, 2025)
-   */
-  static async getRunningActivities(days: number = 30): Promise<RunningActivity[]> {
-    try {
-      // Hardcode start date to January 1st, 2025 (same as HealthKit)
-      const startDate = new Date(2025, 0, 1); // January 1st, 2025
-      const after = Math.floor(startDate.getTime() / 1000);
-      
-      const activities = await this.makeApiRequest<StravaActivity[]>(
-        `/athlete/activities?after=${after}&per_page=100`
-      );
-
-      // Filter for running activities and convert to our format
-      const runningActivities = activities
-        .filter(activity => 
-          activity.type === 'Run' || 
-          activity.type === 'TrailRun' ||
-          activity.type === 'Treadmill'
-        )
-        .map((activity): RunningActivity => {
-          const startDate = new Date(activity.start_date);
-          const endDate = new Date(startDate.getTime() + activity.elapsed_time * 1000);
-          
-          return {
-            uuid: `strava_${activity.id}`,
-            startDate: startDate.toISOString(),
-            endDate: endDate.toISOString(),
-            duration: Math.round(activity.moving_time / 60), // Convert seconds to minutes
-            distance: Math.round(activity.distance), // Already in meters
-            calories: activity.calories || this.estimateCalories(activity.distance, activity.moving_time),
-            averageHeartRate: activity.average_heartrate,
-            workoutName: activity.name,
-            // Enhanced fields for achievements and gamification
-            totalElevationGain: activity.total_elevation_gain,
-            elevationHigh: activity.elev_high,
-            elevationLow: activity.elev_low,
-            averageTemp: activity.average_temp,
-            startLatLng: activity.start_latlng,
-            endLatLng: activity.end_latlng,
-            timezone: activity.timezone,
-            isIndoor: activity.trainer,
-            isCommute: activity.commute,
-            averageCadence: activity.average_cadence,
-            averageWatts: activity.average_watts,
-            maxWatts: activity.max_watts,
-            kilojoules: activity.kilojoules,
-            polyline: activity.map?.polyline || activity.map?.summary_polyline,
-            maxSpeed: activity.max_speed,
-            averageSpeed: activity.average_speed,
-          };
-        });
-
-      console.log(`[StravaService] Fetched ${runningActivities.length} running activities`);
-      return runningActivities;
-    } catch (error) {
-      console.error('[StravaService] Error fetching activities:', error);
-      throw error;
-    }
-  }
-
-  /**
-   * Estimate calories if not provided by Strava
-   * Basic estimation: ~0.75 calories per kg per km for running
-   */
-  private static estimateCalories(distance: number, duration: number): number {
-    // Assume average weight of 70kg for estimation
-    const averageWeight = 70;
-    const distanceKm = distance / 1000;
-    return Math.round(averageWeight * distanceKm * 0.75);
-  }
-
   /**
    * Disconnect from Strava (remove stored tokens)
    */

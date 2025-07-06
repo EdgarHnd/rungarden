@@ -1,4 +1,4 @@
-import { DatabaseActivity } from './DatabaseHealthService';
+import { Doc } from "../convex/_generated/dataModel";
 
 export interface Challenge {
   id: string;
@@ -66,7 +66,7 @@ class ChallengeService {
 
   // Check which challenges are unlocked by a new run
   static checkChallengesForRun(
-    run: DatabaseActivity, 
+    run: Doc<"activities">, 
     userStats?: {
       totalRuns: number;
       totalDistance: number;

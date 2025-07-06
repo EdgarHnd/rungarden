@@ -1,6 +1,6 @@
 import { ConvexReactClient } from "convex/react";
 import { api } from '../convex/_generated/api';
-import StravaService, { RunningActivity } from './StravaService';
+import StravaService from './StravaService';
 
 export interface SyncResult {
   created: number;
@@ -27,51 +27,8 @@ class DatabaseStravaService {
    */
   async isAuthenticated(): Promise<boolean> {
     try {
-      // First check if database has Strava sync enabled
       const profile = await this.convexClient.query(api.userProfile.getOrCreateProfile);
-      
-      if (!profile || !profile.stravaSyncEnabled) {
-        return false;
-      }
-
-      // Check local authentication 
-      const localAuth = await StravaService.isAuthenticated();
-      
-      if (!localAuth) {
-        
-        // If local auth fails, check if we have valid tokens in database that we can sync down
-        if (profile.stravaAccessToken && profile.stravaRefreshToken) {
-          
-          // Try to sync tokens from database to local storage
-          await this.syncTokensFromDatabase();
-          
-          // Check local auth again after syncing
-          const localAuthAfterSync = await StravaService.isAuthenticated();
-          if (localAuthAfterSync) {
-            return true;
-          } else {
-            return false;
-          }
-        } else {
-          return false;
-        }
-      }
-
-      // Local auth is good, now check database tokens
-      if (!profile.stravaAccessToken || !profile.stravaRefreshToken) {
-        // Try to sync tokens from local storage to database
-        await this.syncTokensToDatabase();
-        return true;
-      }
-
-      // Check if database tokens are expired
-      if (profile.stravaTokenExpiresAt) {
-        const now = Math.floor(Date.now() / 1000);
-        if (profile.stravaTokenExpiresAt <= now) {
-        }
-      }
-
-      return true;
+      return !!profile?.stravaSyncEnabled;
     } catch (error) {
       return false;
     }
@@ -132,18 +89,10 @@ class DatabaseStravaService {
    */
   async authenticate(): Promise<boolean> {
     try {
-      const success = await StravaService.authenticate();
+      const success = await StravaService.authenticate(this.convexClient);
       
-      if (success) {
-        // After successful authentication, sync tokens to database
-        await this.syncTokensToDatabase();
-        
-        // Enable Strava sync in user profile
-        await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
-          stravaSyncEnabled: true,
-        });
-      }
-      
+      // Backend already stored tokens and enabled sync
+
       return success;
     } catch (error) {
       console.error('[DatabaseStravaService] Error during authentication:', error);
@@ -191,104 +140,11 @@ class DatabaseStravaService {
    */
   async syncActivitiesFromStrava(days: number = 30, isRetry = false): Promise<SyncResult> {
     try {
-      // Check if user is authenticated
-      const isAuth = await this.isAuthenticated();
-      if (!isAuth) {
-        console.warn('[DatabaseStravaService] Not authenticated with Strava – skipping activity sync.');
-        return {
-          created: 0,
-          updated: 0,
-          skipped: 0,
-          lastSyncDate: new Date().toISOString(),
-          distanceGained: 0,
-          leveledUp: false,
-        };
-      }
-
-      // Ensure tokens are valid and refresh if needed
-      await this.ensureValidTokens();
-
-      // Ensure tokens are synced before attempting API calls
-      await this.syncTokensToDatabase();
-
-      // Get fresh data from Strava
-      const stravaActivities = await StravaService.getRunningActivities(days);
-      
-      if (stravaActivities.length === 0) {
-        return {
-          created: 0,
-          updated: 0,
-          skipped: 0,
-          lastSyncDate: new Date().toISOString(),
-          distanceGained: 0,
-          leveledUp: false,
-        };
-      }
-
-      // Transform to database format
-      const activitiesForDb = stravaActivities.map((activity: RunningActivity) => {
-        // Extract Strava ID from UUID (format: "strava_<id>")
-        const stravaId = parseInt(activity.uuid.replace('strava_', ''));
-        
-        return {
-          stravaId,
-          startDate: activity.startDate,
-          endDate: activity.endDate,
-          duration: activity.duration,
-          distance: activity.distance,
-          calories: activity.calories,
-          averageHeartRate: activity.averageHeartRate,
-          workoutName: activity.workoutName,
-          // Enhanced fields for achievements and gamification
-          totalElevationGain: activity.totalElevationGain,
-          elevationHigh: activity.elevationHigh,
-          elevationLow: activity.elevationLow,
-          averageTemp: activity.averageTemp,
-          startLatLng: activity.startLatLng,
-          endLatLng: activity.endLatLng,
-          timezone: activity.timezone,
-          isIndoor: activity.isIndoor,
-          isCommute: activity.isCommute,
-          averageCadence: activity.averageCadence,
-          averageWatts: activity.averageWatts,
-          maxWatts: activity.maxWatts,
-          kilojoules: activity.kilojoules,
-          polyline: activity.polyline,
-          maxSpeed: activity.maxSpeed,
-          averageSpeed: activity.averageSpeed,
-          isNewActivity: false,
-        };
-      });
-
-      // Sync to database
-      const syncResult = await this.convexClient.mutation(
-        api.activities.syncActivitiesFromStrava,
-        { activities: activitiesForDb }
-      );
-
-      // After sync, ensure local tokens are updated with any server-side refreshes
-      await this.syncTokensFromDatabase();
-
-      return {
-        ...syncResult,
-        lastSyncDate: new Date().toISOString(),
-      };
+      // Call server-side full sync
+      const result = await this.convexClient.action(api.activities.fullStravaSyncServer, { days });
+      return result;
     } catch (error) {
       console.error('Error syncing activities from Strava:', error);
-      
-      // If error mentions authentication and this is not already a retry, try to sync tokens and retry once
-      if (error instanceof Error && error.message.includes('Not authenticated') && !isRetry) {
-        try {
-          await this.syncTokensFromDatabase();
-          
-          // Retry the sync operation once with the synced tokens
-          return await this.syncActivitiesFromStrava(days, true);
-        } catch (syncError) {
-          console.error('[DatabaseStravaService] Failed to sync tokens during error recovery:', syncError);
-        }
-      } else if (isRetry) {
-      }
-      
       throw error;
     }
   }
@@ -501,43 +357,10 @@ class DatabaseStravaService {
    */
   async createWebhook(): Promise<boolean> {
     try {
-      // Use the current Convex site URLSearchParams
-      const CONVEX_URL = process.env.EXPO_PUBLIC_CONVEX_SITE_URL;
-      const callbackUrl = `${CONVEX_URL}/strava/webhooks`;
-      const verifyToken = 'blaze-webhook-token';
-      
-      // First check if there are existing subscriptions
-      const existingSubscriptions = await this.viewWebhookSubscription();
-      
-      if (existingSubscriptions && existingSubscriptions.length > 0) {
-        
-        // Check if any of them have the same callback URL
-        const matchingSubscription = existingSubscriptions.find((sub: any) => sub.callback_url === callbackUrl);
-        
-        if (matchingSubscription) {
-          return true; // Already have the correct webhook
-        }
-        
-        // Only delete if we have a different callback URL
-        for (const sub of existingSubscriptions) {
-          const deleted = await this.deleteWebhookSubscription(sub.id);
-          if (deleted) {
-          } else {
-            console.warn(`[DatabaseStravaService] Failed to delete subscription ${sub.id}`);
-            throw new Error(`Failed to delete existing subscription ${sub.id}`);
-          }
-        }
-      }
-      
-      // Now create the new subscription
-      const result = await this.createWebhookSubscription(callbackUrl, verifyToken);
-      
-      if (result && result.id) {
-        return true;
-      } else {
-        console.error('[DatabaseStravaService] Failed to create webhook - no ID returned');
-        return false;
-      }
+      // Delegate webhook management to backend for better security
+      const result = await this.convexClient.action(api.stravaWebhooks.ensureWebhook, {});
+
+      return !!(result && result.success);
     } catch (error) {
       console.error('[DatabaseStravaService] Error creating webhook:', error);
       return false;

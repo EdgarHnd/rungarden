@@ -2,8 +2,8 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { action, mutation, query } from "./_generated/server";
+import { addCoins } from "./utils/coins";
 import {
-  calculateCoinsFromDistance,
   calculateLevelFromXP,
   distanceToXP
 } from "./utils/gamification";
@@ -108,6 +108,7 @@ export const syncActivitiesFromHealthKit = mutation({
       averageHeartRate: v.optional(v.number()),
       workoutName: v.optional(v.string()),
     })),
+    initialSync: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -115,6 +116,7 @@ export const syncActivitiesFromHealthKit = mutation({
       throw new Error("Not authenticated");
     }
 
+    const initialSync = args.initialSync ?? false;
     const now = new Date().toISOString();
     const syncResults = {
       created: 0,
@@ -191,7 +193,7 @@ export const syncActivitiesFromHealthKit = mutation({
           averageHeartRate: activity.averageHeartRate,
           workoutName: activity.workoutName,
           pace,
-          isNewActivity: true, // Mark as new for celebration
+          isNewActivity: initialSync ? false : true, // Mark as new only for incremental sync
           syncedAt: now,
         });
         
@@ -210,6 +212,15 @@ export const syncActivitiesFromHealthKit = mutation({
 
         // Track distance for new activity
         totalDistanceGained += activity.distance;
+
+        // Award coins when this run should count (isNewActivity = true means not from initial sync)
+        if (!initialSync) {
+          const coinsEarned = Math.floor(activity.distance / 100);
+          if (coinsEarned > 0) {
+            await addCoins(ctx, userId, coinsEarned, "run", newActivityId);
+            syncResults.coinsGained += coinsEarned;
+          }
+        }
       }
     }
 
@@ -238,15 +249,24 @@ export const syncActivitiesFromHealthKit = mutation({
         const newLevel = updatedProfile.level;
         
         syncResults.distanceGained = totalDistanceGained;
-        syncResults.coinsGained = 0; // No coins for initial sync
         syncResults.leveledUp = newLevel > oldLevel;
         syncResults.newLevel = newLevel;
         syncResults.oldLevel = oldLevel;
       }
     }
     
-    // Update last sync date
-    await updateLastSyncDate(ctx, userId, now);
+    // Update last sync date and mark initial sync completed if applicable
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .first();
+
+    if (userProfile) {
+      await ctx.db.patch(userProfile._id, {
+        lastHealthKitSync: now,
+        updatedAt: now,
+      });
+    }
 
     return syncResults;
   },
@@ -283,14 +303,16 @@ export const syncActivitiesFromStravaServer = mutation({
       averageSpeed: v.optional(v.number()),
       isNewActivity: v.optional(v.boolean()),
     })),
+    initialSync: v.optional(v.boolean()),
   },
   handler: async (ctx, args): Promise<SyncResult> => {
-    const { userId, activities } = args;
+    const { userId, activities, initialSync } = args;
     const now = new Date().toISOString();
     
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    let coinsGained = 0;
     const newRuns: any[] = [];
 
     for (const activity of activities) {
@@ -349,7 +371,7 @@ export const syncActivitiesFromStravaServer = mutation({
             averageHeartRate: activity.averageHeartRate,
             workoutName: activity.workoutName,
             pace,
-            isNewActivity: true, // Don't mark initial sync activities as new
+            isNewActivity: initialSync ? false : true,
             syncedAt: now,
           });
 
@@ -363,6 +385,15 @@ export const syncActivitiesFromStravaServer = mutation({
           }
           
           created++;
+
+          // Award coins when this run should count (isNewActivity = true means not from initial sync)
+          if (!initialSync) {
+            const coinsEarned = Math.floor(activity.distance / 100);
+            if (coinsEarned > 0) {
+              await addCoins(ctx, userId, coinsEarned, "run", newActivityId);
+              coinsGained += coinsEarned;
+            }
+          }
         }
       } catch (error) {
         console.error(`[syncActivitiesFromStravaServer] Error processing activity ${activity.stravaId}:`, error);
@@ -400,6 +431,7 @@ export const syncActivitiesFromStravaServer = mutation({
       skipped,
       lastSyncDate: now,
       newRuns,
+      coinsGained,
     };
 
     return result;
@@ -433,7 +465,6 @@ async function updateUserProfileTotalsServer(ctx: any, userId: string) {
       totalCalories,
       totalXP,
       level,
-      coins,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -469,57 +500,6 @@ export const getProfileStats = query({
       totalXP,
       level,
       coins,
-    };
-  },
-});
-
-// Get activity statistics
-export const getActivityStats = query({
-  args: {
-    days: v.optional(v.number()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const days = args.days ?? 30;
-    const startDate = new Date();
-    startDate.setDate(startDate.getDate() - days);
-
-    const activities = await ctx.db
-      .query("activities")
-      .withIndex("by_user_and_date", (q) => 
-        q.eq("userId", userId).gte("startDate", startDate.toISOString())
-      )
-      .collect();
-
-    if (activities.length === 0) {
-      return {
-        totalDistance: 0,
-        totalWorkouts: 0,
-        averagePace: 0,
-        totalCalories: 0,
-        averageDistance: 0,
-        longestRun: 0,
-      };
-    }
-
-    const totalDistance = activities.reduce((sum, a) => sum + a.distance, 0);
-    const totalCalories = activities.reduce((sum, a) => sum + a.calories, 0);
-    const validPaces = activities.filter(a => a.pace && a.pace > 0);
-    const averagePace = validPaces.length > 0 ? 
-      validPaces.reduce((sum, a) => sum + a.pace!, 0) / validPaces.length : 0;
-    const longestRun = Math.max(...activities.map(a => a.distance));
-
-    return {
-      totalDistance,
-      totalWorkouts: activities.length,
-      averagePace,
-      totalCalories,
-      averageDistance: totalDistance / activities.length,
-      longestRun,
     };
   },
 });
@@ -574,9 +554,6 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
   const totalXP = distanceToXP(totalDistance);
   const level = calculateLevelFromXP(totalXP);
   
-  // Calculate coins from total distance
-  const coins = calculateCoinsFromDistance(totalDistance);
-
   const existingProfile = await ctx.db
     .query("userProfiles")
     .withIndex("by_user", (q: any) => q.eq("userId", userId))
@@ -591,7 +568,6 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
       totalCalories,
       totalXP,
       level,
-      coins,
       updatedAt: now,
     });
   } else {
@@ -603,7 +579,7 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
       totalCalories,
       totalXP,
       level,
-      coins,
+      coins: 0,
       updatedAt: now,
     });
   }
@@ -618,7 +594,6 @@ async function updateLastSyncDate(ctx: any, userId: any, syncDate: string) {
 
   if (existingProfile) {
     await ctx.db.patch(existingProfile._id, {
-      lastSyncDate: syncDate,
       lastHealthKitSync: syncDate,
       updatedAt: syncDate,
     });
@@ -762,7 +737,8 @@ export const fetchStravaActivityFromServer = action({
       // Sync to database using the existing mutation
       const syncResult = await ctx.runMutation(api.activities.syncActivitiesFromStravaServer, {
         userId,
-        activities: [activityForDb]
+        activities: [activityForDb],
+        initialSync: false,
       });
 
       return { 
@@ -786,8 +762,8 @@ async function refreshStravaToken(refreshToken: string): Promise<{
   error?: string;
 }> {
   try {
-    const clientId = process.env.EXPO_PUBLIC_STRAVA_CLIENT_ID;
-    const clientSecret = process.env.EXPO_PUBLIC_STRAVA_CLIENT_SECRET;
+    const clientId = process.env.STRAVA_CLIENT_ID;
+    const clientSecret = process.env.STRAVA_CLIENT_SECRET;
     
     if (!clientId || !clientSecret) {
       return { success: false, error: "Strava credentials not configured" };
@@ -891,6 +867,7 @@ export const syncActivitiesFromStrava = mutation({
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    let coinsGained = 0;
     const newRuns: any[] = [];
     let totalDistanceGained = 0;
 
@@ -1024,6 +1001,15 @@ export const syncActivitiesFromStrava = mutation({
           
           created++;
           totalDistanceGained += activity.distance;
+
+          // Award coins for runs that are not part of initial sync
+          if (activity.isNewActivity !== false) {
+            const coinsEarned = Math.floor(activity.distance / 100);
+            if (coinsEarned > 0) {
+              await addCoins(ctx, userId, coinsEarned, "run", newActivityId);
+              coinsGained += coinsEarned;
+            }
+          }
         }
       } catch (error) {
         console.error(`[syncActivitiesFromStrava] Error processing activity ${activity.stravaId}:`, error);
@@ -1032,7 +1018,6 @@ export const syncActivitiesFromStrava = mutation({
 
     // Calculate sync results for client
     let distanceGained = 0;
-    let coinsGained = 0; // No coins for initial sync
     let leveledUp = false;
     let newLevel = 1;
     let oldLevel = 1;
@@ -1077,7 +1062,7 @@ export const syncActivitiesFromStrava = mutation({
       skipped,
       lastSyncDate: now,
       distanceGained: totalDistanceGained,
-      coinsGained: 0, // No coins for initial sync
+      coinsGained,
       leveledUp,
       newLevel,
       oldLevel,
@@ -1137,4 +1122,99 @@ export const getActivitiesForPlannedWorkout = query({
       .withIndex("by_planned", (q) => q.eq("plannedWorkoutId", args.plannedWorkoutId))
       .collect();
   },
-}); 
+});
+
+// -----------------------------------------------------------------------------
+// Full Strava sync (server-side). Pulls activities from Strava API then re-uses
+// existing syncActivitiesFromStravaServer mutation to store them.
+export const fullStravaSyncServer = action({
+  args: {
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<SyncResult> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    // For initial sync pull data from Jan 1 2025 onwards (same logic as old client)
+    const startDate = new Date(2025, 0, 1);
+    const after = Math.floor(startDate.getTime() / 1000);
+
+    // Get user tokens
+    const profile = await ctx.runQuery(api.userProfile.getProfileByUserId, { userId });
+    if (!profile || !profile.stravaSyncEnabled || !profile.stravaAccessToken) {
+      throw new Error("Strava sync not enabled or no tokens");
+    }
+
+    let accessToken = profile.stravaAccessToken as string;
+
+    // Refresh if expired
+    const now = Math.floor(Date.now() / 1000);
+    if (profile.stravaTokenExpiresAt && profile.stravaTokenExpiresAt <= now) {
+      if (!profile.stravaRefreshToken) throw new Error("Access token expired and no refresh token");
+
+      const refresh = await refreshStravaToken(profile.stravaRefreshToken);
+      if (!refresh.success) throw new Error(refresh.error || "Failed to refresh token");
+
+      accessToken = refresh.accessToken!;
+
+      // persist new tokens
+      await ctx.runMutation(api.userProfile.updateStravaTokens, {
+        userId,
+        accessToken: refresh.accessToken!,
+        refreshToken: refresh.refreshToken!,
+        expiresAt: refresh.expiresAt!,
+      });
+    }
+
+    // Fetch activities
+    const listResp = await fetch(`https://www.strava.com/api/v3/athlete/activities?after=${after}&per_page=100`, {
+      headers: {
+        Authorization: `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!listResp.ok) {
+      const txt = await listResp.text();
+      console.error("[fullStravaSyncServer] API err", txt);
+      throw new Error("Failed to fetch activities from Strava");
+    }
+
+    const activities = (await listResp.json()) as any[];
+
+    const running = activities.filter((a) => ["Run", "TrailRun", "Treadmill"].includes(a.type));
+
+    const mapped = running.map((activity) => {
+      const startDateIso = activity.start_date;
+      const endDateIso = new Date(new Date(activity.start_date).getTime() + activity.elapsed_time * 1000).toISOString();
+      return {
+        stravaId: activity.id,
+        startDate: startDateIso,
+        endDate: endDateIso,
+        duration: Math.round(activity.moving_time / 60),
+        distance: Math.round(activity.distance),
+        calories: activity.calories ?? estimateCalories(activity.distance, activity.moving_time),
+        averageHeartRate: activity.average_heartrate,
+        workoutName: activity.name,
+        // mark as not new for initial sync
+        isNewActivity: false,
+      };
+    });
+
+    // Store in DB
+    const result = await ctx.runMutation(api.activities.syncActivitiesFromStravaServer, {
+      userId,
+      activities: mapped,
+      initialSync: true,
+    });
+
+    return result;
+  },
+});
+
+// Helper: estimate calories for a run
+function estimateCalories(distance: number, durationSec: number) {
+  const avgWeightKg = 70;
+  const distanceKm = distance / 1000;
+  return Math.round(avgWeightKg * distanceKm * 0.75);
+} 

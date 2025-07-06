@@ -62,6 +62,8 @@ const schema = defineSchema({
     pushNotificationToken: v.optional(v.string()),
     pushNotificationsEnabled: v.optional(v.boolean()),
 
+    healthKitInitialSyncCompleted: v.optional(v.boolean()), // Track if HealthKit initial sync modal has been shown
+
     updatedAt: v.string()
   }).index("by_user", ["userId"]),
 
@@ -292,20 +294,15 @@ const schema = defineSchema({
     .index("by_user_activity", ["userId", "activityId"])
     .index("by_challenge", ["challengeId"]),
 
-  /* ────────────────────────────── Strava queue */
-  stravaSyncQueue: defineTable({
+  /* ────────────────────────────── coin ledger */
+  coinTransactions: defineTable({
     userId: v.id("users"),
-    activityIds: v.optional(v.array(v.number())),
-    status: v.union(
-      v.literal("pending"), v.literal("processing"),
-      v.literal("completed"), v.literal("failed")
-    ),
-    updatedAt: v.string(),
-    completedAt: v.optional(v.string()),
-    error: v.optional(v.string())
-  })
-    .index("by_user", ["userId"])
-    .index("by_status", ["status"]),
+    type: v.union(v.literal("earn"), v.literal("spend")),
+    amount: v.number(),
+    source: v.string(),
+    referenceId: v.optional(v.union(v.id("activities"), v.id("restActivities"))), // Can link to run or rest reward
+    createdAt: v.string(),
+  }).index("by_user", ["userId"]),
 
   /* ────────────────────────────── push notifications */
   pushNotificationLogs: defineTable({

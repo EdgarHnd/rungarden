@@ -1,5 +1,5 @@
-import RecordingModal from '@/components/RecordingModal';
-import RestCelebrationModal from '@/components/RestCelebrationModal';
+import RecordingModal from '@/components/modals/RecordingModal';
+import RestCelebrationModal from '@/components/modals/RestCelebrationModal';
 import RestWorkoutCard from '@/components/RestWorkoutCard';
 import SuggestedActivityCard from '@/components/SuggestedActivityCard';
 import WorkoutCard from '@/components/WorkoutCard';

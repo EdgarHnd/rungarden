@@ -12,6 +12,7 @@ import * as AppleAuth from 'expo-apple-authentication';
 import { makeRedirectUri } from "expo-auth-session";
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
+import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { useVideoPlayer, VideoView } from 'expo-video';
 import { openAuthSessionAsync } from "expo-web-browser";
@@ -217,8 +218,17 @@ export default function OnboardingScreen() {
   };
 
   const handlePushNotificationChoice = async (enabled: boolean) => {
-    // Just store the user's preference - actual permission request will happen later
+    // Store the preference locally for the onboarding flow only
     handleSelection(() => updateData({ pushNotificationsEnabled: enabled }));
+
+    // Show the system permission prompt immediately, but do NOT store anything on the server yet
+    if (enabled) {
+      try {
+        await Notifications.requestPermissionsAsync();
+      } catch (err) {
+        console.error('[Onboarding] Failed to request notification permissions:', err);
+      }
+    }
   };
 
   const nextStep = () => {
@@ -955,7 +965,7 @@ export default function OnboardingScreen() {
             style={styles.skipRatingButton}
             onPress={() => requestRating(false)}
           >
-            <Text style={styles.skipRatingButtonText}>Maybe later</Text>
+            <Text style={styles.skipRatingButtonText}>Ok, I've rated!</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -1034,6 +1044,10 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.container}>
+      <LinearGradient
+        colors={[Theme.colors.background.tertiary, Theme.colors.background.secondary, Theme.colors.background.primary]}
+        style={styles.solidBackground}
+      />
       {renderProgressBar()}
       {renderHeader()}
       <View style={styles.content}>
@@ -1081,6 +1095,14 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: Theme.colors.background.primary,
+  },
+  solidBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100%',
+    width: '100%',
+    backgroundColor: '#0D0C0F'
   },
   topRow: {
     flexDirection: 'row',
@@ -1251,7 +1273,7 @@ const styles = StyleSheet.create({
   listOption: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     borderWidth: 2,
@@ -1308,7 +1330,7 @@ const styles = StyleSheet.create({
     gap: Theme.spacing.xxl,
   },
   counterButton: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     width: 60,
     height: 60,
@@ -1320,7 +1342,7 @@ const styles = StyleSheet.create({
   },
   counterDisplay: {
     alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     paddingVertical: Theme.spacing.xl,
     paddingHorizontal: Theme.spacing.xxl,
@@ -1355,7 +1377,7 @@ const styles = StyleSheet.create({
     marginTop: 200,
   },
   workoutStyleCard: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     borderWidth: 2,
@@ -1387,7 +1409,7 @@ const styles = StyleSheet.create({
     marginTop: 200,
   },
   unitCard: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     borderWidth: 2,
@@ -1419,7 +1441,7 @@ const styles = StyleSheet.create({
     gap: Theme.spacing.xl,
   },
   ageListOption: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
     paddingVertical: Theme.spacing.xl,
     paddingHorizontal: Theme.spacing.xxl,
@@ -1453,8 +1475,10 @@ const styles = StyleSheet.create({
     gap: Theme.spacing.lg,
   },
   mockNotificationDialog: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
+    borderWidth: 1,
+    borderColor: Theme.colors.text.tertiary,
     padding: Theme.spacing.xl,
     width: '90%',
     alignItems: 'center',

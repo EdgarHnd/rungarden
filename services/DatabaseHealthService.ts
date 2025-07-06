@@ -82,10 +82,14 @@ class DatabaseHealthService {
         workoutName: activity.workoutName,
       }));
 
+      // Determine if this is the initial sync
+      const profile = await this.getUserProfile();
+      const initialSync = !(profile && (profile as any).healthKitInitialSyncCompleted);
+
       // Sync to database
       const syncResult = await this.convexClient.mutation(
         api.activities.syncActivitiesFromHealthKit,
-        { activities: activitiesForDb }
+        { activities: activitiesForDb, initialSync }
       );
 
       console.log('[DatabaseHealthService] Sync completed:', syncResult);
@@ -105,22 +109,6 @@ class DatabaseHealthService {
   async forceSyncFromHealthKit(days: number = 30): Promise<SyncResult> {
     console.log('[DatabaseHealthService] Force syncing from HealthKit...');
     return this.syncActivitiesFromHealthKit(days);
-  }
-
-  /**
-   * Convert database activities to the format expected by existing components
-   */
-  formatActivitiesForLegacyComponents(dbActivities: DatabaseActivity[]): RunningActivity[] {
-    return dbActivities.map(activity => ({
-      uuid: activity.healthKitUuid || `strava_${activity.stravaId}` || activity._id,
-      startDate: activity.startDate,
-      endDate: activity.endDate,
-      duration: activity.duration,
-      distance: activity.distance,
-      calories: activity.calories,
-      averageHeartRate: activity.averageHeartRate,
-      workoutName: activity.workoutName,
-    }));
   }
 
   /**

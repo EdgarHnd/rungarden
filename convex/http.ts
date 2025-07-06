@@ -24,8 +24,8 @@ http.route({
       fullUrl: request.url
     });
 
-    // Accept both production token and test token for debugging
-    const validTokens = ["koko-webhook-token", "test"];
+    // Accept production token from env and a "test" token for local debugging
+    const validTokens = [process.env.STRAVA_WEBHOOK_VERIFY_TOKEN, "blaze-webhook-token", "test"].filter(Boolean) as string[];
     const isValidToken = validTokens.includes(hubVerifyToken || "");
 
     // Validate the subscription request
@@ -51,7 +51,7 @@ http.route({
     }
 
     console.log("[Strava Webhook] Validation failed - missing hubMode, hubChallenge, or incorrect verify_token");
-    console.log("[Strava Webhook] Expected verify_token: koko-webhook-token or test, received:", hubVerifyToken);
+    console.log("[Strava Webhook] Expected verify_token: blaze-webhook-token or test, received:", hubVerifyToken);
     return new Response("Validation failed", { status: 400 });
   }),
 });

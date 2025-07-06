@@ -332,14 +332,6 @@ export const resetDatabase = mutation({
         stats.challenges++;
       }
 
-      // 13. Strava sync queue (depends on users)
-      console.log(`[${isDryRun ? 'DRY RUN' : 'RESET'}] ${isDryRun ? 'Counting' : 'Deleting'} stravaSyncQueue...`);
-      const stravaSyncQueue = await ctx.db.query("stravaSyncQueue").collect();
-      for (const item of stravaSyncQueue) {
-        if (!isDryRun) await ctx.db.delete(item._id);
-        stats.stravaSyncQueue++;
-      }
-
       // 14. Push notification logs (depends on users)
       console.log(`[${isDryRun ? 'DRY RUN' : 'RESET'}] ${isDryRun ? 'Counting' : 'Deleting'} pushNotificationLogs...`);
       const pushNotificationLogs = await ctx.db.query("pushNotificationLogs").collect();

@@ -641,7 +641,7 @@ export default function TrainingPlanScreen() {
         {/* <View style={styles.premiumCard}>
           <View style={styles.premiumHeader}>
             <Ionicons name="diamond" size={24} color={Theme.colors.accent.primary} />
-            <Text style={styles.premiumTitle}>Edgar, join Koko Premium</Text>
+            <Text style={styles.premiumTitle}>Edgar, join Blaze Premium</Text>
           </View>
           <Text style={styles.premiumSubtitle}>
             Subscribe to unlock the rest of your weeks and reach your full potential

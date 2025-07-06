@@ -1,7 +1,7 @@
-import AchievementCelebrationModal from '@/components/AchievementCelebrationModal';
-import AchievementProgressModal from '@/components/AchievementProgressModal';
-import StreakDisplay from '@/components/StreakDisplay';
-import XPInfoModal from '@/components/XPInfoModal';
+import AchievementCelebrationModal from '@/components/modals/AchievementCelebrationModal';
+import AchievementProgressModal from '@/components/modals/AchievementProgressModal';
+import StreakDisplay from '@/components/modals/StreakDisplay';
+import XPInfoModal from '@/components/modals/XPInfoModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import LevelingService from '@/services/LevelingService';

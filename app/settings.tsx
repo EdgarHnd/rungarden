@@ -84,7 +84,7 @@ export default function SettingsScreen() {
           if (!hasPermissions) {
             Alert.alert(
               'Health Permissions Required',
-              'Please enable Health permissions in your iPhone Settings:\n\n1. Open Settings\n2. Scroll down and tap on "Privacy & Security"\n3. Tap on "Health"\n4. Find "Koko" and enable all permissions',
+              'Please enable Health permissions in your iPhone Settings:\n\n1. Open Settings\n2. Scroll down and tap on "Privacy & Security"\n3. Tap on "Health"\n4. Find "Blaze" and enable all permissions',
               [{ text: 'OK' }]
             );
             return;
@@ -96,6 +96,22 @@ export default function SettingsScreen() {
         healthKitSyncEnabled: enabled,
         lastHealthKitSync: enabled ? undefined : null,
       });
+
+      // Immediately perform initial sync to import existing runs
+      if (healthService) {
+        try {
+          console.log('[Settings] Performing initial HealthKit sync for existing activities...');
+          const syncResult = await healthService.forceSyncFromHealthKit(30);
+
+          console.log('[Settings] HealthKit initial sync result:', syncResult);
+          if (syncResult && (syncResult.created > 0 || syncResult.updated > 0 || (syncResult.distanceGained && syncResult.distanceGained > 0))) {
+            // Success haptic handled later in Home screen via modal; just silent success
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+        } catch (syncErr) {
+          console.warn('[Settings] Initial HealthKit sync failed:', syncErr);
+        }
+      }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
@@ -131,6 +147,17 @@ export default function SettingsScreen() {
         lastStravaSync: null,
         lastHealthKitSync: undefined,
       });
+
+      // Perform initial sync
+      if (healthService) {
+        try {
+          console.log('[Settings] Performing initial HealthKit sync after switching data source...');
+          const syncResult = await healthService.forceSyncFromHealthKit(30);
+          console.log('[Settings] HealthKit initial sync result:', syncResult);
+        } catch (syncErr) {
+          console.warn('[Settings] Initial HealthKit sync failed:', syncErr);
+        }
+      }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Switched to HealthKit', 'Your primary data source is now HealthKit. Strava sync has been disabled.');
@@ -183,13 +210,6 @@ export default function SettingsScreen() {
       const success = await stravaService.authenticate();
       if (success) {
         setIsStravaAuthenticated(true);
-
-        // Store the athlete ID for webhook matching
-        try {
-          await stravaService.storeStravaAthleteId(profile?.userId || '');
-        } catch (error) {
-          console.warn('Could not store Strava athlete ID:', error);
-        }
 
         await updateSyncPreferences({ stravaSyncEnabled: true });
 
@@ -256,7 +276,7 @@ export default function SettingsScreen() {
         if (!hasPermissions) {
           Alert.alert(
             'Health Permissions Required',
-            'Please enable Health permissions in your iPhone Settings:\n\n1. Open Settings\n2. Scroll down and tap on "Privacy & Security"\n3. Tap on "Health"\n4. Find "Koko" and enable all permissions',
+            'Please enable Health permissions in your iPhone Settings:\n\n1. Open Settings\n2. Scroll down and tap on "Privacy & Security"\n3. Tap on "Health"\n4. Find "Blaze" and enable all permissions',
             [{ text: 'OK' }]
           );
           return;
@@ -267,6 +287,22 @@ export default function SettingsScreen() {
         healthKitSyncEnabled: true,
         lastHealthKitSync: undefined,
       });
+
+      // Immediately perform initial sync to import existing runs
+      if (healthService) {
+        try {
+          console.log('[Settings] Performing initial HealthKit sync for existing activities...');
+          const syncResult = await healthService.forceSyncFromHealthKit(30);
+
+          console.log('[Settings] HealthKit initial sync result:', syncResult);
+          if (syncResult && (syncResult.created > 0 || syncResult.updated > 0 || (syncResult.distanceGained && syncResult.distanceGained > 0))) {
+            // Success haptic handled later in Home screen via modal; just silent success
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          }
+        } catch (syncErr) {
+          console.warn('[Settings] Initial HealthKit sync failed:', syncErr);
+        }
+      }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     } catch (error) {
@@ -594,16 +630,7 @@ export default function SettingsScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Get the latest activity to use real data
-      const latestActivities = await convex.query(api.activities.getUserActivities, { days: 7, limit: 1 });
-      const latestActivity = latestActivities?.[0];
-
-      if (!latestActivity) {
-        Alert.alert('No Activity Found', 'You need at least one activity to test notifications.');
-        return;
-      }
-
-      const success = await pushService.sendTestNotification(profile.userId, latestActivity);
+      const success = await pushService.sendTestNotification(profile.userId);
 
       if (success) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);

@@ -1,5 +1,5 @@
-import AchievementCelebrationModal from '@/components/AchievementCelebrationModal';
-import AchievementProgressModal from '@/components/AchievementProgressModal';
+import AchievementCelebrationModal from '@/components/modals/AchievementCelebrationModal';
+import AchievementProgressModal from '@/components/modals/AchievementProgressModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { Ionicons } from '@expo/vector-icons';

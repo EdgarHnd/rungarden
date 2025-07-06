@@ -1,9 +1,10 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
+import { addCoins, spendCoinsInternal } from "./utils/coins";
 import {
-    calculateLevelFromXP,
-    distanceToXP
+  calculateLevelFromXP,
+  distanceToXP
 } from "./utils/gamification";
  
 export const currentUser = query({
@@ -286,6 +287,7 @@ export const updateSyncPreferences = mutation({
     stravaTokenExpiresAt: v.optional(v.number()),
     pushNotificationToken: v.optional(v.string()),
     pushNotificationsEnabled: v.optional(v.boolean()),
+    healthKitInitialSyncCompleted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -388,32 +390,11 @@ export const spendCoins = mutation({
       throw new Error("Not authenticated");
     }
 
-    if (args.amount <= 0) {
-      throw new Error("Amount must be positive");
-    }
-
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!profile) {
-      throw new Error("Profile not found");
-    }
-
-    const currentCoins = profile.coins ?? 0;
-    if (currentCoins < args.amount) {
-      throw new Error("Insufficient coins");
-    }
-
-    await ctx.db.patch(profile._id, {
-      coins: currentCoins - args.amount,
-      updatedAt: new Date().toISOString(),
-    });
+    const remaining = await spendCoinsInternal(ctx, userId, args.amount, "shop");
 
     return {
       success: true,
-      remainingCoins: currentCoins - args.amount,
+      remainingCoins: remaining,
     };
   },
 });
@@ -685,11 +666,13 @@ export const completeRestDay = mutation({
       notes: args.notes,
     });
 
+    // Award coins via centralized helper (ensures ledger + atomic balance)
+    await addCoins(ctx, userId, restCoins, "rest-day", restActivityId);
+
     // Update profile with new values
     await ctx.db.patch(profile._id, {
       totalXP: newTotalXP,
       level: newLevel,
-      coins: newCoins,
       currentStreak: newCurrentStreak,
       longestStreak: newLongestStreak,
       lastStreakWeek: args.date,

@@ -1,5 +1,5 @@
-import StreakDisplay from '@/components/StreakDisplay';
-import XPInfoModal from '@/components/XPInfoModal';
+import StreakDisplay from '@/components/modals/StreakDisplay';
+import XPInfoModal from '@/components/modals/XPInfoModal';
 import Theme from '@/constants/theme';
 import { SuggestedActivity, getActivityType, isDefaultActivity } from '@/constants/types';
 import { Doc } from '@/convex/_generated/dataModel';
@@ -173,34 +173,11 @@ export default function WeekView({
     }
   }, [pageWidth, onWeekChange, currentWeekIndex, weeks.length]);
 
-  const isPartOfStreak = (dateString: string, activities: Doc<"activities">[]) => {
-    if (!streakInfo || streakInfo.currentStreak === 0 || !streakInfo.lastStreakWeek) {
-      return false;
-    }
+  // Day-to-day streak visuals removed – always return false
+  const isPartOfStreak = () => false;
 
-    const currentDate = new Date(dateString);
-    const lastStreakWeek = new Date(streakInfo.lastStreakWeek);
-    const daysDiff = Math.floor((lastStreakWeek.getTime() - currentDate.getTime()) / (1000 * 60 * 60 * 24));
-
-    // This day is part of the streak if it's within the streak range and has activity
-    return daysDiff >= 0 && daysDiff < streakInfo.currentStreak;
-  };
-
-  const shouldShowStreakConnection = (dayIndex: number, week: WeekData) => {
-    if (!streakInfo || streakInfo.currentStreak === 0) return false;
-
-    const currentDay = week.days[dayIndex];
-    const nextDay = week.days[dayIndex + 1];
-
-    if (!currentDay || !nextDay) return false;
-
-    const currentHasActivity = hasRunActivity(currentDay.activities);
-    const nextHasActivity = hasRunActivity(nextDay.activities);
-
-    return currentHasActivity && nextHasActivity &&
-      isPartOfStreak(currentDay.date, currentDay.activities) &&
-      isPartOfStreak(nextDay.date, nextDay.activities);
-  };
+  // No streak connection lines needed anymore
+  const shouldShowStreakConnection = () => false;
 
   const isPreferredRunDay = (dateString: string) => {
     if (!simpleSchedule?.isActive || !simpleSchedule.preferredDays) return false;
@@ -327,8 +304,8 @@ export default function WeekView({
               const isTodayDay = isToday(day.date);
               const hasPlannedWorkout = day.plannedWorkout && getActivityType(day.plannedWorkout) !== 'rest';
               const isRestDayCompleted = getActivityType(day.plannedWorkout) === 'rest' && day.isRestDayCompleted;
-              const isStreakDay = isPartOfStreak(day.date, day.activities);
-              const showStreakConnection = shouldShowStreakConnection(dayIndex, week);
+              const isStreakDay = false; // per-day streak visuals disabled
+              const showStreakConnection = false;
 
               // Simple schedule logic
               const showSimpleIndicators = shouldShowSimpleScheduleIndicators(day);
@@ -361,7 +338,7 @@ export default function WeekView({
                       isSelected && styles.selectedDayCircle,
                       isTodayDay && !isSelected && styles.todayCircle,
                       isStreakDay && styles.streakDayCircle,
-                      isStreakDay && isSelected && styles.selectedStreakDayCircle
+                      // streak visuals removed
                     ]}>
                       <Text style={[
                         styles.dayNumber,
@@ -402,10 +379,7 @@ export default function WeekView({
                     </View>
                   </TouchableOpacity>
 
-                  {/* Streak connection line */}
-                  {showStreakConnection && (
-                    <View style={styles.streakConnection} />
-                  )}
+                  {/* Streak connection removed */}
                 </View>
               );
             })}

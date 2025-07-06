@@ -13,6 +13,7 @@ import {
   withSpring,
   withTiming
 } from 'react-native-reanimated';
+import StreakModalComponent from './StreakModalComponent';
 
 interface InitialSyncModalProps {
   visible: boolean;
@@ -25,6 +26,10 @@ interface InitialSyncModalProps {
     newLevel?: number;
     oldLevel?: number;
   } | null;
+  streakInfo?: {
+    currentStreak: number;
+    longestStreak: number;
+  } | null;
   onClose: () => void;
   metricSystem?: 'metric' | 'imperial';
 }
@@ -32,10 +37,11 @@ interface InitialSyncModalProps {
 export default function InitialSyncModal({
   visible,
   syncResult,
+  streakInfo,
   onClose,
   metricSystem = 'metric',
 }: InitialSyncModalProps) {
-  const [currentStep, setCurrentStep] = useState<'sync' | 'xp' | 'level'>('sync');
+  const [currentStep, setCurrentStep] = useState<'sync' | 'streak' | 'xp' | 'level'>('sync');
 
   // Reanimated values for all animations
   const stepScale = useSharedValue(0);
@@ -240,6 +246,9 @@ export default function InitialSyncModal({
   const handleContinue = () => {
     if (currentStep === 'sync') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      setCurrentStep('streak');
+    } else if (currentStep === 'streak') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('xp');
     } else if (currentStep === 'xp') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
@@ -318,6 +327,24 @@ export default function InitialSyncModal({
         activeOpacity={0.8}
       >
         <Text style={styles.actionButtonText}>Show My XP</Text>
+      </TouchableOpacity>
+    </Reanimated.View>
+  );
+
+  const renderStreakStep = () => (
+    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
+      <StreakModalComponent
+        currentStreak={streakInfo?.currentStreak || 0}
+        streakIncreased={false}
+        customMessage="Here's your current weekly streak! Keep it up!"
+      />
+
+      <TouchableOpacity
+        style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
+        onPress={handleContinue}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.actionButtonText}>Continue</Text>
       </TouchableOpacity>
     </Reanimated.View>
   );
@@ -406,6 +433,8 @@ export default function InitialSyncModal({
     switch (currentStep) {
       case 'sync':
         return renderSyncStep();
+      case 'streak':
+        return renderStreakStep();
       case 'xp':
         return renderXpStep();
       case 'level':
