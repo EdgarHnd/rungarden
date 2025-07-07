@@ -758,4 +758,47 @@ export const deleteRestActivity = mutation({
       message: "Rest activity deleted successfully",
     };
   },
+});
+
+// ────────────────────────────── search profiles by name
+export const searchProfiles = query({
+  args: { text: v.string() },
+  handler: async (ctx, args) => {
+    const searchText = args.text.trim().toLowerCase();
+    if (searchText.length < 2) return [];
+
+    const currentUserId = await getAuthUserId(ctx);
+
+    // Build set of friendIds to exclude
+    const excludeIds = new Set<string>();
+    if (currentUserId) excludeIds.add(currentUserId);
+
+    if (currentUserId) {
+      // Accepted friend requests where current user is sender or receiver
+      const sent = await ctx.db
+        .query("friendRequests")
+        .withIndex("by_from", q => q.eq("fromUserId", currentUserId))
+        .filter(q => q.eq(q.field("status"), "accepted"))
+        .collect();
+
+      const received = await ctx.db
+        .query("friendRequests")
+        .withIndex("by_to", q => q.eq("toUserId", currentUserId))
+        .filter(q => q.eq(q.field("status"), "accepted"))
+        .collect();
+
+      sent.forEach(fr => excludeIds.add(fr.toUserId as string));
+      received.forEach(fr => excludeIds.add(fr.fromUserId as string));
+    }
+
+    // Simple search over users table (could be optimized with search index)
+    const allUsers = await ctx.db.query("users").collect();
+    const matches = allUsers.filter((u: any) => {
+      if (!u.name) return false;
+      if (excludeIds.has(u._id)) return false;
+      return (u.name as string).toLowerCase().includes(searchText);
+    }).slice(0, 20);
+
+    return matches.map((u: any) => ({ userId: u._id, name: u.name }));
+  },
 }); 

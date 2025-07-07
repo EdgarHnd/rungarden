@@ -413,6 +413,11 @@ const styles = StyleSheet.create({
     paddingTop: Theme.spacing.xl,
     paddingHorizontal: Theme.spacing.xl,
     paddingBottom: 6,
+    shadowColor: Theme.colors.text.primary,
+    shadowOffset: { width: 0, height: -10 },
+    shadowOpacity: 0.05,
+    shadowRadius: 5,
+    elevation: 10,
   },
   progressContainer: {
     marginBottom: Theme.spacing.md,

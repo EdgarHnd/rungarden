@@ -1,6 +1,5 @@
 import Leaderboard from '@/components/Leaderboard';
 import Theme from '@/constants/theme';
-import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
 import { Alert, SafeAreaView, StyleSheet, View } from 'react-native';
 
@@ -13,22 +12,20 @@ export default function TrophiesScreen() {
   };
 
   return (
-    <LinearGradient
-      colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.primary]}
-      style={styles.container}
-    >
+    <View style={styles.container}>
       <SafeAreaView style={styles.container}>
         <View style={styles.content}>
           <Leaderboard onError={handleError} />
         </View>
       </SafeAreaView>
-    </LinearGradient>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    backgroundColor: Theme.colors.background.primary,
   },
   header: {
     padding: Theme.spacing.xl,

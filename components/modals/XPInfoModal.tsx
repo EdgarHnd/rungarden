@@ -105,7 +105,7 @@ export default function XPInfoModal({ visible, onClose, levelInfo, metricSystem 
             <View style={styles.section}>
               <Text style={styles.sectionTitle}>XP from Running</Text>
               <Text style={styles.description}>
-                You gain XP based on the distance you run. The formula is simple:
+                You gain XP based on the distance you run.
               </Text>
               <View style={styles.formulaContainer}>
                 <Text style={styles.formula}>

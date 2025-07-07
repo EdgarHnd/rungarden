@@ -1,9 +1,12 @@
 import Theme from '@/constants/theme';
 import { UserRankInfo } from '@/convex/leaderboard';
+import { Ionicons } from '@expo/vector-icons';
 import { useQuery } from "convex/react";
+import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Animated, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Animated, FlatList, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { api } from '../convex/_generated/api';
+import FriendAvatar from './FriendAvatar';
 
 interface LeaderboardProps {
   onError?: (message: string) => void;
@@ -21,21 +24,26 @@ interface LeaderboardEntry {
 }
 
 export default function Leaderboard({ onError }: LeaderboardProps) {
-  const [selectedPeriod, setSelectedPeriod] = useState<Period>("all");
+  const [selectedPeriod, setSelectedPeriod] = useState<Period>("week");
+  const selectedScope = "friends" as const;
   const [previousData, setPreviousData] = useState<{
     leaderboard: LeaderboardEntry[] | null;
     userRank: UserRankInfo | null;
   }>({ leaderboard: null, userRank: null });
   const [fadeAnim] = useState(new Animated.Value(1));
+  const [showPeriodMenu, setShowPeriodMenu] = useState(false);
+  const router = useRouter();
 
   // Direct convex queries
   const leaderboard = useQuery(api.leaderboard.getLeaderboard, {
     period: selectedPeriod,
-    limit: 10,
+    scope: "friends",
+    limit: 20,
   });
 
   const userRank = useQuery(api.leaderboard.getUserRank, {
     period: selectedPeriod,
+    scope: "friends",
   });
 
   const profile = useQuery(api.userProfile.getOrCreateProfile);
@@ -82,22 +90,14 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
   const getPeriodTitle = (period: Period) => {
     switch (period) {
       case "all": return "All Time";
-      case "week": return "This Week";
       case "month": return "This Month";
+      case "week": return "This Week";
     }
   };
 
   const handlePeriodChange = (period: Period) => {
     setSelectedPeriod(period);
-  };
-
-  const getRankStyle = (rank: number) => {
-    switch (rank) {
-      case 1: return styles.rank1;
-      case 2: return styles.rank2;
-      case 3: return styles.rank3;
-      default: return null;
-    }
+    setShowPeriodMenu(false);
   };
 
   const getRankEmoji = (rank: number) => {
@@ -124,122 +124,57 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
 
   return (
     <View style={styles.container}>
-      {/* Period Selector */}
-      <View style={styles.periodSelector}>
-        {(["all", "week", "month"] as Period[]).map((period) => (
-          <TouchableOpacity
-            key={period}
-            style={[
-              styles.periodButton,
-              selectedPeriod === period && styles.periodButtonActive
-            ]}
-            onPress={() => handlePeriodChange(period)}
-            disabled={isLoading}
-          >
-            <View style={styles.periodButtonContent}>
-              <Text style={[
-                styles.periodButtonText,
-                selectedPeriod === period && styles.periodButtonTextActive
-              ]}>
-                {getPeriodTitle(period)}
-              </Text>
-            </View>
-          </TouchableOpacity>
-        ))}
-      </View>
-
       <Animated.View style={[styles.contentContainer, { opacity: fadeAnim }]}>
-        {/* Current User Rank */}
-        {displayData.userRank && displayData.userRank.rank && (
-          <View style={styles.userRankContainer}>
-            <Text style={styles.userRankTitle}>Your Rank</Text>
-            <View style={styles.userRankBox}>
-              <View style={styles.userRankHeader}>
-                <Text style={styles.userRankNumber}>#{displayData.userRank.rank}</Text>
-                {displayData.userRank.rank <= 3 && (
-                  <Text style={styles.userRankEmoji}>{getRankEmoji(displayData.userRank.rank)}</Text>
-                )}
-              </View>
-              <Text style={styles.userRankText}>out of {displayData.userRank.totalUsers} runners</Text>
-              {displayData.userRank.userStats && (
-                <View style={styles.userRankStats}>
-                  <Text style={styles.userRankDistance}>
-                    {formatDistance(displayData.userRank.userStats.totalDistance)}
-                  </Text>
-                  <Text style={styles.userRankLevel}>
-                    Level {displayData.userRank.userStats.level}
-                  </Text>
-                </View>
-              )}
-            </View>
-          </View>
+        {/* Overlay to close dropdown */}
+        {showPeriodMenu && (
+          <Pressable style={styles.overlay} onPress={() => setShowPeriodMenu(false)} />
         )}
 
-        {/* Leaderboard */}
-        <ScrollView style={styles.leaderboardContainer} showsVerticalScrollIndicator={false}>
-          <View style={styles.leaderboardHeader}>
-            <Text style={styles.leaderboardTitle}>Top Runners</Text>
-            {isLoading && (
-              <ActivityIndicator
-                size="small"
-                color={Theme.colors.accent.primary}
-                style={styles.headerLoadingIndicator}
-              />
+        {/* Header with dropdown (same layout for both scopes) */}
+        <View style={styles.leaderboardHeader}>
+          <View style={styles.dropdownWrapperCentered}>
+            <TouchableOpacity style={styles.timeDropdown} onPress={() => setShowPeriodMenu((v) => !v)}>
+              <Text style={styles.timeDropdownText}>{getPeriodTitle(selectedPeriod)}</Text>
+              <Ionicons name="chevron-down" size={24} color={Theme.colors.text.primary} />
+            </TouchableOpacity>
+            {showPeriodMenu && (
+              <View style={styles.dropdownMenuCentered}>
+                {(["week", "month", "all"] as Period[]).map((p) => (
+                  <TouchableOpacity key={p} style={styles.dropdownItem} onPress={() => handlePeriodChange(p)}>
+                    <Text style={[styles.dropdownItemText, selectedPeriod === p && styles.dropdownItemTextActive]}>
+                      {getPeriodTitle(p)}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
             )}
           </View>
-
-          {!displayData.leaderboard || displayData.leaderboard.length === 0 ? (
-            <View style={styles.emptyState}>
-              <Text style={styles.emptyStateEmoji}>🏃‍♂️</Text>
-              <Text style={styles.emptyStateText}>No runners yet for {getPeriodTitle(selectedPeriod).toLowerCase()}</Text>
-              <Text style={styles.emptyStateSubtext}>Start running to claim your spot!</Text>
-            </View>
-          ) : (
-            displayData.leaderboard.map((entry) => (
-              <View
-                key={`${entry.userId}-${selectedPeriod}`}
-                style={[
-                  styles.leaderboardEntry,
-                  entry.rank <= 3 && getRankStyle(entry.rank)
-                ]}
-              >
-                <View style={styles.rankContainer}>
-                  <Text style={[
-                    styles.rankNumber,
-                    entry.rank <= 3 && styles.topRankNumber
-                  ]}>
-                    #{entry.rank}
-                  </Text>
-                  {entry.rank <= 3 && (
-                    <Text style={styles.trophy}>{getRankEmoji(entry.rank)}</Text>
-                  )}
-                </View>
-
-                <View style={styles.entryContent}>
-                  <View style={styles.entryHeader}>
-                    <Text style={styles.entryName}>{entry.name}</Text>
-                    {entry.level > 0 && (
-                      <View style={styles.levelBadge}>
-                        <Text style={styles.levelText}>Lv. {entry.level}</Text>
-                      </View>
-                    )}
-                  </View>
-
-                  <View style={styles.entryStats}>
-                    <View style={styles.entryStatsLeft}>
-                      <Text style={styles.entryDistance}>{formatDistance(entry.totalDistance)}</Text>
-                      <Text style={styles.entryDistanceLabel}>total distance</Text>
-                    </View>
-                    <View style={styles.entryStatsRight}>
-                      <Text style={styles.entryWorkouts}>{entry.totalWorkouts}</Text>
-                      <Text style={styles.entryWorkoutsLabel}>runs</Text>
-                    </View>
-                  </View>
-                </View>
-              </View>
-            ))
+          <TouchableOpacity style={styles.addFriendButton} onPress={() => router.push('/add-friend')}>
+            <Ionicons name="add-circle" size={24} color={Theme.colors.special.primary.exp} />
+            <Text style={styles.addFriendButtonText}>Add Friends</Text>
+          </TouchableOpacity>
+        </View>
+        {/* Leaderboard */}
+        <FlatList
+          data={displayData.leaderboard || []}
+          numColumns={3}
+          keyExtractor={(item) => item.userId}
+          renderItem={({ item }) => (
+            <FriendAvatar
+              entry={item}
+              isCurrent={item.userId === displayData.userRank?.userStats?.userId}
+              metricSystem={profile?.metricSystem ?? 'metric'}
+            />
           )}
-        </ScrollView>
+          contentContainerStyle={styles.friendsGrid}
+          showsVerticalScrollIndicator={false}
+          ListEmptyComponent={() => (
+            <View style={styles.emptyState}>
+              <Text style={styles.emptyStateText}>No friends yet</Text>
+              <Text style={styles.emptyStateSubtext}>Add friends to see their progress</Text>
+            </View>
+          )}
+        />
       </Animated.View>
     </View>
   );
@@ -261,110 +196,24 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
   },
-  periodSelector: {
-    flexDirection: 'row',
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xs,
-    marginBottom: Theme.spacing.xl,
-  },
-  periodButton: {
-    flex: 1,
-    borderRadius: Theme.borderRadius.medium,
-  },
-  periodButtonActive: {
-    backgroundColor: Theme.colors.accent.primary,
-  },
-  periodButtonContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingVertical: Theme.spacing.md,
-    paddingHorizontal: Theme.spacing.lg,
-  },
-  periodButtonText: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.muted,
-    textAlign: 'center',
-  },
-  periodButtonTextActive: {
-    color: Theme.colors.text.primary,
-  },
-  periodLoadingIndicator: {
-    marginLeft: Theme.spacing.xs,
-  },
   contentContainer: {
     flex: 1,
-  },
-  userRankContainer: {
-    marginBottom: Theme.spacing.xl,
-  },
-  userRankTitle: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
-  },
-  userRankBox: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-    alignItems: 'center',
-    borderWidth: 3,
-    borderColor: Theme.colors.border.primary,
-  },
-  userRankHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
-  },
-  userRankNumber: {
-    fontSize: 32,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-  },
-  userRankEmoji: {
-    fontSize: 24,
-    marginLeft: Theme.spacing.sm,
-  },
-  userRankText: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    marginBottom: Theme.spacing.md,
-  },
-  userRankStats: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Theme.spacing.lg,
-  },
-  userRankDistance: {
-    fontSize: 20,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-  },
-  userRankLevel: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.special.primary.level,
   },
   leaderboardContainer: {
     flex: 1,
   },
   leaderboardHeader: {
     flexDirection: 'row',
-    alignItems: 'center',
+    alignItems: 'flex-start',
+    justifyContent: 'space-between',
     marginBottom: Theme.spacing.xl,
+    position: 'relative',
   },
   leaderboardTitle: {
-    fontSize: 20,
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     flex: 1,
-  },
-  headerLoadingIndicator: {
-    marginLeft: Theme.spacing.sm,
   },
   emptyState: {
     padding: Theme.spacing.xxxl,
@@ -373,10 +222,6 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.large,
     borderWidth: 2,
     borderColor: Theme.colors.border.primary,
-  },
-  emptyStateEmoji: {
-    fontSize: 48,
-    marginBottom: Theme.spacing.lg,
   },
   emptyStateText: {
     fontSize: 16,
@@ -393,6 +238,7 @@ const styles = StyleSheet.create({
   },
   leaderboardEntry: {
     flexDirection: 'row',
+    alignItems: 'center',
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.lg,
@@ -417,8 +263,9 @@ const styles = StyleSheet.create({
   },
   rankContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: Theme.spacing.lg,
+    justifyContent: 'flex-start',
+    flexDirection: 'row',
+    marginRight: Theme.spacing.md,
     minWidth: 60,
   },
   rankNumber: {
@@ -426,96 +273,118 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.muted,
   },
-  topRankNumber: {
-    fontSize: 18,
-    color: Theme.colors.text.primary,
-  },
-  trophy: {
-    fontSize: 20,
-    marginTop: Theme.spacing.xs,
-  },
-  entryContent: {
-    flex: 1,
-  },
-  entryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.md,
-  },
   entryName: {
+    flex: 1,
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    flex: 1,
-  },
-  levelBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.medium,
-    paddingHorizontal: Theme.spacing.md,
-    paddingVertical: Theme.spacing.sm,
-    borderWidth: 1,
-    borderColor: Theme.colors.border.primary,
-  },
-  levelEmoji: {
-    fontSize: 14,
-    marginRight: Theme.spacing.xs,
-  },
-  levelText: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-  },
-  entryStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginBottom: Theme.spacing.md,
-  },
-  entryStatsLeft: {
-    alignItems: 'flex-start',
+    textAlign: 'left',
   },
   entryStatsRight: {
     alignItems: 'flex-end',
   },
   entryDistance: {
-    fontSize: 22,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.accent.primary,
-  },
-  entryDistanceLabel: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
+    fontSize: 20,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    textAlign: 'right',
   },
   entryWorkouts: {
     fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.muted,
+    textAlign: 'right',
+  },
+  friendsGrid: {
+    padding: Theme.spacing.md,
+  },
+  timeDropdown: {
+    marginTop: Theme.spacing.sm,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  timeDropdownText: {
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+    marginRight: Theme.spacing.sm,
   },
-  entryWorkoutsLabel: {
+  dotsSeparator: {
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.md,
+  },
+  dotsText: {
     fontSize: 12,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
   },
-  progressLevelContainer: {
-    marginTop: Theme.spacing.sm,
+  userEntry: {
+    borderColor: Theme.colors.text.primary,
+    borderWidth: 3,
+    backgroundColor: Theme.colors.background.secondary,
   },
-  progressLevelBar: {
-    height: 6,
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.xs,
-    marginBottom: Theme.spacing.xs,
+  rankEmoji: {
+    fontSize: 20,
+    marginRight: Theme.spacing.sm,
   },
-  progressLevelFill: {
-    height: '100%',
-    borderRadius: Theme.borderRadius.xs,
+  dropdownMenu: {
+    position: 'absolute',
+    right: 0,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.medium,
+    borderWidth: 1,
+    borderColor: Theme.colors.border.primary,
+    zIndex: 10,
   },
-  progressLevelText: {
-    fontSize: 12,
+  dropdownMenuCentered: {
+    position: 'absolute',
+    top: 40,
+    left: 0,
+    backgroundColor: Theme.colors.background.primary,
+    borderRadius: Theme.borderRadius.medium,
+    borderWidth: 1,
+    borderColor: Theme.colors.border.primary,
+    zIndex: 10,
+    minWidth: 150,
+  },
+  dropdownItem: {
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.lg,
+    alignItems: 'flex-start',
+  },
+  dropdownItemText: {
+    fontSize: 20,
     fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    textAlign: 'center',
+    color: Theme.colors.text.muted,
+  },
+  dropdownItemTextActive: {
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
+  },
+  dropdownWrapperCentered: {
+    position: 'relative',
+    alignItems: 'center',
+  },
+  overlay: {
+    ...StyleSheet.absoluteFillObject,
+    zIndex: 4,
+  },
+  addFriendButton: {
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.medium,
+    borderWidth: 2,
+    borderColor: Theme.colors.border.primary,
+    borderBottomWidth: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
+  },
+  addFriendButtonText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.bold,
+    textTransform: 'uppercase',
+    color: Theme.colors.special.primary.exp,
   },
 }); 

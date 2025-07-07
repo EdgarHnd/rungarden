@@ -21,16 +21,46 @@ export interface UserRankInfo {
 export const getLeaderboard = query({
   args: {
     period: v.union(v.literal("all"), v.literal("week"), v.literal("month")),
+    scope: v.optional(v.union(v.literal("world"), v.literal("friends"))), // default "world"
     limit: v.optional(v.number()),
   },
   handler: async (ctx, args) => {
+    const scope = args.scope || "world";
     const limit = args.limit ?? 10;
+    
+    // When friends scope: build list of friend userIds (plus self)
+    let friendIds: string[] | null = null;
+    if (scope === "friends") {
+      const userId = await getAuthUserId(ctx);
+      if (!userId) throw new Error("Not authenticated");
+
+      // Fetch accepted friendships
+      const sent = await ctx.db
+        .query("friendRequests")
+        .withIndex("by_from", q => q.eq("fromUserId", userId))
+        .filter(q => q.eq(q.field("status"), "accepted"))
+        .collect();
+
+      const received = await ctx.db
+        .query("friendRequests")
+        .withIndex("by_to", q => q.eq("toUserId", userId))
+        .filter(q => q.eq(q.field("status"), "accepted"))
+        .collect();
+
+      const friendSet = new Set<string>([userId]);
+      sent.forEach(fr => friendSet.add(fr.toUserId as string));
+      received.forEach(fr => friendSet.add(fr.fromUserId as string));
+
+      friendIds = Array.from(friendSet);
+      if (friendIds.length === 0) {
+        return [];
+      }
+    }
     
     if (args.period === "all") {
       // All-time leaderboard based on total distance from user profiles
-      const profiles = await ctx.db
-        .query("userProfiles")
-        .collect();
+      const profilesRaw = await ctx.db.query("userProfiles").collect();
+      const profiles = friendIds ? profilesRaw.filter(p => friendIds!.includes(p.userId as string)) : profilesRaw;
       
       // Sort by total distance and take limit
       const sortedProfiles = profiles
@@ -76,10 +106,12 @@ export const getLeaderboard = query({
     const startDateISO = startDate.toISOString();
     
     // Get all activities for the period
-    const activities = await ctx.db
+    const activitiesRaw = await ctx.db
       .query("activities")
       .filter((q) => q.gte(q.field("startDate"), startDateISO))
       .collect();
+
+    const activities = friendIds ? activitiesRaw.filter(a => friendIds!.includes(a.userId as string)) : activitiesRaw;
     
     // Group by user and calculate totals
     const userStats = new Map<string, {
@@ -135,25 +167,53 @@ export const getLeaderboard = query({
 export const getUserRank = query({
   args: {
     period: v.union(v.literal("all"), v.literal("week"), v.literal("month")),
+    scope: v.optional(v.union(v.literal("world"), v.literal("friends"))),
   },
   handler: async (ctx, args) => {
+    const scope = args.scope || "world";
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }
     
-    // Get the full leaderboard directly instead of calling another query
-    // This avoids the circular dependency issue
-    const limit = 100;
+    let friendIds: string[] | null = null;
+    if (scope === "friends") {
+      // Build friendIds array similar to getLeaderboard
+      const sent = await ctx.db
+        .query("friendRequests")
+        .withIndex("by_from", q => q.eq("fromUserId", userId))
+        .filter(q => q.eq(q.field("status"), "accepted"))
+        .collect();
+
+      const received = await ctx.db
+        .query("friendRequests")
+        .withIndex("by_to", q => q.eq("toUserId", userId))
+        .filter(q => q.eq(q.field("status"), "accepted"))
+        .collect();
+
+      const friendSet = new Set<string>([userId]);
+      sent.forEach(fr => friendSet.add(fr.toUserId as string));
+      received.forEach(fr => friendSet.add(fr.fromUserId as string));
+      friendIds = Array.from(friendSet);
+      if (friendIds.length === 0) {
+        return {
+          rank: null,
+          totalUsers: 0,
+          userStats: null,
+        };
+      }
+    }
     
     if (args.period === "all") {
-      const profiles = await ctx.db
+      const allProfiles = await ctx.db
         .query("userProfiles")
         .collect();
       
+      const profiles = friendIds ? allProfiles.filter(p => friendIds!.includes(p.userId as string)) : allProfiles;
+      
       const sortedProfiles = profiles
         .sort((a, b) => (b.totalDistance || 0) - (a.totalDistance || 0))
-        .slice(0, limit);
+        .slice(0, 100);
       
       const leaderboard: LeaderboardEntry[] = [];
       
@@ -203,10 +263,12 @@ export const getUserRank = query({
       
       const startDateISO = startDate.toISOString();
       
-      const activities = await ctx.db
+      const allActivities = await ctx.db
         .query("activities")
         .filter((q) => q.gte(q.field("startDate"), startDateISO))
         .collect();
+
+      const activities = friendIds ? allActivities.filter(a => friendIds!.includes(a.userId as string)) : allActivities;
       
       const userStats = new Map<string, {
         userId: string;
@@ -229,7 +291,7 @@ export const getUserRank = query({
       
       const sortedStats = Array.from(userStats.values())
         .sort((a, b) => b.totalDistance - a.totalDistance)
-        .slice(0, limit);
+        .slice(0, 100);
       
       const leaderboard: LeaderboardEntry[] = [];
       

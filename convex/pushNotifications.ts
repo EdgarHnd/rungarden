@@ -160,6 +160,81 @@ export const sendAchievementNotification = action({
   },
 });
 
+// Send push notification for new friend request
+export const sendFriendRequestNotification = action({
+  args: {
+    toUserId: v.string(),
+    fromName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Fetch recipient profile
+      const profile = await ctx.runQuery(api.userProfile.getProfileByUserId, { userId: args.toUserId as any });
+
+      if (!profile || !profile.pushNotificationsEnabled || !profile.pushNotificationToken) {
+        return { success: false, reason: "Push notifications not enabled or no token" };
+      }
+
+      const title = "👋 New Friend Request";
+      const body = args.fromName ? `${args.fromName} sent you a friend request!` : "You have a new friend request!";
+
+      const message: ExpoPushMessage = {
+        to: profile.pushNotificationToken,
+        title,
+        body,
+        sound: 'default',
+        data: { type: 'friend_request', url: `/add-friend` },
+        badge: 1,
+        channelId: 'friends',
+        priority: 'high',
+      };
+
+      const result = await sendExpoPushNotification([message]);
+      return result;
+    } catch (error) {
+      console.error('[PushNotifications] Error sending friend request notification:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+});
+
+// Notify sender when friend request accepted
+export const sendFriendAcceptNotification = action({
+  args: {
+    toUserId: v.string(),
+    friendName: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      const profile = await ctx.runQuery(api.userProfile.getProfileByUserId, { userId: args.toUserId as any });
+
+      if (!profile || !profile.pushNotificationsEnabled || !profile.pushNotificationToken) {
+        return { success: false, reason: "Push notifications not enabled or no token" };
+      }
+
+      const title = "🤝 Friend Request Accepted";
+      const body = args.friendName ? `${args.friendName} accepted your friend request!` : "Your friend request was accepted!";
+
+      const message: ExpoPushMessage = {
+        to: profile.pushNotificationToken,
+        title,
+        body,
+        sound: 'default',
+        data: { type: 'friend_request_accepted' },
+        badge: 1,
+        channelId: 'friends',
+        priority: 'high',
+      };
+
+      const result = await sendExpoPushNotification([message]);
+      return result;
+    } catch (error) {
+      console.error('[PushNotifications] Error sending friend accept notification:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+});
+
 // Helper function to send push notifications via Expo
 async function sendExpoPushNotification(messages: ExpoPushMessage[]): Promise<{
   success: boolean;

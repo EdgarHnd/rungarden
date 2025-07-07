@@ -1,11 +1,34 @@
 import RecordingModal from '@/components/modals/RecordingModal';
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs } from 'expo-router';
 import React, { useState } from 'react';
 import { TouchableOpacity, View } from 'react-native';
+
+function LeaderboardIcon({ color, size }: { color: string; size: number }) {
+  const pending = useQuery(api.friends.getPendingFriendRequests);
+  const hasPending = (pending?.length ?? 0) > 0;
+  return (
+    <View style={{ position: 'relative' }}>
+      <FontAwesome5 name="trophy" size={size} color={color} />
+      {hasPending && (
+        <View style={{
+          position: 'absolute',
+          top: -2,
+          right: -2,
+          width: 10,
+          height: 10,
+          borderRadius: 5,
+          backgroundColor: Theme.colors.special.primary.heart,
+        }} />
+      )}
+    </View>
+  );
+}
 
 export default function AppLayout() {
   const [showRecordingModal, setShowRecordingModal] = useState(false);
@@ -108,7 +131,7 @@ export default function AppLayout() {
           name="leaderboard"
           options={({ navigation }) => ({
             tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="trophy" size={size} color={color} />
+              <LeaderboardIcon color={color as string} size={size as number} />
             ),
             tabBarButton: createTabBarButton(() => navigation.navigate('leaderboard')),
           })}

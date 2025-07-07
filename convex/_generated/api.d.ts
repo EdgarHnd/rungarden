@@ -15,6 +15,7 @@ import type {
 } from "convex/server";
 import type * as activities from "../activities.js";
 import type * as auth from "../auth.js";
+import type * as friends from "../friends.js";
 import type * as http from "../http.js";
 import type * as internal_verifyAppleToken from "../internal/verifyAppleToken.js";
 import type * as leaderboard from "../leaderboard.js";
@@ -44,6 +45,7 @@ import type * as utils_streak from "../utils/streak.js";
 declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   auth: typeof auth;
+  friends: typeof friends;
   http: typeof http;
   "internal/verifyAppleToken": typeof internal_verifyAppleToken;
   leaderboard: typeof leaderboard;

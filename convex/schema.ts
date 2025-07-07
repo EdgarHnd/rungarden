@@ -318,6 +318,23 @@ const schema = defineSchema({
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
     .index("by_type", ["type"]),
+
+  /* ────────────────────────────── friends */
+  friendRequests: defineTable({
+    fromUserId: v.id("users"),           // Sender of request
+    toUserId: v.id("users"),             // Receiver of request
+    status: v.union(
+      v.literal("pending"),
+      v.literal("accepted"),
+      v.literal("rejected"),
+      v.literal("blocked")
+    ),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_from", ["fromUserId"])
+    .index("by_to", ["toUserId"])
+    .index("by_users", ["fromUserId", "toUserId"]),
 });
 
 export default schema;

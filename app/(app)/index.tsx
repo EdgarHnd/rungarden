@@ -16,7 +16,6 @@ import Ionicons from '@expo/vector-icons/build/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -802,10 +801,10 @@ export default function HomeScreen() {
   try {
     return (
       <SafeAreaView style={styles.container}>
-        <LinearGradient
+        {/* <LinearGradient
           colors={[Theme.colors.background.tertiary, Theme.colors.background.secondary, Theme.colors.background.primary]}
           style={styles.solidBackground}
-        />
+        /> */}
         <View style={styles.headerContainer}>
           <View style={styles.leftHeaderSection}>
             <View style={styles.titleContainer}>

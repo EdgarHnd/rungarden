@@ -66,6 +66,14 @@ function AuthenticatedApp() {
           animation: 'slide_from_right',
         }}
       />
+      <Stack.Screen
+        name="add-friend"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          animation: 'slide_from_bottom',
+        }}
+      />
     </Stack>
   );
 }
