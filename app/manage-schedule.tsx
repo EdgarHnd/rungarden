@@ -45,11 +45,14 @@ export default function ManageScheduleScreen() {
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+      const successMessage = currentSchedule
+        ? "Your training schedule has been updated. Changes apply to remaining days this week. Training reminders have been scheduled for your preferred days!"
+        : "Your training schedule has been created successfully! Training reminders have been scheduled for your preferred days!";
+
       Alert.alert(
         "Schedule Updated!",
-        currentSchedule
-          ? "Your training schedule has been updated. Changes apply to remaining days this week."
-          : "Your training schedule has been created successfully!",
+        successMessage,
         [{ text: "OK", onPress: () => router.back() }]
       );
     } catch (error) {

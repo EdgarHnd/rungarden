@@ -314,6 +314,15 @@ export class PushNotificationService {
         lightColor: '#FFD700',
         sound: 'default',
       });
+
+      await Notifications.setNotificationChannelAsync('schedule', {
+        name: 'Training Reminders',
+        description: 'Reminders for your scheduled training days',
+        importance: Notifications.AndroidImportance.DEFAULT,
+        vibrationPattern: [0, 200, 200, 200],
+        lightColor: '#FF6B35',
+        sound: 'default',
+      });
     } catch (error) {
       console.error('[PushNotifications] Failed to configure notification channels:', error);
     }

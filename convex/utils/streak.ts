@@ -73,7 +73,8 @@ export async function recalcStreak(db: DatabaseReader & DatabaseWriter, userId: 
   
   let streak = 0;
   let lastStreakWeek: string | undefined;
-  let consecutiveMissedWeeks = 0;
+  let consecutiveMissedWeeks = 0; // Missed weeks excluding the current one (for health calculations)
+  let missedWeeksInRow = 0;       // Tracks consecutive missed weeks starting from the current week
   let currentWeekStart = new Date(thisWeekStart);
   let isFirstWeek = true;
 
@@ -89,20 +90,25 @@ export async function recalcStreak(db: DatabaseReader & DatabaseWriter, userId: 
     const goalMet = runDaysInWeek >= 1;
 
     if (goalMet) {
-      // Goal met - extend streak
+      // Goal met – extend streak and reset missed counter
       streak++;
-      if (isFirstWeek) {
-        consecutiveMissedWeeks = 0; // Current week goal is met, no missed weeks
-      }
+      missedWeeksInRow = 0;
       if (!lastStreakWeek) {
         lastStreakWeek = weekStartISO;
       }
     } else {
-      // Goal missed - only count as missed if it's not the current week
+      // Goal missed
+      missedWeeksInRow++;
+
+      // Only count towards health penalty if it's not the current week
       if (!isFirstWeek) {
         consecutiveMissedWeeks++;
       }
-      break; // Streak is broken
+
+      // Break the streak only after TWO consecutive missed weeks (current week + previous)
+      if (missedWeeksInRow >= 2) {
+        break;
+      }
     }
 
     // Move to previous week

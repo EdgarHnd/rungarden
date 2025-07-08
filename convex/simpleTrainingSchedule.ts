@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import { api } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 import { recalcStreak, restoreMascotHealth } from "./utils/streak";
 
@@ -79,6 +80,7 @@ export const setSimpleTrainingSchedule = mutation({
       .withIndex("by_user", (q: any) => q.eq("userId", userId))
       .first();
 
+    let result;
     if (existingSchedule) {
       // Calculate current week start for the change to take effect immediately
       const thisWeekStart = getWeekStart(new Date(), weekStartDay).toISOString().split('T')[0];
@@ -116,7 +118,7 @@ export const setSimpleTrainingSchedule = mutation({
         updatedAt: now
       });
 
-      return { message: "Training schedule updated. Changes apply to remaining days this week." };
+      result = { message: "Training schedule updated. Changes apply to remaining days this week." };
     } else {
       // Create new schedule starting this week
       const thisWeekStart = getWeekStart(new Date(), weekStartDay).toISOString().split('T')[0];
@@ -139,8 +141,26 @@ export const setSimpleTrainingSchedule = mutation({
         createdAt: now
       });
 
-      return { message: "Simple training schedule created successfully!" };
+      result = { message: "Simple training schedule created successfully!" };
     }
+
+    // Schedule notifications for the training schedule
+    // Only do this if user has push notifications enabled
+    if (userProfile?.pushNotificationsEnabled && userProfile?.pushNotificationToken) {
+      try {
+        await ctx.scheduler.runAfter(0, api.pushNotifications.scheduleSimpleTrainingNotifications, {
+          userId,
+          runsPerWeek: args.runsPerWeek,
+          preferredDays: args.preferredDays,
+        });
+        console.log(`[SimpleSchedule] Scheduled notifications for user ${userId}`);
+      } catch (error) {
+        console.error(`[SimpleSchedule] Failed to schedule notifications for user ${userId}:`, error);
+        // Don't fail the schedule creation if notification scheduling fails
+      }
+    }
+
+    return result;
   },
 });
 

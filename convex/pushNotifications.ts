@@ -235,6 +235,151 @@ export const sendFriendAcceptNotification = action({
   },
 });
 
+// Send simple schedule reminder notification
+export const sendSimpleScheduleReminder = action({
+  args: {
+    userId: v.string(),
+    dayName: v.string(), // "Mon", "Tue", etc.
+    runsPerWeek: v.number(),
+  },
+  handler: async (ctx, args) => {
+    try {
+      // Get user's push notification settings
+      const profile = await ctx.runQuery(api.userProfile.getProfileByUserId, { userId: args.userId as any });
+
+      if (!profile || !profile.pushNotificationsEnabled || !profile.pushNotificationToken) {
+        console.log(`[PushNotifications] User ${args.userId} doesn't have push notifications enabled or no token`);
+        return { success: false, reason: "Push notifications not enabled or no token" };
+      }
+
+      // Create motivational reminder message
+      const titles = [
+        "🔥 Time to run!",
+        "🏃‍♂️ Today's run day!",
+        "💪 Training day!",
+      ];
+      
+      const bodies = [
+        `Ready for your ${args.dayName} run? Keep that flame burning! 🔥`,
+        `${args.dayName} training day! Your ${profile.mascotName || 'Blaze'} is counting on you! ⚡`,
+        `Time for your ${args.dayName} run! ${args.runsPerWeek} runs this week = flame alive! 🏃‍♂️`,
+        `${args.dayName} run day! Every run keeps your streak growing! 💪`,
+        `Let's crush this ${args.dayName} workout! Your flame depends on it! 🔥`
+      ];
+
+      const title = titles[Math.floor(Math.random() * titles.length)];
+      const body = bodies[Math.floor(Math.random() * bodies.length)];
+
+      const message: ExpoPushMessage = {
+        to: profile.pushNotificationToken,
+        title,
+        body,
+        sound: 'default',
+        data: {
+          type: 'schedule_reminder',
+          dayName: args.dayName,
+          runsPerWeek: args.runsPerWeek,
+        },
+        badge: 1,
+        channelId: 'schedule',
+        priority: 'normal',
+        ttl: 14400, // 4 hours - reminder expires after 4 hours
+      };
+
+      const result = await sendExpoPushNotification([message]);
+      
+      // ────────────── Schedule the next occurrence (1 week later)
+      try {
+        const ONE_WEEK_MS = 7 * 24 * 60 * 60 * 1000;
+        await ctx.scheduler.runAfter(ONE_WEEK_MS, api.pushNotifications.sendSimpleScheduleReminder, {
+          userId: args.userId,
+          dayName: args.dayName,
+          runsPerWeek: args.runsPerWeek,
+        });
+        console.log(`[PushNotifications] Next ${args.dayName} reminder scheduled for user ${args.userId}`);
+      } catch (scheduleError) {
+        console.error('[PushNotifications] Failed to schedule next weekly reminder:', scheduleError);
+      }
+      
+      if (result.success) {
+        return { success: true, ticketId: result.tickets?.[0]?.id };
+      } else {
+        return { success: false, error: result.error };
+      }
+    } catch (error) {
+      console.error('[PushNotifications] Error sending schedule reminder:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+});
+
+// Schedule notifications for simple training schedule
+export const scheduleSimpleTrainingNotifications = action({
+  args: {
+    userId: v.string(),
+    runsPerWeek: v.number(),
+    preferredDays: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    try {
+      console.log(`[PushNotifications] Scheduling notifications for user ${args.userId}`);
+
+      const dayNameToNumber: Record<string, number> = {
+        'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+      };
+
+      const now = new Date();
+
+      // Default reminder time: 9:00 AM local time
+      const REMINDER_HOUR = 9;
+      const REMINDER_MINUTE = 0;
+
+      const scheduledDays: string[] = [];
+
+      for (const dayName of args.preferredDays) {
+        const targetDayNum = dayNameToNumber[dayName];
+        if (targetDayNum === undefined) continue;
+
+        // Calculate days until next occurrence of the target day
+        let daysUntil = (targetDayNum - now.getDay() + 7) % 7;
+        // If today is the day but it's already past the reminder time, schedule for next week
+        const todayIsTarget = daysUntil === 0;
+        const nowTimeMinutes = now.getHours() * 60 + now.getMinutes();
+        const reminderTimeMinutes = REMINDER_HOUR * 60 + REMINDER_MINUTE;
+        if (todayIsTarget && nowTimeMinutes >= reminderTimeMinutes) {
+          daysUntil = 7;
+        }
+
+        const firstReminderDate = new Date(now);
+        firstReminderDate.setDate(now.getDate() + daysUntil);
+        firstReminderDate.setHours(REMINDER_HOUR, REMINDER_MINUTE, 0, 0);
+
+        const delayMs = firstReminderDate.getTime() - now.getTime();
+        if (delayMs < 0) continue; // safety check
+
+        await ctx.scheduler.runAfter(delayMs, api.pushNotifications.sendSimpleScheduleReminder, {
+          userId: args.userId,
+          dayName,
+          runsPerWeek: args.runsPerWeek,
+        });
+
+        scheduledDays.push(dayName);
+        console.log(`[PushNotifications] Scheduled first reminder for ${dayName} in ${Math.round(delayMs/3600000)} hrs`);
+      }
+
+      return { 
+        success: true, 
+        message: `Notifications scheduled for ${scheduledDays.length} preferred days`,
+        scheduledDays,
+        runsPerWeek: args.runsPerWeek
+      };
+    } catch (error) {
+      console.error('[PushNotifications] Error scheduling notifications:', error);
+      return { success: false, error: (error as Error).message };
+    }
+  },
+});
+
 // Helper function to send push notifications via Expo
 async function sendExpoPushNotification(messages: ExpoPushMessage[]): Promise<{
   success: boolean;

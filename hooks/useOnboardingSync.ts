@@ -115,6 +115,7 @@ export function useOnboardingSync() {
         }
         
         // Create simple training schedule as the default system
+        // This will automatically trigger notification scheduling if push notifications are enabled
         try {
           const simpleScheduleResult = await setSimpleTrainingSchedule({
             runsPerWeek: trainingProfileData.daysPerWeek,
@@ -122,7 +123,7 @@ export function useOnboardingSync() {
               ? trainingProfileData.preferredDays 
               : ['Mon', 'Wed', 'Fri'] // Default if no preferred days selected
           });
-          console.log('Simple training schedule created successfully:', simpleScheduleResult);
+          console.log('Simple training schedule created successfully (with notifications scheduled):', simpleScheduleResult);
         } catch (scheduleError) {
           console.error('Failed to create simple training schedule:', scheduleError);
           // Don't fail the whole process if schedule creation fails
