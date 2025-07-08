@@ -19,11 +19,12 @@ import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import { RiveRef } from 'rive-react-native';
+import Rive, { RiveRef } from "rive-react-native";
 
 // Constants for scrolling background
 const SCROLLING_BG_LOOP_WIDTH = 2000;
 const SCROLLING_BG_ANIMATION_DURATION = 8000;
+
 
 interface DayData {
   date: string;
@@ -79,6 +80,8 @@ export default function HomeScreen() {
   const bgAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
   const isTransitioningRef = useRef(false);
   const scaleAnim = useRef(new Animated.Value(1)).current;
+  const [riveUrl, setRiveUrl] = useState<string | null>(null);
+  const [riveRef, setRiveRef] = useState<RiveRef | null>(null);
 
   // Add debounce ref to prevent cascading updates
   const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -140,17 +143,16 @@ export default function HomeScreen() {
   // Derived values from queries
   const weekStartDay = profile?.weekStartDay ?? 1; // Default to Monday
 
-  const RIVE_URL_IDDLE = "https://fast-dragon-309.convex.cloud/api/storage/ef5f29cd-b5d6-4fb2-9288-0edb260744c6";
-  const RIVE_URL_ANGRY = "https://fast-dragon-309.convex.cloud/api/storage/04bf0340-7d79-4865-8dd6-2966b4befaff";
-  const RIVE_URL_RUNNING = "https://deafening-mule-576.convex.cloud/api/storage/fcdc254a-5fb8-421b-b22e-85af6b3f765a";
-  const RIVE_URL_CYCLE = "https://fast-dragon-309.convex.cloud/api/storage/122e4793-89da-41de-9e4f-ed67741def2e";
+  const RIVE_URL_IDDLE = "https://curious-badger-131.convex.cloud/api/storage/9caf3bc8-1fab-4dab-a8e5-4b6d563ca7d6";
 
   const RIVE_URLS = [
-    RIVE_URL_RUNNING,
-    RIVE_URL_ANGRY,
     RIVE_URL_IDDLE,
-    RIVE_URL_CYCLE
   ];
+
+  // Initialize Rive idle animation on mount
+  useEffect(() => {
+    setRiveUrl(RIVE_URL_IDDLE);
+  }, []);
 
   const startBgAnimation = () => {
     if (isBgAnimationRunning) return;
@@ -865,12 +867,22 @@ export default function HomeScreen() {
         </View>
 
         <View style={styles.animationContainer}>
-          <View style={styles.shadowDisc} />
-          <Image
+          {/* <View style={styles.shadowDisc} /> */}
+          {/* <Image
             source={mascotImageSource}
             style={styles.blazeImage}
             resizeMode="contain"
-          />
+          /> */}
+          <View style={styles.animationContainer}>
+            {riveUrl && (
+              <Rive
+                ref={riveRef as any}
+                url={riveUrl}
+                style={styles.blazeImage}
+                autoplay={true}
+              />
+            )}
+          </View>
         </View>
 
         <ScrollView

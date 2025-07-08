@@ -198,7 +198,16 @@ export default function ProfileScreen() {
           {/* User Info */}
           <Text style={styles.userName}>{currentUser?.name || profile?.mascotName}</Text>
           <Text style={styles.userMeta}>Joined {new Date(profile?._creationTime || '').toLocaleDateString()}</Text>
-
+          {/* <View style={styles.friendsInfoContainer}>
+            <Text style={styles.friendsInfoText}> Friends: {0 || 0}</Text>
+            <TouchableOpacity style={styles.addFriendButton} onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/add-friend');
+            }} activeOpacity={0.7}>
+              <FontAwesome5 name="user-plus" size={20} color={Theme.colors.special.primary.exp} />
+              <Text style={styles.addFriendButtonText}>ADD FRIENDS</Text>
+            </TouchableOpacity>
+          </View> */}
           {/* Stats Row */}
           {/* <View style={styles.statsRow}>
             <View style={styles.statItem}>
@@ -570,23 +579,34 @@ const styles = StyleSheet.create({
     height: 24,
     backgroundColor: Theme.colors.background.tertiary,
   },
-  addFriendsButton: {
-    backgroundColor: Theme.colors.accent.primary,
+  friendsInfoContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 32,
-    paddingVertical: 12,
-    borderRadius: 12,
+    justifyContent: 'space-between',
     marginBottom: 8,
   },
-  addFriendsIcon: {
-    marginRight: 8,
+  friendsInfoText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
   },
-  addFriendsText: {
-    color: Theme.colors.text.primary,
+  addFriendButton: {
+    marginBottom: 8,
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.medium,
+    borderWidth: 2,
+    borderColor: Theme.colors.border.primary,
+    borderBottomWidth: 4,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
+  },
+  addFriendButtonText: {
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
-    letterSpacing: 0.5,
+    textTransform: 'uppercase',
+    color: Theme.colors.special.primary.exp,
   },
   completeProfileSection: {
     backgroundColor: Theme.colors.background.secondary,

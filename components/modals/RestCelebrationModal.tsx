@@ -279,7 +279,6 @@ export default function RestCelebrationModal({
 
           <Text style={styles.rewardsMessage}>
             Taking care of your body earns rewards too!
-            Come back tomorrow to continue your streak! 💪
           </Text>
         </View>
       </View>

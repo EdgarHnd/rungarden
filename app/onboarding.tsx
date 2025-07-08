@@ -31,9 +31,13 @@ import {
   TouchableWithoutFeedback,
   View
 } from 'react-native';
+import Rive from 'rive-react-native';
 
 const redirectTo = makeRedirectUri();
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+
+// Simplified responsive constants: legacy devices (no notch) vs modern
+const LEGACY_DEVICE = screenHeight < 700; // Approximate older, non-notch iPhones
 
 const TOTAL_STEPS = 14;
 
@@ -41,8 +45,8 @@ export default function OnboardingScreen() {
   const { signIn } = useAuthActions();
   const router = useRouter();
   const convex = useConvex();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [slideAnim] = useState(new Animated.Value(0));
+  const [currentStep, setCurrentStep] = useState(1);
+  const [slideAnim] = useState(new Animated.Value(1));
   const nameInputRef = useRef<TextInput>(null);
   const [pushService, setPushService] = useState<PushNotificationService | null>(null);
 
@@ -54,6 +58,9 @@ export default function OnboardingScreen() {
   const [textPulseAnim] = useState(new Animated.Value(1)); // For pulsing effect
   const [gifOpacityAnim] = useState(new Animated.Value(1));
   const [secondGifOpacityAnim] = useState(new Animated.Value(0));
+
+  // Rive idle animation URL
+  const RIVE_URL_IDDLE = "https://curious-badger-131.convex.cloud/api/storage/9caf3bc8-1fab-4dab-a8e5-4b6d563ca7d6";
 
   const [data, setData] = useState<OnboardingData>({
     mascotName: null,
@@ -431,7 +438,7 @@ export default function OnboardingScreen() {
     <View style={styles.stepContainer}>
       <View style={styles.flameIntroContainer}>
         <View style={styles.blazeContainer}>
-          <Image source={require('@/assets/images/flame/age0.gif')} style={styles.blazeImage} resizeMode="contain" />
+          <Rive url={RIVE_URL_IDDLE} style={styles.blazeImage} autoplay={true} />
         </View>
 
         <View style={styles.flameIntroButtons}>
@@ -469,7 +476,7 @@ export default function OnboardingScreen() {
     <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
       <View style={styles.stepContainer}>
         <View style={styles.blazeContainer}>
-          <Image source={require('@/assets/images/flame/age0.gif')} style={styles.blazeImage} resizeMode="contain" />
+          <Rive url={RIVE_URL_IDDLE} style={styles.blazeImage} autoplay={true} />
         </View>
 
         <View style={styles.nameContent}>
@@ -842,12 +849,6 @@ export default function OnboardingScreen() {
             }}
           >
             <View style={styles.listOptionContent}>
-              <Ionicons
-                name={option.icon as any}
-                size={20}
-                color={data.gender === option.value ? Theme.colors.accent.primary : Theme.colors.text.tertiary}
-                style={styles.listOptionIcon}
-              />
               <Text style={[styles.listOptionText, data.gender === option.value && styles.listOptionTextSelected]}>{option.title}</Text>
             </View>
           </TouchableOpacity>
@@ -872,12 +873,12 @@ export default function OnboardingScreen() {
           ].map((range) => (
             <TouchableOpacity
               key={range.value}
-              style={[styles.ageListOption, data.age === range.value && styles.listOptionSelected]}
+              style={[styles.listOption, data.age === range.value && styles.listOptionSelected]}
               onPress={() => {
                 handleSelection(() => updateData({ age: range.value }));
               }}
             >
-              <Text style={[styles.ageListText, data.age === range.value && styles.listOptionTextSelected]}>{range.label}</Text>
+              <Text style={[styles.listOptionText, data.age === range.value && styles.listOptionTextSelected]}>{range.label}</Text>
             </TouchableOpacity>
           ))}
         </View>
@@ -982,7 +983,7 @@ export default function OnboardingScreen() {
         </View>
 
         <View style={styles.blazeAuthContainer}>
-          <Image source={require('@/assets/images/flame/age0.gif')} style={styles.blazeAuthImage} resizeMode="contain" />
+          <Rive url={RIVE_URL_IDDLE} style={styles.blazeAuthImage} autoplay={true} />
         </View>
 
         <View style={styles.authBenefitsList}>
@@ -1108,7 +1109,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Theme.spacing.xl,
-    paddingTop: 50,
+    paddingTop: LEGACY_DEVICE ? 20 : 50,
   },
   backButton: {
     padding: Theme.spacing.sm,
@@ -1160,7 +1161,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.xl,
     flex: 1,
     justifyContent: 'flex-start',
-    paddingTop: Theme.spacing.lg,
+    paddingTop: LEGACY_DEVICE ? Theme.spacing.xs : Theme.spacing.lg,
   },
   welcomeContainer: {
     alignItems: 'center',
@@ -1172,13 +1173,9 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: Theme.spacing.lg,
   },
-  blazeGif: {
-    width: 350,
-    height: 350,
-  },
   blazeImage: {
-    width: 200,
-    height: 200,
+    width: LEGACY_DEVICE ? 140 : 200,
+    height: LEGACY_DEVICE ? 140 : 200,
   },
   welcomeContent: {
     alignItems: 'center',
@@ -1230,7 +1227,7 @@ const styles = StyleSheet.create({
   },
   pathImageContainer: {
     width: '100%',
-    height: 200,
+    height: LEGACY_DEVICE ? 140 : 200,
     backgroundColor: Theme.colors.background.secondary,
     alignItems: 'center',
     justifyContent: 'center',
@@ -1263,19 +1260,20 @@ const styles = StyleSheet.create({
 
   // Standardized list styles
   listContainer: {
-    gap: Theme.spacing.md,
+    gap: LEGACY_DEVICE ? Theme.spacing.sm : Theme.spacing.md,
     width: '100%',
   },
   listContainerWithTopMargin: {
     gap: Theme.spacing.lg,
-    marginTop: 100,
+    marginTop: LEGACY_DEVICE ? 20 : 100,
   },
   listOption: {
     flexDirection: 'row',
     alignItems: 'center',
     backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
+    paddingVertical: LEGACY_DEVICE ? Theme.spacing.md : Theme.spacing.xl,
+    paddingHorizontal: LEGACY_DEVICE ? Theme.spacing.lg : Theme.spacing.xl,
     borderWidth: 2,
     borderColor: 'transparent',
   },
@@ -1284,7 +1282,8 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.transparent.accent20,
   },
   listOptionText: {
-    fontSize: 18,
+    textAlign: 'center',
+    fontSize: LEGACY_DEVICE ? 16 : 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     flex: 1,
@@ -1297,16 +1296,13 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     flex: 1,
   },
-  listOptionIcon: {
-    marginRight: Theme.spacing.md,
-  },
   scheduleSection: {
     gap: Theme.spacing.xxxl,
   },
   daysPerWeekSection: {
     alignItems: 'center',
     gap: Theme.spacing.xl,
-    marginTop: 200,
+    marginTop: LEGACY_DEVICE ? 100 : 200,
   },
   sectionTitle: {
     fontSize: 20,
@@ -1360,7 +1356,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   preferredDaysSection: {
-    gap: Theme.spacing.lg,
+    gap: Theme.spacing.md,
   },
   preferredDaysHeader: {
     alignItems: 'center',
@@ -1374,7 +1370,7 @@ const styles = StyleSheet.create({
 
   workoutStyleGrid: {
     gap: Theme.spacing.xl,
-    marginTop: 200,
+    marginTop: LEGACY_DEVICE ? 100 : 200,
   },
   workoutStyleCard: {
     backgroundColor: Theme.colors.background.tertiary,
@@ -1406,7 +1402,7 @@ const styles = StyleSheet.create({
   },
   unitsGrid: {
     gap: Theme.spacing.xl,
-    marginTop: 200,
+    marginTop: LEGACY_DEVICE ? 100 : 200,
   },
   unitCard: {
     backgroundColor: Theme.colors.background.tertiary,
@@ -1438,22 +1434,7 @@ const styles = StyleSheet.create({
   },
   ageSection: {
     alignItems: 'center',
-    gap: Theme.spacing.xl,
-  },
-  ageListOption: {
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.xl,
-    paddingHorizontal: Theme.spacing.xxl,
-    alignItems: 'center',
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  ageListText: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    textAlign: 'center',
+    gap: LEGACY_DEVICE ? Theme.spacing.sm : Theme.spacing.md,
   },
   notificationsSection: {
     gap: Theme.spacing.xl,
@@ -1470,7 +1451,7 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   mockNotificationContainer: {
-    marginTop: 100,
+    marginTop: LEGACY_DEVICE ? 20 : 100,
     alignItems: 'center',
     gap: Theme.spacing.lg,
   },
@@ -1593,7 +1574,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
   },
   authSection: {
-    gap: Theme.spacing.xl,
+    gap: LEGACY_DEVICE ? Theme.spacing.sm : Theme.spacing.md,
   },
   authHeroSection: {
     alignItems: 'center',
@@ -1611,8 +1592,8 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.lg,
   },
   blazeAuthImage: {
-    width: 200,
-    height: 200,
+    width: LEGACY_DEVICE ? 140 : 200,
+    height: LEGACY_DEVICE ? 140 : 200,
   },
   authBenefitsList: {
     gap: Theme.spacing.lg,
@@ -1769,7 +1750,7 @@ const styles = StyleSheet.create({
   },
   cinematicTextContainer: {
     position: 'absolute',
-    top: 120,
+    top: LEGACY_DEVICE ? 80 : 120,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -1824,7 +1805,7 @@ const styles = StyleSheet.create({
   // Rating styles
   ratingSection: {
     gap: Theme.spacing.xl,
-    marginTop: 200,
+    marginTop: LEGACY_DEVICE ? 100 : 200,
   },
   ratingContainer: {
     alignItems: 'center',
@@ -1875,20 +1856,21 @@ const styles = StyleSheet.create({
   // Flame introduction styles
   flameIntroContainer: {
     alignItems: 'center',
-    justifyContent: 'center',
-    marginTop: 150,
+    flex: 1,
+    justifyContent: 'space-between',
+    paddingTop: Theme.spacing.xl,
   },
   flameIntroButtons: {
+    marginTop: LEGACY_DEVICE ? 20 : 100,
     width: '100%',
     gap: Theme.spacing.lg,
-    marginTop: 100,
   },
   getStartedButton: {
     borderRadius: Theme.borderRadius.large,
     paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
     borderColor: Theme.colors.accent.primary,
-    borderBottomWidth: 3,
+    borderBottomWidth: 4,
     borderBottomColor: Theme.colors.accent.secondary,
     backgroundColor: Theme.colors.accent.primary,
   },

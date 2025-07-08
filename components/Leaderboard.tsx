@@ -1,6 +1,6 @@
 import Theme from '@/constants/theme';
 import { UserRankInfo } from '@/convex/leaderboard';
-import { Ionicons } from '@expo/vector-icons';
+import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useQuery } from "convex/react";
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
@@ -150,7 +150,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
             )}
           </View>
           <TouchableOpacity style={styles.addFriendButton} onPress={() => router.push('/add-friend')}>
-            <Ionicons name="add-circle" size={24} color={Theme.colors.special.primary.exp} />
+            <FontAwesome5 name="user-plus" size={20} color={Theme.colors.special.primary.exp} />
             <Text style={styles.addFriendButtonText}>Add Friends</Text>
           </TouchableOpacity>
         </View>
