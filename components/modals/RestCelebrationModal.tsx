@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from "convex/react";
 import * as Haptics from 'expo-haptics';
@@ -34,6 +35,7 @@ export default function RestCelebrationModal({
   const [isCompleting, setIsCompleting] = useState(false);
   const [completionResult, setCompletionResult] = useState<any>(null);
   const [hasAttemptedCompletion, setHasAttemptedCompletion] = useState(false);
+  const analytics = useAnalytics();
 
   // Convex mutation
   const completeRestDay = useMutation(api.userProfile.completeRestDay);
@@ -89,6 +91,7 @@ export default function RestCelebrationModal({
 
   useEffect(() => {
     if (visible) {
+      analytics.track({ name: 'rest_celebration_viewed' });
       // Reset all values
       setCurrentStep('info');
       setIsCompleting(false);
@@ -111,8 +114,11 @@ export default function RestCelebrationModal({
   useEffect(() => {
     if (visible) {
       animateStepEntrance();
+      if (currentStep === 'rewards') {
+        analytics.track({ name: 'rest_celebration_rewards_viewed' });
+      }
     }
-  }, [currentStep]);
+  }, [visible, currentStep]);
 
   const animateStepEntrance = () => {
     stepScale.value = 0;
@@ -137,6 +143,7 @@ export default function RestCelebrationModal({
 
   const handleContinue = async () => {
     if (currentStep === 'info') {
+      analytics.track({ name: 'rest_celebration_complete_clicked' });
       // Prevent multiple attempts
       if (isCompleting || hasAttemptedCompletion) return;
 
@@ -150,10 +157,12 @@ export default function RestCelebrationModal({
         });
 
         if (result.success) {
+          analytics.track({ name: 'rest_day_completed_successfully_from_modal' });
           setCompletionResult(result);
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
           setCurrentStep('rewards');
         } else if (result.alreadyCompleted) {
+          analytics.track({ name: 'rest_day_already_completed_from_modal' });
           // Handle the "already completed" case from backend
           console.log('Rest day already completed, using returned data');
           setCompletionResult(result);
@@ -161,6 +170,7 @@ export default function RestCelebrationModal({
           setCurrentStep('rewards');
         }
       } catch (error: any) {
+        analytics.track({ name: 'rest_day_completion_failed_from_modal', properties: { error: error.message } });
         console.log('Rest day completion error:', error);
 
         // Check if it's the "already completed" error - be more flexible with error message detection
@@ -196,6 +206,7 @@ export default function RestCelebrationModal({
   };
 
   const handleClose = () => {
+    analytics.track({ name: 'rest_celebration_closed', properties: { closed_at_step: currentStep } });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     stepScale.value = withTiming(0, { duration: 200 });

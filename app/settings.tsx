@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import DatabaseHealthService from '@/services/DatabaseHealthService';
 import DatabaseStravaService from '@/services/DatabaseStravaService';
 import { PushNotificationService } from '@/services/PushNotificationService';
@@ -17,6 +18,7 @@ export default function SettingsScreen() {
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const convex = useConvex();
+  const analytics = useAnalytics();
 
   // Convex queries and mutations
   const profile = useQuery(api.userProfile.getOrCreateProfile);
@@ -57,6 +59,7 @@ export default function SettingsScreen() {
   const handleHealthKitToggle = async (enabled: boolean) => {
     try {
       setIsLoading(true);
+      analytics.track({ name: 'healthkit_sync_toggled', properties: { enabled } });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       if (enabled) {
@@ -148,6 +151,7 @@ export default function SettingsScreen() {
         lastHealthKitSync: undefined,
       });
 
+      analytics.track({ name: 'data_source_switched', properties: { to: 'healthkit' } });
       // Perform initial sync
       if (healthService) {
         try {
@@ -180,6 +184,7 @@ export default function SettingsScreen() {
 
     try {
       setIsSyncing(true);
+      analytics.track({ name: 'manual_sync_triggered', properties: { source: 'healthkit' } });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       const syncResult = await healthService.forceSyncFromHealthKit(30);
@@ -205,6 +210,7 @@ export default function SettingsScreen() {
 
     try {
       setIsLoading(true);
+      analytics.track({ name: 'strava_connect_initiated' });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       const success = await stravaService.authenticate();
@@ -348,6 +354,7 @@ export default function SettingsScreen() {
           onPress: async () => {
             try {
               setIsLoading(true);
+              analytics.track({ name: 'strava_disconnect_initiated' });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
               await stravaService.disconnect();
@@ -373,6 +380,7 @@ export default function SettingsScreen() {
 
     try {
       setIsLoading(true);
+      analytics.track({ name: 'strava_sync_toggled', properties: { enabled } });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       if (enabled) {
@@ -442,6 +450,18 @@ export default function SettingsScreen() {
         lastStravaSync: undefined,
       });
 
+      analytics.track({ name: 'data_source_switched', properties: { to: 'strava' } });
+      // Perform initial sync
+      if (stravaService) {
+        try {
+          console.log('[Settings] Performing initial Strava sync after switching data source...');
+          const syncResult = await stravaService.forceSyncFromStrava(30);
+          console.log('[Settings] Strava initial sync result:', syncResult);
+        } catch (syncErr) {
+          console.warn('[Settings] Initial Strava sync failed:', syncErr);
+        }
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Switched to Strava', 'Your primary data source is now Strava. HealthKit sync has been disabled.');
     } catch (error) {
@@ -466,6 +486,7 @@ export default function SettingsScreen() {
 
     try {
       setIsSyncing(true);
+      analytics.track({ name: 'manual_sync_triggered', properties: { source: 'strava' } });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       const syncResult = await stravaService.forceSyncFromStrava(30);
@@ -507,6 +528,7 @@ export default function SettingsScreen() {
   const runDeduplication = async (keepSource: 'healthkit' | 'strava') => {
     try {
       setIsDeduplicating(true);
+      analytics.track({ name: 'deduplication_initiated', properties: { keep_source: keepSource } });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       console.log(`[Settings] Running deduplication, keeping ${keepSource} activities`);
@@ -545,16 +567,18 @@ export default function SettingsScreen() {
   const handleDeleteAccount = async () => {
     Alert.alert(
       'Delete Account',
-      'Are you sure you want to delete your account? This action cannot be undone.',
+      'This will permanently delete your account and all associated data. This action cannot be undone.',
       [
         { text: 'Cancel', style: 'cancel' },
         {
-          text: 'Delete',
+          text: 'Delete Account',
           style: 'destructive',
           onPress: async () => {
             try {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+              analytics.track({ name: 'account_deletion_confirmed' });
               await signOut();
+              // TODO: Call a backend function to delete user data from Convex
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             } catch (error) {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
               Alert.alert("Error", "Failed to delete account");
@@ -568,9 +592,9 @@ export default function SettingsScreen() {
 
   const handleMetricSystemToggle = async (useMetric: boolean) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      analytics.track({ name: 'metric_system_toggled', properties: { metric_enabled: useMetric } });
       await updateMetricSystem({ metricSystem: useMetric ? "metric" : "imperial" });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
       console.error('Error updating metric system:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -580,9 +604,9 @@ export default function SettingsScreen() {
 
   const handleWorkoutStyleToggle = async (preferTime: boolean) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      analytics.track({ name: 'workout_style_toggled', properties: { prefer_time: preferTime } });
       await updateTrainingProfile({ preferTimeOverDistance: preferTime });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
       console.error('Error updating workout style:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -596,6 +620,7 @@ export default function SettingsScreen() {
     try {
       setIsLoading(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      analytics.track({ name: 'push_notifications_toggled', properties: { enabled } });
 
       if (enabled) {
         // Register for push notifications
@@ -628,16 +653,9 @@ export default function SettingsScreen() {
     if (!pushService || !profile?.userId) return;
 
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      const success = await pushService.sendTestNotification(profile.userId);
-
-      if (success) {
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert('Test Sent!', 'Check your notifications to see if it worked. Tap the notification to see the celebration!');
-      } else {
-        Alert.alert('Test Failed', 'Could not send test notification. Make sure push notifications are enabled.');
-      }
+      analytics.track({ name: 'test_push_notification_sent' });
+      await pushService.sendTestNotification(profile.userId);
+      Alert.alert('Sent!', 'Test notification has been sent. It may take a moment to arrive.');
     } catch (error) {
       console.error('Error sending test notification:', error);
       Alert.alert('Error', 'Failed to send test notification');
@@ -654,6 +672,7 @@ export default function SettingsScreen() {
 
     try {
       setIsLoading(true);
+      analytics.track({ name: 'strava_webhook_created' });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       const success = await stravaService.createWebhook();
@@ -676,6 +695,7 @@ export default function SettingsScreen() {
   const testWebhookEndpoint = async () => {
     try {
       setIsLoading(true);
+      analytics.track({ name: 'strava_webhook_tested' });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
       // Test if our webhook endpoint is responding

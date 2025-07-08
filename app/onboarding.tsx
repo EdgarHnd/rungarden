@@ -2,6 +2,7 @@ import Theme from '@/constants/theme';
 import {
   OnboardingData
 } from '@/constants/types';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { PushNotificationService } from '@/services/PushNotificationService';
 import { requestRating as requestStoreRating } from '@/services/RatingService';
 import { useAuthActions } from "@convex-dev/auth/react";
@@ -45,8 +46,9 @@ export default function OnboardingScreen() {
   const { signIn } = useAuthActions();
   const router = useRouter();
   const convex = useConvex();
-  const [currentStep, setCurrentStep] = useState(1);
-  const [slideAnim] = useState(new Animated.Value(1));
+  const analytics = useAnalytics();
+  const [currentStep, setCurrentStep] = useState(0);
+  const [slideAnim] = useState(new Animated.Value(0));
   const nameInputRef = useRef<TextInput>(null);
   const [pushService, setPushService] = useState<PushNotificationService | null>(null);
 
@@ -58,6 +60,51 @@ export default function OnboardingScreen() {
   const [textPulseAnim] = useState(new Animated.Value(1)); // For pulsing effect
   const [gifOpacityAnim] = useState(new Animated.Value(1));
   const [secondGifOpacityAnim] = useState(new Animated.Value(0));
+
+  const getStepName = (step: number) => {
+    switch (step) {
+      case 0:
+        return 'welcome_cinematic';
+      case 1:
+        return 'flame_introduction';
+      case 2:
+        return 'name_mascot';
+      case 3:
+        return 'choose_path';
+      case 4:
+        return 'current_ability';
+      case 5:
+        return 'days_per_week';
+      case 6:
+        return 'preferred_days';
+      case 7:
+        return 'workout_style';
+      case 8:
+        return 'units';
+      case 9:
+        return 'gender';
+      case 10:
+        return 'age_range';
+      case 11:
+        return 'notifications_prompt';
+      case 12:
+        return 'rating_prompt';
+      case 13:
+        return 'auth_prompt';
+      default:
+        return `unknown_step_${step}`;
+    }
+  };
+
+  useEffect(() => {
+    analytics.track({
+      name: 'onboarding_step_viewed',
+      properties: {
+        step_number: currentStep,
+        step_name: getStepName(currentStep),
+      },
+    });
+  }, [currentStep, analytics]);
 
   // Rive idle animation URL
   const RIVE_URL_IDDLE = "https://curious-badger-131.convex.cloud/api/storage/9caf3bc8-1fab-4dab-a8e5-4b6d563ca7d6";
@@ -240,6 +287,13 @@ export default function OnboardingScreen() {
 
   const nextStep = () => {
     if (currentStep < TOTAL_STEPS - 1) {
+      analytics.track({
+        name: 'onboarding_step_completed',
+        properties: {
+          step_number: currentStep,
+          step_name: getStepName(currentStep),
+        },
+      });
       // Blur the name input if we're leaving the name step
       if (currentStep === 2 && nameInputRef.current) {
         nameInputRef.current.blur();
@@ -257,6 +311,13 @@ export default function OnboardingScreen() {
 
   const prevStep = () => {
     if (currentStep > 1) { // Don't go back from welcome step (0) or flame intro (1)
+      analytics.track({
+        name: 'onboarding_step_revisited',
+        properties: {
+          step_number: currentStep,
+          step_name: getStepName(currentStep),
+        },
+      });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       Animated.timing(slideAnim, {
         toValue: currentStep - 1,
@@ -1045,10 +1106,10 @@ export default function OnboardingScreen() {
 
   return (
     <View style={styles.container}>
-      <LinearGradient
+      {/* <LinearGradient
         colors={[Theme.colors.background.tertiary, Theme.colors.background.secondary, Theme.colors.background.primary]}
         style={styles.solidBackground}
-      />
+      /> */}
       {renderProgressBar()}
       {renderHeader()}
       <View style={styles.content}>

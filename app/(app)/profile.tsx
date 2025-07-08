@@ -4,6 +4,7 @@ import StreakDisplay from '@/components/modals/StreakDisplay';
 import XPInfoModal from '@/components/modals/XPInfoModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService from '@/services/LevelingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5 } from '@expo/vector-icons';
@@ -17,6 +18,7 @@ export default function ProfileScreen() {
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
+  const analytics = useAnalytics();
   const currentUser = useQuery(api.userProfile.currentUser);
   // Convex queries
   const profile = useQuery(api.userProfile.getOrCreateProfile);
@@ -94,6 +96,12 @@ export default function ProfileScreen() {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       await updateWeeklyGoal({ goal: goalInMeters });
+      analytics.track({
+        name: 'weekly_goal_updated',
+        properties: {
+          new_goal_meters: goalInMeters,
+        },
+      });
       setShowGoalModal(false);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert('Success', 'Weekly goal updated!');
@@ -130,9 +138,11 @@ export default function ProfileScreen() {
     setSelectedChallenge(challenge);
 
     if (challenge.isCompleted && challenge.isNew && !challenge.rewardClaimed) {
+      analytics.track({ name: 'challenge_celebration_viewed', properties: { challenge_id: challenge.id } });
       // Show celebration modal for newly completed challenges
       setShowCelebrationModal(true);
     } else {
+      analytics.track({ name: 'challenge_progress_viewed', properties: { challenge_id: challenge.id } });
       // Show progress modal for other challenges
       setShowProgressModal(true);
     }
@@ -140,6 +150,7 @@ export default function ProfileScreen() {
 
   const handleClaimReward = async (challengeId: string) => {
     try {
+      analytics.track({ name: 'challenge_reward_claimed', properties: { challenge_id: challengeId } });
       await claimReward(challengeId);
       setShowCelebrationModal(false);
       setSelectedChallenge(null);
@@ -175,6 +186,7 @@ export default function ProfileScreen() {
         <TouchableOpacity
           style={styles.settingsButton}
           onPress={() => {
+            analytics.track({ name: 'settings_screen_viewed' });
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             router.push('/settings');
           }}
@@ -201,6 +213,7 @@ export default function ProfileScreen() {
           {/* <View style={styles.friendsInfoContainer}>
             <Text style={styles.friendsInfoText}> Friends: {0 || 0}</Text>
             <TouchableOpacity style={styles.addFriendButton} onPress={() => {
+              analytics.track({ name: 'add_friend_screen_viewed' });
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.push('/add-friend');
             }} activeOpacity={0.7}>

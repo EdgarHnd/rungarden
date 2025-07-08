@@ -1,6 +1,7 @@
 import Theme from '@/constants/theme';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { Ionicons } from '@expo/vector-icons';
-import React from 'react';
+import React, { useEffect } from 'react';
 import { Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface HealthModalProps {
@@ -15,22 +16,41 @@ interface HealthModalProps {
 }
 
 export default function HealthModal({ visible, mascotHealth, simpleSchedule, onClose }: HealthModalProps) {
+  const analytics = useAnalytics();
+
+  useEffect(() => {
+    if (visible) {
+      analytics.track({
+        name: 'health_modal_viewed',
+        properties: {
+          mascot_health: mascotHealth,
+          schedule_active: simpleSchedule?.isActive,
+        },
+      });
+    }
+  }, [visible]);
+
+  const handleClose = () => {
+    analytics.track({ name: 'health_modal_closed' });
+    onClose();
+  };
+
   return (
     <Modal
       visible={visible}
       transparent={true}
       animationType="fade"
-      onRequestClose={onClose}
+      onRequestClose={handleClose}
     >
       <TouchableOpacity
         style={styles.overlay}
         activeOpacity={1}
-        onPress={onClose}
+        onPress={handleClose}
       >
         <View style={styles.container}>
           <View style={styles.header}>
             <Text style={styles.title}>Your Flame's Health</Text>
-            <TouchableOpacity onPress={onClose} style={styles.closeButton}>
+            <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={Theme.colors.text.secondary} />
             </TouchableOpacity>
           </View>

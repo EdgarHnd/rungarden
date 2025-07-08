@@ -7,6 +7,8 @@ import * as SecureStore from "expo-secure-store";
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
 import { ActivityIndicator, Platform, View } from 'react-native';
+import { AnalyticsProviderComponent } from '../provider/AnalyticsProvider';
+import { MixpanelProvider } from '../provider/MixpanelProvider';
 import OnboardingScreen from './onboarding';
 
 // Keep the splash screen visible while we fetch resources
@@ -15,6 +17,8 @@ SplashScreen.preventAutoHideAsync();
 const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
   unsavedChangesWarning: false,
 });
+
+const mixpanelProvider = new MixpanelProvider(process.env.EXPO_PUBLIC_MIXPANEL_TOKEN!);
 
 const secureStorage = {
   getItem: SecureStore.getItemAsync,
@@ -103,6 +107,7 @@ export default function RootLayout() {
     if (loaded || error) {
       SplashScreen.hideAsync();
     }
+    mixpanelProvider.initialize();
   }, [loaded, error]);
 
   if (!loaded && !error) {
@@ -110,23 +115,25 @@ export default function RootLayout() {
   }
 
   return (
-    <ConvexAuthProvider
-      client={convex}
-      storage={
-        Platform.OS === "android" || Platform.OS === "ios"
-          ? secureStorage
-          : undefined
-      }
-    >
-      <AuthLoading>
-        <LoadingScreen />
-      </AuthLoading>
-      <Unauthenticated>
-        <OnboardingScreen />
-      </Unauthenticated>
-      <Authenticated>
-        <AuthenticatedApp />
-      </Authenticated>
-    </ConvexAuthProvider>
+    <AnalyticsProviderComponent provider={mixpanelProvider}>
+      <ConvexAuthProvider
+        client={convex}
+        storage={
+          Platform.OS === "android" || Platform.OS === "ios"
+            ? secureStorage
+            : undefined
+        }
+      >
+        <AuthLoading>
+          <LoadingScreen />
+        </AuthLoading>
+        <Unauthenticated>
+          <OnboardingScreen />
+        </Unauthenticated>
+        <Authenticated>
+          <AuthenticatedApp />
+        </Authenticated>
+      </ConvexAuthProvider>
+    </AnalyticsProviderComponent>
   );
 }

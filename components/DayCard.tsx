@@ -7,6 +7,7 @@ import Theme from '@/constants/theme';
 import { SuggestedActivity, getActivityType, isDatabasePlannedWorkout, isGeneratedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
 import { Doc } from '@/convex/_generated/dataModel';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { formatDistanceValue, formatPace } from '@/utils/formatters';
 import { useMutation, useQuery } from 'convex/react';
 import { router } from 'expo-router';
@@ -38,12 +39,21 @@ export default function DayCard({
   const completeRestDay = useMutation(api.userProfile.completeRestDay);
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
+  const analytics = useAnalytics();
 
   // Check if there are activities that match this planned workout
   const hasLinkedActivities = activities.length > 0 && plannedWorkout && isDatabasePlannedWorkout(plannedWorkout) && plannedWorkout.status === 'completed';
   const workoutType = plannedWorkout ? getActivityType(plannedWorkout) : 'run';
 
   const handleActivityPress = (activity: Doc<"activities">) => {
+    analytics.track({
+      name: 'activity_card_pressed',
+      properties: {
+        activity_id: activity._id,
+        activity_source: activity.source,
+        activity_date: activity.startDate,
+      }
+    });
     router.push({
       pathname: '/activity-detail',
       params: {
@@ -73,17 +83,34 @@ export default function DayCard({
   };
 
   const handleTrainingPress = async (plannedWorkout: SuggestedActivity) => {
+    const workoutType = getActivityType(plannedWorkout);
+    const isDbWorkout = isDatabasePlannedWorkout(plannedWorkout);
+    const isSimpleRun = isGeneratedActivity(plannedWorkout) && plannedWorkout.isSimpleScheduleRun;
+
+    analytics.track({
+      name: 'planned_workout_pressed',
+      properties: {
+        workout_type: workoutType,
+        is_database_workout: isDbWorkout,
+        is_simple_schedule_run: isSimpleRun,
+        is_generated_activity: isGeneratedActivity(plannedWorkout),
+        date: plannedWorkout.scheduledDate
+      }
+    });
     // If it's a rest day, complete it directly
     if (workoutType === 'rest') {
       try {
+        analytics.track({ name: 'rest_day_complete_attempted' });
         const result = await completeRestDay({
           date: plannedWorkout.scheduledDate,
           notes: undefined // Could add note input in the future
         });
         if (result.success || result.alreadyCompleted) {
+          analytics.track({ name: 'rest_day_completed_successfully' });
           setShowRestCelebrationModal(true);
         }
       } catch (e) {
+        analytics.track({ name: 'rest_day_complete_failed' });
         console.error("Failed to complete rest day", e);
       }
       return;
@@ -110,11 +137,13 @@ export default function DayCard({
   };
 
   const handleSimpleRunPress = async () => {
+    analytics.track({ name: 'simple_run_pressed' });
     if (!isToday && !isDatabasePlannedWorkout(plannedWorkout)) {
       router.push({
         pathname: '/activities',
       });
     } else {
+      analytics.track({ name: 'recording_modal_viewed_from_day_card' });
       // Show the recording modal
       setShowRecordingModal(true);
     }

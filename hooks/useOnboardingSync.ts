@@ -1,14 +1,16 @@
 import {
-    OnboardingTrainingProfileData,
-    OnboardingUserProfileData,
-    StoredOnboardingData
+  OnboardingTrainingProfileData,
+  OnboardingUserProfileData,
+  StoredOnboardingData
 } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useMutation, useQuery } from 'convex/react';
 import { useEffect } from 'react';
 
 export function useOnboardingSync() {
+  const analytics = useAnalytics();
   // Try to get the training profile - if this succeeds, user is authenticated
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const saveTrainingProfile = useMutation(api.trainingProfile.saveOnboardingData);
@@ -138,6 +140,11 @@ export function useOnboardingSync() {
         //   console.error('Failed to generate training plan:', planError);
         // }
         
+        analytics.track({
+          name: 'onboarding_completed',
+          properties: { ...onboardingData }
+        });
+        
         // Clear the pending data after successful save
         await AsyncStorage.removeItem('pendingOnboardingData');
         console.log('Onboarding data successfully synced and cleared from storage');
@@ -149,5 +156,5 @@ export function useOnboardingSync() {
     };
 
     syncPendingOnboardingData();
-  }, [trainingProfile, saveTrainingProfile, updateUserProfile, updateSyncPreferences, setSimpleTrainingSchedule]);
+  }, [trainingProfile, saveTrainingProfile, updateUserProfile, updateSyncPreferences, setSimpleTrainingSchedule, analytics]);
 } 

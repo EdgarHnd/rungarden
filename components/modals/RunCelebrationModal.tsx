@@ -2,6 +2,7 @@ import StatsBadges from '@/components/StatsBadges';
 import StreakModalComponent from '@/components/modals/StreakModalComponent';
 import Theme from '@/constants/theme';
 import { Doc } from '@/convex/_generated/dataModel';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService from '@/services/LevelingService';
 import RunFeelingService, { FeelingType } from '@/services/RunFeelingService';
 import * as Haptics from 'expo-haptics';
@@ -64,6 +65,7 @@ export default function RunCelebrationModal({
 }: RunCelebrationModalProps) {
   const [currentStep, setCurrentStep] = useState<'stats' | 'xp' | 'streak' | 'coins'>('stats');
   const [selectedFeeling, setSelectedFeeling] = useState<FeelingType | null>(null);
+  const analytics = useAnalytics();
 
   // Reanimated values for all animations
   const stepScale = useSharedValue(0);
@@ -182,6 +184,14 @@ export default function RunCelebrationModal({
       streakScale.value = 0;
       rewardIconScale.value = 0;
       rewardIconRotation.value = 0;
+
+      analytics.track({
+        name: 'run_celebration_viewed',
+        properties: {
+          run_id: runData?._id,
+          is_initial_sync: isInitialSync,
+        },
+      });
 
       // Reset feeling button scales
       Object.values(feelingScales).forEach(scale => {
@@ -352,6 +362,14 @@ export default function RunCelebrationModal({
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setSelectedFeeling(feeling);
 
+    analytics.track({
+      name: 'run_celebration_feeling_selected',
+      properties: {
+        feeling: feeling,
+        run_id: runData?._id,
+      },
+    });
+
     // Extra haptic for special feelings
     if (feeling === 'amazing') {
       setTimeout(() => {
@@ -365,6 +383,13 @@ export default function RunCelebrationModal({
   };
 
   const handleContinue = () => {
+    analytics.track({
+      name: 'run_celebration_continue_clicked',
+      properties: {
+        current_step: currentStep,
+        run_id: runData?._id,
+      }
+    });
     if (currentStep === 'stats') {
       if (selectedFeeling && runData) {
         RunFeelingService.recordFeeling(runData._id, selectedFeeling);
@@ -399,6 +424,14 @@ export default function RunCelebrationModal({
 
   const handleClose = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+    analytics.track({
+      name: 'run_celebration_closed',
+      properties: {
+        closed_at_step: currentStep,
+        run_id: runData?._id,
+      }
+    });
 
     // Exit animation
     stepScale.value = withTiming(0, {

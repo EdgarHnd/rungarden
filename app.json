@@ -20,8 +20,10 @@
         "NSHealthShareUsageDescription": "This app needs access to health data to track your running activities and provide insights about your fitness progress.",
         "NSHealthUpdateUsageDescription": "This app needs permission to write workout data to Apple Health to keep your fitness data synchronized.",
         "LSApplicationQueriesSchemes": [
+          "strava",
           "strava"
-        ]
+        ],
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
@@ -57,7 +59,7 @@
       [
         "react-native-health",
         {
-          "isClinicalDataEnabled": true,
+          "isClinicalDataEnabled": false,
           "healthSharePermission": "This app needs access to health data to track your running activities and provide insights about your fitness progress.",
           "healthUpdatePermission": "This app needs permission to write workout data to Apple Health to keep your fitness data synchronized."
         }

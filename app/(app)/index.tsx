@@ -11,6 +11,7 @@ import { getActivityType, SuggestedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
 import { Doc } from '@/convex/_generated/dataModel';
 import { useOnboardingSync } from '@/hooks/useOnboardingSync';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
 import Ionicons from '@expo/vector-icons/build/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -46,6 +47,7 @@ export default function HomeScreen() {
   const { isAuthenticated } = useConvexAuth();
   const convex = useConvex();
   const router = useRouter();
+  const analytics = useAnalytics();
 
   // Sync pending onboarding data when user becomes authenticated
   useOnboardingSync();
@@ -204,6 +206,7 @@ export default function HomeScreen() {
     if (__DEV__) {
       setShowDebugModal(true);
     } else {
+      analytics.track({ name: 'xp_info_modal_viewed', properties: { source: 'title_press' } });
       setShowXPModal(true);
     }
   };
@@ -519,6 +522,15 @@ export default function HomeScreen() {
       const totalDistance = sourceActivities.reduce((sum, a) => sum + (a.distance || 0), 0);
       const createdRuns = sourceActivities.length;
 
+      analytics.track({
+        name: 'initial_sync_modal_viewed',
+        properties: {
+          source: sourceFilter,
+          runs_synced: createdRuns,
+          distance_synced: totalDistance,
+        },
+      });
+
       // Before-sync level assumed 1, after-sync from profile
       const oldLevel = 1;
       const newLevel = profile?.level || 1;
@@ -571,10 +583,14 @@ export default function HomeScreen() {
               { text: 'Cancel', style: 'cancel' },
               {
                 text: 'Open Settings',
-                onPress: () => router.push('/settings')
+                onPress: () => {
+                  analytics.track({ name: 'data_source_alert_accepted' });
+                  router.push('/settings')
+                }
               }
             ]
           );
+          analytics.track({ name: 'data_source_alert_viewed' });
           // Mark that we've shown the alert
           await AsyncStorage.setItem('hasShownDataSourceAlert', 'true');
         }
@@ -597,6 +613,7 @@ export default function HomeScreen() {
         challengesUnlocked: [],
       };
 
+      analytics.track({ name: 'run_celebration_viewed' });
       setRunCelebrationData({
         runData: activityTocelebrate,
         rewards: mockRewards,
@@ -629,6 +646,13 @@ export default function HomeScreen() {
       clearTimeout(updateTimeoutRef.current);
     }
 
+    analytics.track({
+      name: 'day_selected',
+      properties: {
+        day_index: dayIndex,
+        date: allDays[dayIndex]?.date,
+      },
+    });
     Haptics.selectionAsync();
 
     // Batch the state updates to prevent cascading re-renders
@@ -647,6 +671,12 @@ export default function HomeScreen() {
     if (updateTimeoutRef.current) {
       clearTimeout(updateTimeoutRef.current);
     }
+    analytics.track({
+      name: 'week_changed',
+      properties: {
+        week_index: weekIndex,
+      },
+    });
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
@@ -818,6 +848,7 @@ export default function HomeScreen() {
                 <TouchableOpacity
                   style={styles.levelBadge}
                   onPress={() => {
+                    analytics.track({ name: 'xp_info_modal_viewed', properties: { source: 'level_badge_press' } });
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     setShowXPModal(true);
                   }}
@@ -831,6 +862,7 @@ export default function HomeScreen() {
             <TouchableOpacity
               style={styles.livesRowContainer}
               onPress={() => {
+                analytics.track({ name: 'health_modal_viewed' });
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 setShowHealthModal(true);
               }}
@@ -852,11 +884,14 @@ export default function HomeScreen() {
           </View>
           <View style={styles.rightHeaderSection}>
             <TouchableOpacity
-              onPress={() => Alert.alert(
-                "Coming Soon",
-                "Store is coming soon!",
-                [{ text: "OK", style: "default" }]
-              )}
+              onPress={() => {
+                analytics.track({ name: 'store_button_clicked' });
+                Alert.alert(
+                  "Coming Soon",
+                  "Store is coming soon!",
+                  [{ text: "OK", style: "default" }]
+                )
+              }}
               activeOpacity={0.7}
             >
               <View style={styles.coinContainer}>
@@ -1063,6 +1098,7 @@ export default function HomeScreen() {
                       challengesUnlocked: [],
                     };
 
+                    analytics.track({ name: 'debug_run_celebration_viewed' });
                     setRunCelebrationData({
                       runData: lastRun,
                       rewards: mockRewards,

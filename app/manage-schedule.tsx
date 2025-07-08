@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
@@ -16,6 +17,7 @@ import {
 
 export default function ManageScheduleScreen() {
   const router = useRouter();
+  const analytics = useAnalytics();
   const currentSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
   const setSchedule = useMutation(api.simpleTrainingSchedule.setSimpleTrainingSchedule);
 
@@ -44,6 +46,15 @@ export default function ManageScheduleScreen() {
         preferredDays,
       });
 
+      analytics.track({
+        name: currentSchedule ? 'schedule_updated' : 'schedule_created',
+        properties: {
+          runs_per_week: runsPerWeek,
+          preferred_days: preferredDays,
+          num_preferred_days: preferredDays.length
+        }
+      });
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
 
       const successMessage = currentSchedule
@@ -63,8 +74,6 @@ export default function ManageScheduleScreen() {
       setIsUpdating(false);
     }
   };
-
-
 
   return (
     <View style={styles.container}>
@@ -100,6 +109,10 @@ export default function ManageScheduleScreen() {
                 if (runsPerWeek > 1) {
                   const newRuns = runsPerWeek - 1;
                   setRunsPerWeek(newRuns);
+                  analytics.track({
+                    name: 'schedule_runs_per_week_changed',
+                    properties: { runs_per_week: newRuns, direction: 'decrease' }
+                  });
                   // Reset preferred days if we have too many selected
                   if (preferredDays.length > newRuns) {
                     setPreferredDays(preferredDays.slice(0, newRuns));
@@ -125,7 +138,12 @@ export default function ManageScheduleScreen() {
               style={[styles.counterButton, runsPerWeek >= 7 && styles.counterButtonDisabled]}
               onPress={() => {
                 if (runsPerWeek < 7) {
-                  setRunsPerWeek(runsPerWeek + 1);
+                  const newRuns = runsPerWeek + 1;
+                  setRunsPerWeek(newRuns);
+                  analytics.track({
+                    name: 'schedule_runs_per_week_changed',
+                    properties: { runs_per_week: newRuns, direction: 'increase' }
+                  });
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }
               }}
@@ -160,10 +178,15 @@ export default function ManageScheduleScreen() {
                   preferredDays.includes(day) && styles.weekDayButtonSelected
                 ]}
                 onPress={() => {
-                  const newPreferred = preferredDays.includes(day)
+                  const isSelected = preferredDays.includes(day);
+                  const newPreferred = isSelected
                     ? preferredDays.filter(d => d !== day)
                     : [...preferredDays, day];
                   setPreferredDays(newPreferred);
+                  analytics.track({
+                    name: 'schedule_preferred_day_toggled',
+                    properties: { day: day, selected: !isSelected, preferred_days: newPreferred }
+                  });
                   Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 }}
               >

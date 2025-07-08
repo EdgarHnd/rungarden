@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { FontAwesome, FontAwesome6 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery } from 'convex/react';
@@ -17,6 +18,7 @@ export default function AddFriendScreen() {
   const [searchText, setSearchText] = useState('');
   const [step, setStep] = useState<'main' | 'search'>('main');
   const navigation = useNavigation();
+  const analytics = useAnalytics();
   // Debounce input 300ms
   useEffect(() => {
     const id = setTimeout(() => {
@@ -37,6 +39,7 @@ export default function AddFriendScreen() {
 
   const handleAdd = async (userId: string) => {
     try {
+      analytics.track({ name: 'friend_request_sent', properties: { to_user_id: userId } });
       await sendRequest({ toUserId: userId as any });
     } catch (e: any) {
       alert(e.message);
@@ -45,6 +48,7 @@ export default function AddFriendScreen() {
 
   const handleRespond = async (requestId: string, accept: boolean) => {
     try {
+      analytics.track({ name: 'friend_request_responded', properties: { request_id: requestId, accepted: accept } });
       await respondRequest({ requestId: requestId as any, accept });
     } catch (e: any) {
       alert(e.message);
@@ -53,6 +57,7 @@ export default function AddFriendScreen() {
 
   const handleShareInvite = async () => {
     try {
+      analytics.track({ name: 'invite_link_shared' });
       const shareUrl = 'https://blaze.run';
       const message = 'Join me on Blaze! Download the app here:';
       await Share.share({
@@ -80,7 +85,10 @@ export default function AddFriendScreen() {
             <FontAwesome name="user" size={24} color={Theme.colors.text.primary} />
             <Text style={styles.optionText}>Choose from contacts</Text>
           </TouchableOpacity> */}
-          <TouchableOpacity style={styles.optionCard} onPress={() => setStep('search')}>
+          <TouchableOpacity style={styles.optionCard} onPress={() => {
+            analytics.track({ name: 'add_friend_search_initiated' });
+            setStep('search')
+          }}>
             <FontAwesome name="search" size={24} color={Theme.colors.text.primary} />
             <Text style={styles.optionText}>Search by name</Text>
           </TouchableOpacity>

@@ -38,7 +38,9 @@
     "expo-store-review": "~8.1.5",
     "expo-symbols": "~0.4.4",
     "expo-system-ui": "~5.0.7",
+    "expo-video": "~2.2.2",
     "expo-web-browser": "~14.1.6",
+    "mixpanel-react-native": "^3.1.2",
     "react": "19.0.0",
     "react-dom": "19.0.0",
     "react-native": "0.79.2",
@@ -50,8 +52,7 @@
     "react-native-screens": "~4.10.0",
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
-    "rive-react-native": "^9.3.1",
-    "expo-video": "~2.2.2"
+    "rive-react-native": "^9.3.1"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

@@ -1,6 +1,7 @@
 import RecordingModal from '@/components/modals/RecordingModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useTrackNavigation } from '@/hooks/useTrackNavigation';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
@@ -31,6 +32,7 @@ function LeaderboardIcon({ color, size }: { color: string; size: number }) {
 }
 
 export default function AppLayout() {
+  useTrackNavigation();
   const [showRecordingModal, setShowRecordingModal] = useState(false);
 
   const createTabBarButton = (onPress: () => void) => {

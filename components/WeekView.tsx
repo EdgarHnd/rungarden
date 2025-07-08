@@ -3,6 +3,7 @@ import XPInfoModal from '@/components/modals/XPInfoModal';
 import Theme from '@/constants/theme';
 import { SuggestedActivity, getActivityType, isDefaultActivity } from '@/constants/types';
 import { Doc } from '@/convex/_generated/dataModel';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -79,6 +80,7 @@ export default function WeekView({
   const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
   const [showXPInfoModal, setShowXPInfoModal] = useState(false);
   const [showStreakModal, setShowStreakModal] = useState(false);
+  const analytics = useAnalytics();
   // Add ref to track if we're already scrolling to prevent feedback loops
   const isScrollingRef = useRef(false);
   const scrollTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -219,6 +221,7 @@ export default function WeekView({
         <TouchableOpacity
           style={styles.progressContainer}
           onPress={() => {
+            analytics.track({ name: 'streak_modal_viewed', properties: { source: 'progress_bar' } });
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
             setShowStreakModal(true);
           }}

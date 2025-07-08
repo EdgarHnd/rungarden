@@ -1,4 +1,5 @@
 import Theme from '@/constants/theme';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService from '@/services/LevelingService';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
@@ -42,6 +43,7 @@ export default function InitialSyncModal({
   metricSystem = 'metric',
 }: InitialSyncModalProps) {
   const [currentStep, setCurrentStep] = useState<'sync' | 'streak' | 'xp' | 'level'>('sync');
+  const analytics = useAnalytics();
 
   // Reanimated values for all animations
   const stepScale = useSharedValue(0);
@@ -118,6 +120,14 @@ export default function InitialSyncModal({
 
       setAnimatedXPValue(0);
       setAnimatedProgress(0);
+
+      analytics.track({
+        name: 'initial_sync_modal_viewed',
+        properties: {
+          runs_synced: syncResult.created,
+          leveled_up: syncResult.leveledUp
+        }
+      });
 
       // Reset to first step when modal opens
       setCurrentStep('sync');
@@ -244,6 +254,12 @@ export default function InitialSyncModal({
   };
 
   const handleContinue = () => {
+    analytics.track({
+      name: 'initial_sync_continue_clicked',
+      properties: {
+        current_step: currentStep,
+      },
+    });
     if (currentStep === 'sync') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('streak');
@@ -263,6 +279,12 @@ export default function InitialSyncModal({
   };
 
   const handleClose = () => {
+    analytics.track({
+      name: 'initial_sync_closed',
+      properties: {
+        closed_at_step: currentStep,
+      },
+    });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
     // Exit animation

@@ -1,5 +1,6 @@
 import Theme from '@/constants/theme';
 import { UserRankInfo } from '@/convex/leaderboard';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useQuery } from "convex/react";
 import { useRouter } from 'expo-router';
@@ -33,6 +34,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
   const [fadeAnim] = useState(new Animated.Value(1));
   const [showPeriodMenu, setShowPeriodMenu] = useState(false);
   const router = useRouter();
+  const analytics = useAnalytics();
 
   // Direct convex queries
   const leaderboard = useQuery(api.leaderboard.getLeaderboard, {
@@ -98,6 +100,12 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
   const handlePeriodChange = (period: Period) => {
     setSelectedPeriod(period);
     setShowPeriodMenu(false);
+    analytics.track({
+      name: 'leaderboard_period_changed',
+      properties: {
+        period: period,
+      }
+    });
   };
 
   const getRankEmoji = (rank: number) => {
@@ -149,7 +157,10 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
               </View>
             )}
           </View>
-          <TouchableOpacity style={styles.addFriendButton} onPress={() => router.push('/add-friend')}>
+          <TouchableOpacity style={styles.addFriendButton} onPress={() => {
+            analytics.track({ name: 'leaderboard_add_friend_clicked' });
+            router.push('/add-friend');
+          }}>
             <FontAwesome5 name="user-plus" size={20} color={Theme.colors.special.primary.exp} />
             <Text style={styles.addFriendButtonText}>Add Friends</Text>
           </TouchableOpacity>
