@@ -38,7 +38,6 @@ export default function AddFriendScreen() {
   const handleAdd = async (userId: string) => {
     try {
       await sendRequest({ toUserId: userId as any });
-      alert('Request sent!');
     } catch (e: any) {
       alert(e.message);
     }
@@ -54,8 +53,8 @@ export default function AddFriendScreen() {
 
   const handleShareInvite = async () => {
     try {
-      const shareUrl = 'https://blaze.run'; // Replace with your actual app store URL when available
-      const message = 'Join me on Blaze! Track your runs, compete with friends, and level up your fitness journey. Download the app here:';
+      const shareUrl = 'https://blaze.run';
+      const message = 'Join me on Blaze! Download the app here:';
       await Share.share({
         message: `${message} ${shareUrl}`,
         url: shareUrl,

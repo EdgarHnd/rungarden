@@ -18,13 +18,14 @@ import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Rive, { RiveRef } from "rive-react-native";
 
 // Constants for scrolling background
 const SCROLLING_BG_LOOP_WIDTH = 2000;
 const SCROLLING_BG_ANIMATION_DURATION = 8000;
-
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const LEGACY_DEVICE = screenHeight < 700; // Approximate older, non-notch iPhones
 
 interface DayData {
   date: string;
@@ -775,7 +776,7 @@ export default function HomeScreen() {
   // Memoized mascot image based on the user level
   const mascotImageSource = React.useMemo(() => {
     const lvl = levelInfo?.level ?? 0;
-    if (lvl < 100) return require('@/assets/images/flame/age0.gif');
+    if (lvl < 100) return require('@/assets/images/flame/age0.png');
     if (lvl < 10) return require('@/assets/images/flame/age1.png');
     if (lvl < 20) return require('@/assets/images/flame/age2.png');
     return require('@/assets/images/flame/age3.png');
@@ -1203,7 +1204,7 @@ const styles = StyleSheet.create({
   },
   mainScrollView: {
     position: 'absolute',
-    top: 150,
+    top: LEGACY_DEVICE ? 100 : 150,
     left: 0,
     right: 0,
     bottom: 0,

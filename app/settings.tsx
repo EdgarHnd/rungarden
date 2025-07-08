@@ -730,7 +730,7 @@ export default function SettingsScreen() {
             <View style={styles.sectionContent}>
               <View style={styles.syncOptionContent}>
                 <View style={styles.syncOptionHeader}>
-                  <FontAwesome5 name="ruler" size={20} color={Theme.colors.accent.primary} />
+                  <FontAwesome5 name="pencil-ruler" size={20} color={Theme.colors.text.primary} />
                   <Text style={styles.syncOptionTitle}>Use Metric System</Text>
                 </View>
                 <Text style={styles.syncOptionDescription}>
@@ -756,7 +756,7 @@ export default function SettingsScreen() {
             <View style={styles.sectionContent}>
               <View style={styles.syncOptionContent}>
                 <View style={styles.syncOptionHeader}>
-                  <FontAwesome5 name="clock" size={20} color={Theme.colors.accent.primary} />
+                  <FontAwesome5 name="clock" size={20} color={Theme.colors.text.primary} />
                   <Text style={styles.syncOptionTitle}>Workout Style (Distance vs Duration)</Text>
                 </View>
                 <Text style={styles.syncOptionDescription}>
@@ -783,7 +783,7 @@ export default function SettingsScreen() {
               <View style={styles.sectionContent}>
                 <View style={styles.syncOptionContent}>
                   <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="bell" size={20} color={Theme.colors.accent.primary} />
+                    <FontAwesome5 name="bell" size={20} color={Theme.colors.text.primary} />
                     <Text style={styles.syncOptionTitle}>Push Notifications</Text>
                   </View>
                   <Text style={styles.syncOptionDescription}>
@@ -812,14 +812,14 @@ export default function SettingsScreen() {
               <View style={styles.sectionContent}>
                 <View style={styles.syncOptionContent}>
                   <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="paper-plane" size={20} color={Theme.colors.accent.primary} />
+                    <FontAwesome5 name="paper-plane" size={20} color={Theme.colors.text.primary} />
                     <Text style={styles.syncOptionTitle}>Send Test Notification</Text>
                   </View>
                   <Text style={styles.syncOptionDescription}>
                     Test if push notifications are working
                   </Text>
                 </View>
-                <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
+                <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.text.primary} />
               </View>
             </TouchableOpacity>
           )}
@@ -1213,7 +1213,7 @@ export default function SettingsScreen() {
                   <FontAwesome5
                     name={isDeduplicating ? "spinner" : "copy"}
                     size={20}
-                    color={Theme.colors.accent.primary}
+                    color={Theme.colors.text.primary}
                     style={isDeduplicating ? { transform: [{ rotate: '0deg' }] } : undefined}
                   />
                   <Text style={styles.syncOptionTitle}>
@@ -1224,7 +1224,7 @@ export default function SettingsScreen() {
                   Remove duplicate activities between data sources
                 </Text>
               </View>
-              <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
+              <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.text.primary} />
             </View>
           </TouchableOpacity>
         </View>
@@ -1326,7 +1326,7 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
-    paddingHorizontal: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
   },
   sectionGroup: {
     marginBottom: Theme.spacing.xxxl,
@@ -1345,15 +1345,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   section: {
-    backgroundColor: Theme.colors.background.tertiary,
-    borderRadius: Theme.borderRadius.large,
     marginBottom: Theme.spacing.md,
   },
   sectionContent: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    padding: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.md,
   },
   optionText: {
     fontSize: 16,
@@ -1388,18 +1387,18 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 4,
+    gap: Theme.spacing.md,
   },
   syncOptionTitle: {
     fontSize: 16,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.primary,
-    marginLeft: Theme.spacing.sm,
   },
   syncOptionDescription: {
     fontSize: 14,
     fontFamily: Theme.fonts.regular,
     color: Theme.colors.text.tertiary,
-    marginLeft: 28, // Align with title
+    marginLeft: 32,
   },
   comingSoonBadge: {
     backgroundColor: Theme.colors.status.error,
