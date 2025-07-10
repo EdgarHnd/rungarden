@@ -209,7 +209,7 @@ export default function ActivityDetailScreen() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
-          <Image source={require('@/assets/images/blaze/blazerunning.png')} style={styles.heroImage} resizeMode="contain" />
+          <Image source={require('@/assets/images/blaze/blazelove.png')} style={styles.heroImage} resizeMode="contain" />
           <Text style={styles.heroTitle}>{`${runRank.rank} Run!`}</Text>
         </Animated.View>
 
@@ -349,8 +349,8 @@ const styles = StyleSheet.create({
     paddingBottom: Theme.spacing.xxxl,
   },
   heroImage: {
-    width: 200,
-    height: 200,
+    width: 150,
+    height: 150,
   },
   rankBadge: {
     flexDirection: 'row',

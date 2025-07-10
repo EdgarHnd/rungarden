@@ -4,8 +4,17 @@ import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { FontAwesome, FontAwesome6 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery } from 'convex/react';
+import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
-import { FlatList, ScrollView, Share, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import {
+  FlatList,
+  Share,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 
 const ICONS = {
   contacts: require('@/assets/images/icons/apple-health.png'), // Placeholder, replace with contacts icon
@@ -32,13 +41,12 @@ export default function AddFriendScreen() {
 
   // For search/add UI
   const results = useQuery(api.userProfile.searchProfiles, { text: searchText });
-  const incomingRequests = useQuery(api.friends.getPendingFriendRequests);
   const outgoingRequests = useQuery(api.friends.getSentFriendRequests);
   const sendRequest = useMutation(api.friends.sendFriendRequest);
-  const respondRequest = useMutation(api.friends.respondToFriendRequest);
 
   const handleAdd = async (userId: string) => {
     try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       analytics.track({ name: 'friend_request_sent', properties: { to_user_id: userId } });
       await sendRequest({ toUserId: userId as any });
     } catch (e: any) {
@@ -46,17 +54,9 @@ export default function AddFriendScreen() {
     }
   };
 
-  const handleRespond = async (requestId: string, accept: boolean) => {
-    try {
-      analytics.track({ name: 'friend_request_responded', properties: { request_id: requestId, accepted: accept } });
-      await respondRequest({ requestId: requestId as any, accept });
-    } catch (e: any) {
-      alert(e.message);
-    }
-  };
-
   const handleShareInvite = async () => {
     try {
+      Haptics.selectionAsync();
       analytics.track({ name: 'invite_link_shared' });
       const shareUrl = 'https://blaze.run';
       const message = 'Join me on Blaze! Download the app here:';
@@ -73,22 +73,28 @@ export default function AddFriendScreen() {
   // --- MAIN SCREEN ---
   if (step === 'main') {
     return (
-      <ScrollView style={styles.container} contentContainerStyle={{ flexGrow: 1 }}>
+      <View style={styles.container}>
         <View style={styles.headerContainer}>
           <Text style={styles.header}>Find your friends</Text>
-          <TouchableOpacity style={styles.closeButton} onPress={() => navigation.goBack()}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={() => {
+              Haptics.selectionAsync();
+              navigation.goBack();
+            }}
+          >
             <Text style={styles.closeButtonText}>✕</Text>
           </TouchableOpacity>
         </View>
         <View style={styles.optionsContainer}>
-          {/* <TouchableOpacity style={styles.optionCard} onPress={() => { }}>
-            <FontAwesome name="user" size={24} color={Theme.colors.text.primary} />
-            <Text style={styles.optionText}>Choose from contacts</Text>
-          </TouchableOpacity> */}
-          <TouchableOpacity style={styles.optionCard} onPress={() => {
-            analytics.track({ name: 'add_friend_search_initiated' });
-            setStep('search')
-          }}>
+          <TouchableOpacity
+            style={styles.optionCard}
+            onPress={() => {
+              Haptics.selectionAsync();
+              analytics.track({ name: 'add_friend_search_initiated' });
+              setStep('search');
+            }}
+          >
             <FontAwesome name="search" size={24} color={Theme.colors.text.primary} />
             <Text style={styles.optionText}>Search by name</Text>
           </TouchableOpacity>
@@ -97,49 +103,7 @@ export default function AddFriendScreen() {
             <Text style={styles.shareButtonText}>Share invite link</Text>
           </TouchableOpacity>
         </View>
-        {/* <Text style={styles.suggestionsHeader}>Friend suggestions <Text style={styles.viewAll}>VIEW ALL</Text></Text>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.suggestionsScroll} contentContainerStyle={{ paddingVertical: 8 }}>
-          {suggestions.map((item) => (
-            <View key={item.userId} style={styles.suggestionCard}>
-              <Image source={ICONS.share} style={styles.suggestionAvatar} />
-              <Text style={styles.suggestionName}>{item.name}</Text>
-              <Text style={styles.suggestionSubtext}>You may know each other</Text>
-              <TouchableOpacity style={styles.suggestionFollowBtn} onPress={() => handleAdd(item.userId)}>
-                <Text style={styles.suggestionFollowText}>FOLLOW</Text>
-              </TouchableOpacity>
-            </View>
-          ))}
-        </ScrollView> */}
-        {/* Incoming Requests Section (only if any) */}
-        {incomingRequests && incomingRequests.length > 0 && (
-          <>
-            <Text style={styles.sectionTitle}>Incoming Requests</Text>
-            <FlatList
-              data={incomingRequests}
-              keyExtractor={(item) => item._id as string}
-              renderItem={({ item }) => (
-                <View style={styles.requestRow}>
-                  <Text style={styles.resultName}>{item.name}</Text>
-                  <View style={styles.requestActions}>
-                    <TouchableOpacity
-                      style={[styles.acceptButton, styles.requestButton]}
-                      onPress={() => handleRespond(item._id as string, true)}
-                    >
-                      <Text style={styles.requestButtonText}>Accept</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity
-                      style={[styles.rejectButton, styles.requestButton]}
-                      onPress={() => handleRespond(item._id as string, false)}
-                    >
-                      <Text style={styles.requestButtonText}>Decline</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              )}
-            />
-          </>
-        )}
-      </ScrollView>
+      </View>
     );
   }
 
@@ -147,7 +111,13 @@ export default function AddFriendScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.addFriendHeader}>
-        <TouchableOpacity style={styles.backButton} onPress={() => setStep('main')}>
+        <TouchableOpacity
+          style={styles.backButton}
+          onPress={() => {
+            Haptics.selectionAsync();
+            setStep('main');
+          }}
+        >
           <Text style={styles.backButtonText}>←</Text>
         </TouchableOpacity>
         <Text style={styles.header}>Add Friends</Text>

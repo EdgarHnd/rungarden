@@ -1,4 +1,4 @@
-import { Theme } from "@/constants/theme";
+import LoadingScreen from '@/components/LoadingScreen';
 import { ConvexAuthProvider } from "@convex-dev/auth/react";
 import { Authenticated, AuthLoading, ConvexReactClient, Unauthenticated } from "convex/react";
 import { useFonts } from 'expo-font';
@@ -6,7 +6,7 @@ import { Stack } from 'expo-router';
 import * as SecureStore from "expo-secure-store";
 import * as SplashScreen from 'expo-splash-screen';
 import React, { useEffect } from 'react';
-import { ActivityIndicator, Platform, View } from 'react-native';
+import { Platform } from 'react-native';
 import { AnalyticsProviderComponent } from '../provider/AnalyticsProvider';
 import { MixpanelProvider } from '../provider/MixpanelProvider';
 import OnboardingScreen from './onboarding';
@@ -79,14 +79,6 @@ function AuthenticatedApp() {
         }}
       />
     </Stack>
-  );
-}
-
-function LoadingScreen() {
-  return (
-    <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: Theme.colors.background.primary }}>
-      <ActivityIndicator size="large" color={Theme.colors.text.primary} />
-    </View>
   );
 }
 

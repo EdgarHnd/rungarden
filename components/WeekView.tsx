@@ -1,4 +1,3 @@
-import StreakDisplay from '@/components/modals/StreakDisplay';
 import XPInfoModal from '@/components/modals/XPInfoModal';
 import Theme from '@/constants/theme';
 import { SuggestedActivity, getActivityType, isDefaultActivity } from '@/constants/types';
@@ -7,6 +6,7 @@ import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import React, { useCallback, useEffect, useRef, useState } from 'react';
 import { Dimensions, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -42,11 +42,6 @@ interface WeekViewProps {
   weeks: WeekData[];
   onWeekChange?: (weekIndex: number) => void;
   weekStartDay: number; // 0 = Sunday, 1 = Monday
-  streakInfo?: {
-    currentStreak: number;
-    longestStreak: number;
-    lastStreakWeek: string | null;
-  };
   simpleSchedule?: {
     runsPerWeek: number;
     preferredDays: string[];
@@ -71,7 +66,6 @@ export default function WeekView({
   weeks,
   onWeekChange,
   weekStartDay,
-  streakInfo,
   simpleSchedule,
   todaysRunStatus,
   metricSystem = 'metric'
@@ -79,7 +73,6 @@ export default function WeekView({
   const scrollViewRef = useRef<ScrollView>(null);
   const progressPercentage = levelInfo ? Math.min(levelInfo.progressToNextLevel * 100, 100) : 0;
   const [showXPInfoModal, setShowXPInfoModal] = useState(false);
-  const [showStreakModal, setShowStreakModal] = useState(false);
   const analytics = useAnalytics();
   // Add ref to track if we're already scrolling to prevent feedback loops
   const isScrollingRef = useRef(false);
@@ -216,53 +209,31 @@ export default function WeekView({
 
   return (
     <View style={styles.container}>
-      {/* Weekly Progress & Streak Section */}
+      {/* Weekly Progress Section */}
       {(simpleSchedule?.isActive && todaysRunStatus) ? (
-        <TouchableOpacity
-          style={styles.progressContainer}
-          onPress={() => {
-            analytics.track({ name: 'streak_modal_viewed', properties: { source: 'progress_bar' } });
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setShowStreakModal(true);
-          }}
-          activeOpacity={0.8}
-        >
+        <TouchableOpacity style={styles.progressContainer} onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+          router.push('/activities');
+        }}>
           <View style={styles.progressHeader}>
             <View style={styles.progressTextContainer}>
               <Text style={styles.progressLabel}>
                 {todaysRunStatus.weeklyGoalMet ? 'Weekly Goal Complete!' : `Weekly Progress`}
               </Text>
-              <Text style={styles.progressText}>
-                {todaysRunStatus.runsThisWeek}/{todaysRunStatus.runsNeeded} runs
-              </Text>
             </View>
-
-            {streakInfo && (
-              <Text style={styles.streakText}>
-                🔥 {streakInfo.currentStreak}
-              </Text>)}
+            <Text style={styles.progressText}>
+              {`${todaysRunStatus.runsThisWeek}/${todaysRunStatus.runsThisWeek + todaysRunStatus.runsNeeded} runs`}
+            </Text>
           </View>
           <View style={styles.progressBar}>
             <View style={[
               styles.progressFill,
               {
-                width: `${Math.min(100, (todaysRunStatus.runsThisWeek / todaysRunStatus.runsNeeded) * 100)}%`,
+                width: `${Math.min(100, (todaysRunStatus.runsThisWeek / (todaysRunStatus.runsThisWeek + todaysRunStatus.runsNeeded)) * 100)}%`,
                 backgroundColor: todaysRunStatus.weeklyGoalMet ? Theme.colors.accent.primary : Theme.colors.special.primary.exp
               }
             ]} />
           </View>
-          {/* {streakInfo && (
-            <View style={styles.streakInfo}>
-              <Text style={styles.streakText}>
-                🔥 {streakInfo.currentStreak} week{streakInfo.currentStreak !== 1 ? 's' : ''} streak
-              </Text>
-              {streakInfo.longestStreak > streakInfo.currentStreak && (
-                <Text style={styles.streakSubtext}>
-                  Best: {streakInfo.longestStreak} week{streakInfo.longestStreak !== 1 ? 's' : ''}
-                </Text>
-              )}
-            </View>
-          )} */}
         </TouchableOpacity>
       ) : (
         // Fallback to level progress for non-simple schedule users
@@ -396,13 +367,6 @@ export default function WeekView({
         onClose={() => setShowXPInfoModal(false)}
         levelInfo={levelInfo}
         metricSystem={metricSystem}
-      />
-
-      {/* Streak Modal */}
-      <StreakDisplay
-        visible={showStreakModal}
-        onClose={() => setShowStreakModal(false)}
-        streakInfo={streakInfo || null}
       />
     </View>
   );
@@ -604,22 +568,6 @@ const styles = StyleSheet.create({
   selectedPreferredDayIndicator: {
     backgroundColor: Theme.colors.special.primary.coin,
     borderColor: Theme.colors.text.primary,
-  },
-  streakInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    marginTop: Theme.spacing.sm,
-  },
-  streakText: {
-    fontSize: 14,
-    color: Theme.colors.text.primary,
-    fontFamily: Theme.fonts.semibold,
-  },
-  streakSubtext: {
-    fontSize: 12,
-    color: Theme.colors.text.muted,
-    fontFamily: Theme.fonts.medium,
   },
   missedWorkoutIndicator: {
     backgroundColor: Theme.colors.text.muted,

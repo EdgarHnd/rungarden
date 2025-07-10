@@ -1,5 +1,6 @@
 import { ActivityCard } from '@/components/ActivityCard';
 import { ActivityGrid } from '@/components/ActivityGrid';
+import LoadingScreen from '@/components/LoadingScreen';
 import { MonthHeader } from '@/components/MonthHeader';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
@@ -9,7 +10,6 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
 import {
-  ActivityIndicator,
   Alert,
   RefreshControl,
   SafeAreaView,
@@ -219,17 +219,7 @@ export default function ProgressScreen() {
 
   // Loading state
   if (!isAuthenticated || activitiesForYear === undefined || profile === undefined) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.pageHeader}>
-          <Text style={styles.headerTitle}>Progress</Text>
-        </View>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Theme.colors.accent.primary} />
-          <Text style={styles.loadingText}>Loading your progress...</Text>
-        </View>
-      </SafeAreaView>
-    );
+    return <LoadingScreen />;
   }
 
   // No data source configured

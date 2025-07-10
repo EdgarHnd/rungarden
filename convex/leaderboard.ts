@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
+import { Doc, Id } from "./_generated/dataModel";
 import { query } from "./_generated/server";
 
 export interface LeaderboardEntry {
@@ -29,7 +30,7 @@ export const getLeaderboard = query({
     const limit = args.limit ?? 10;
     
     // When friends scope: build list of friend userIds (plus self)
-    let friendIds: string[] | null = null;
+    let friendIds: Id<"users">[] | null = null;
     if (scope === "friends") {
       const userId = await getAuthUserId(ctx);
       if (!userId) throw new Error("Not authenticated");
@@ -47,9 +48,9 @@ export const getLeaderboard = query({
         .filter(q => q.eq(q.field("status"), "accepted"))
         .collect();
 
-      const friendSet = new Set<string>([userId]);
-      sent.forEach(fr => friendSet.add(fr.toUserId as string));
-      received.forEach(fr => friendSet.add(fr.fromUserId as string));
+      const friendSet = new Set<Id<"users">>([userId]);
+      sent.forEach(fr => friendSet.add(fr.toUserId as Id<"users">));
+      received.forEach(fr => friendSet.add(fr.fromUserId as Id<"users">));
 
       friendIds = Array.from(friendSet);
       if (friendIds.length === 0) {
@@ -60,7 +61,29 @@ export const getLeaderboard = query({
     if (args.period === "all") {
       // All-time leaderboard based on total distance from user profiles
       const profilesRaw = await ctx.db.query("userProfiles").collect();
-      const profiles = friendIds ? profilesRaw.filter(p => friendIds!.includes(p.userId as string)) : profilesRaw;
+      let profiles = friendIds ? profilesRaw.filter(p => friendIds!.includes(p.userId as Id<"users">)) : profilesRaw;
+      
+      // Ensure all friends are included for "all" time, even if they have no profile yet (edge case)
+      if (friendIds) {
+        const profileUserIds = new Set(profiles.map((p) => p.userId as Id<"users">));
+        for (const friendId of friendIds) {
+          if (!profileUserIds.has(friendId)) {
+            // Add a placeholder profile for friends who might not have one yet
+            const user = await ctx.db.get(friendId);
+            if (user) {
+              profiles.push({
+                _id: user._id as any,
+                _creationTime: user._creationTime,
+                userId: user._id,
+                name: user.name ?? 'New Friend',
+                totalDistance: 0,
+                totalWorkouts: 0,
+                level: 1,
+              } as Doc<"userProfiles"> & { name: string });
+            }
+          }
+        }
+      }
       
       // Sort by total distance and take limit
       const sortedProfiles = profiles
@@ -72,12 +95,12 @@ export const getLeaderboard = query({
       
       for (let i = 0; i < sortedProfiles.length; i++) {
         const profile = sortedProfiles[i];
-        const user = await ctx.db.get(profile.userId);
+        const user = await ctx.db.get(profile.userId as any);
         
         leaderboard.push({
           rank: i + 1,
           userId: profile.userId,
-          name: profile.mascotName || "Unknown User",
+          name: (profile as any).name || profile.mascotName || "Unknown User",
           totalDistance: profile.totalDistance || 0,
           level: profile.level || 1,
           totalWorkouts: profile.totalWorkouts || 0,
@@ -111,8 +134,10 @@ export const getLeaderboard = query({
       .filter((q) => q.gte(q.field("startDate"), startDateISO))
       .collect();
 
-    const activities = friendIds ? activitiesRaw.filter(a => friendIds!.includes(a.userId as string)) : activitiesRaw;
-    
+    const activities = friendIds
+      ? activitiesRaw.filter((a) => friendIds!.includes(a.userId as Id<"users">))
+      : activitiesRaw;
+
     // Group by user and calculate totals
     const userStats = new Map<string, {
       userId: string;
@@ -120,7 +145,7 @@ export const getLeaderboard = query({
       totalWorkouts: number;
     }>();
     
-    activities.forEach(activity => {
+    activities.forEach((activity) => {
       const existing = userStats.get(activity.userId) || {
         userId: activity.userId,
         totalDistance: 0,
@@ -133,14 +158,30 @@ export const getLeaderboard = query({
       userStats.set(activity.userId, existing);
     });
     
-    // Convert to array and sort by distance
-    const sortedStats = Array.from(userStats.values())
-      .sort((a, b) => b.totalDistance - a.totalDistance)
-      .slice(0, limit);
-    
+    // For friends scope, ensure all friends are in the list
+    if (friendIds) {
+      for (const friendId of friendIds) {
+        if (!userStats.has(friendId)) {
+          userStats.set(friendId, {
+            userId: friendId,
+            totalDistance: 0,
+            totalWorkouts: 0,
+          });
+        }
+      }
+    }
+
+    // Convert to array and sort by distance (active users first)
+    const sortedStats = Array.from(userStats.values()).sort((a, b) => {
+      if (a.totalDistance > 0 && b.totalDistance === 0) return -1;
+      if (b.totalDistance > 0 && a.totalDistance === 0) return 1;
+      return b.totalDistance - a.totalDistance;
+    });
+
     // Get user details and profiles
     const leaderboard: LeaderboardEntry[] = [];
-    
+    let rankCounter = 1;
+
     for (let i = 0; i < sortedStats.length; i++) {
       const stats = sortedStats[i];
       const user = await ctx.db.get(stats.userId as any);
@@ -148,18 +189,18 @@ export const getLeaderboard = query({
         .query("userProfiles")
         .withIndex("by_user", (q) => q.eq("userId", stats.userId as any))
         .first();
-      
+
       leaderboard.push({
-        rank: i + 1,
+        rank: stats.totalDistance > 0 ? rankCounter++ : 0, // Assign rank only if active
         userId: stats.userId,
-        name: (user as any)?.name || "Unknown User",
+        name: profile?.mascotName || (user as any)?.name || "Unknown User",
         totalDistance: stats.totalDistance,
         level: profile?.level || 1,
         totalWorkouts: stats.totalWorkouts,
       });
     }
-    
-    return leaderboard;
+
+    return leaderboard.slice(0, limit);
   },
 });
 
@@ -306,7 +347,7 @@ export const getUserRank = query({
         leaderboard.push({
           rank: i + 1,
           userId: stats.userId,
-          name: (user as any)?.name || "Unknown User",
+          name: profile?.mascotName || (user as any)?.name || "Unknown User",
           totalDistance: stats.totalDistance,
           level: profile?.level || 1,
           totalWorkouts: stats.totalWorkouts,

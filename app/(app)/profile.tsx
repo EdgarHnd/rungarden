@@ -1,3 +1,4 @@
+import LoadingScreen from '@/components/LoadingScreen';
 import AchievementCelebrationModal from '@/components/modals/AchievementCelebrationModal';
 import AchievementProgressModal from '@/components/modals/AchievementProgressModal';
 import StreakDisplay from '@/components/modals/StreakDisplay';
@@ -12,7 +13,7 @@ import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { ActivityIndicator, Alert, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 
 export default function ProfileScreen() {
   const { signOut } = useAuthActions();
@@ -167,14 +168,7 @@ export default function ProfileScreen() {
   };
 
   if (isLoading || !profileStats) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={Theme.colors.accent.primary} />
-          <Text style={styles.loadingText}>Loading profile...</Text>
-        </View>
-      </SafeAreaView>
-    );
+    return <LoadingScreen />;
   }
 
   return (
@@ -296,7 +290,7 @@ export default function ProfileScreen() {
                 }}
                 activeOpacity={0.7}
               >
-                <Text style={styles.duolingoStatIcon}>🔥</Text>
+                <Image source={require('@/assets/images/icons/streak.png')} style={styles.streakIcon} />
                 <View style={styles.duolingoStatText}>
                   <Text style={styles.duolingoStatNumber}>{calculateStreak()}</Text>
                   <Text style={styles.duolingoStatLabel}>Streak</Text>
@@ -740,7 +734,7 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
   viewAllText: {
-    color: Theme.colors.accent.primary,
+    color: Theme.colors.text.tertiary,
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
     marginBottom: 16,
@@ -801,6 +795,11 @@ const styles = StyleSheet.create({
   },
   duolingoStatIcon: {
     fontSize: 24,
+    marginRight: 16,
+  },
+  streakIcon: {
+    width: 24,
+    height: 24,
     marginRight: 16,
   },
   duolingoStatText: {

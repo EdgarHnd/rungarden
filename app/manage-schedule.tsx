@@ -8,6 +8,7 @@ import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
 import {
   Alert,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -76,7 +77,7 @@ export default function ManageScheduleScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Theme.colors.text.primary} />
@@ -213,7 +214,7 @@ export default function ManageScheduleScreen() {
           </Text>
         </TouchableOpacity>
       </ScrollView>
-    </View>
+    </SafeAreaView>
   );
 }
 
@@ -227,7 +228,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Theme.spacing.xl,
-    paddingTop: 60,
+    paddingTop: 0,
     paddingBottom: Theme.spacing.lg,
   },
   backButton: {
@@ -298,19 +299,20 @@ const styles = StyleSheet.create({
     marginTop: 2,
   },
   saveButton: {
-    backgroundColor: Theme.colors.accent.primary,
+    // backgroundColor: Theme.colors.accent.primary,
     borderRadius: Theme.borderRadius.large,
     paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
     marginTop: Theme.spacing.xl,
-    borderBottomWidth: 3,
-    borderBottomColor: Theme.colors.accent.secondary,
+    borderWidth: 2,
+    borderBottomWidth: 4,
+    borderColor: Theme.colors.background.tertiary,
   },
   saveButtonDisabled: {
     opacity: 0.6,
   },
   saveButtonText: {
-    fontSize: 20,
+    fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },

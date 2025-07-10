@@ -1,7 +1,7 @@
 import Theme from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
-import { Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface StreakDisplayProps {
   visible: boolean;
@@ -17,9 +17,38 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
   const currentStreak = streakInfo?.currentStreak || 0;
   const longestStreak = streakInfo?.longestStreak || 0;
 
+  // Helper to compute week start (Monday as default)
+  const getWeekStart = (date: Date): Date => {
+    const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+    const day = d.getDay(); // 0 = Sunday, 1 = Monday, …
+    const diff = day === 0 ? 6 : day - 1; // Monday start
+    const weekStart = new Date(d);
+    weekStart.setDate(d.getDate() - diff);
+    weekStart.setHours(0, 0, 0, 0);
+    return weekStart;
+  };
+
+  // Determine if user has logged a run this week.
+  // Treat as current week if the stored lastStreakWeek date falls within the last 7 days.
+  const hasRunThisWeek = (() => {
+    if (!streakInfo?.lastStreakWeek) return false;
+    const lastDate = new Date(streakInfo.lastStreakWeek);
+    const today = new Date();
+    const diffDays = (today.getTime() - lastDate.getTime()) / (1000 * 60 * 60 * 24);
+    return diffDays < 7 && diffDays >= 0;
+  })();
+
+  // Grey-out styles when no run yet
+  const inactiveStyle = !hasRunThisWeek ? styles.inactiveStreak : null;
+
   const getStreakMessage = () => {
-    if (currentStreak >= 12) {
-      return "You've been consistent for almost 3 months! Amazing!";
+    if (!hasRunThisWeek && currentStreak > 0) {
+      return "Run this week to maintain your streak!";
+    }
+    if (currentStreak >= 24) {
+      return "You've been consistent for 6 months!";
+    } else if (currentStreak >= 12) {
+      return "You've been consistent for almost 3 months!";
     } else if (currentStreak >= 4) {
       return "You're building an incredible habit!";
     } else if (currentStreak >= 2) {
@@ -27,7 +56,7 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
     } else if (currentStreak > 0) {
       return "Keep going to build your weekly streak!";
     }
-    return "Hit your weekly goal to start your streak! 🔥";
+    return "Hit your weekly goal to start your streak!";
   };
 
   const getWeekNumbers = () => {
@@ -61,13 +90,20 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
               <Ionicons name="close" size={24} color={Theme.colors.text.secondary} />
             </TouchableOpacity>
           </View>
-
-          <View style={styles.streakDisplay}>
-            <Text style={styles.streakFlameIcon}>🔥</Text>
-            <Text style={styles.streakMainNumber}>{currentStreak}</Text>
-            <Text style={styles.streakMainLabel}>week{currentStreak !== 1 ? 's' : ''} streak</Text>
+          <View style={styles.streakContainer}>
+            <Image
+              source={require('@/assets/images/icons/streak.png')}
+              style={[styles.streakFlameIcon, inactiveStyle]}
+            />
+            <View style={styles.streakDisplay}>
+              <Text style={[styles.streakMainNumber, inactiveStyle]}>{currentStreak}</Text>
+              {hasRunThisWeek ? (
+                <Text style={[styles.streakMainLabel, inactiveStyle]}>week{currentStreak !== 1 ? 's' : ''} streak!</Text>
+              ) : (
+                <Text style={[styles.streakMainLabel, inactiveStyle]}>your streak is at risk!</Text>
+              )}
+            </View>
           </View>
-
           <View style={styles.streakWeekView}>
             {getWeekNumbers().map((week) => (
               <View key={week.weekNumber} style={styles.streakWeekColumn}>
@@ -85,10 +121,10 @@ export default function StreakDisplay({ visible, streakInfo, onClose }: StreakDi
           </View>
 
           <View style={styles.streakInfo}>
-            <Text style={styles.streakMessage}>{getStreakMessage()}</Text>
+            <Text style={[styles.streakMessage]}>{getStreakMessage()}</Text>
             {longestStreak > 0 && (
               <Text style={styles.longestStreak}>
-                Longest streak: {longestStreak} week{longestStreak !== 1 ? 's' : ''} 🏆
+                Longest streak: {longestStreak} week{longestStreak !== 1 ? 's' : ''}
               </Text>
             )}
           </View>
@@ -127,25 +163,39 @@ const styles = StyleSheet.create({
   closeButton: {
     padding: Theme.spacing.xs,
   },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    justifyContent: 'flex-start',
+  },
   streakDisplay: {
-    alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
+    flexDirection: 'column',
+    alignItems: 'flex-start',
+    marginLeft: 10,
+    marginBottom: Theme.spacing.sm,
+    // shadowColor: Theme.colors.special.primary.streak,
+    // shadowOffset: { width: 0, height: 0 },
+    // shadowOpacity: 0.5,
+    // shadowRadius: 4,
+    // elevation: 10,
   },
   streakFlameIcon: {
-    fontSize: 80,
-    marginBottom: Theme.spacing.md,
+    marginTop: 10,
+    width: 100,
+    height: 100,
   },
   streakMainNumber: {
-    fontSize: 48,
+    zIndex: 1,
+    marginTop: 20,
+    fontSize: 50,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.xs,
   },
   streakMainLabel: {
-    fontSize: 18,
+    fontSize: 24,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.lg,
+    marginBottom: Theme.spacing.xxxl,
   },
   streakWeekView: {
     flexDirection: 'row',
@@ -171,7 +221,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   streakWeekCompleted: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.streak,
   },
   streakWeekIncomplete: {
     backgroundColor: Theme.colors.background.tertiary,
@@ -179,7 +229,7 @@ const styles = StyleSheet.create({
   streakCheckmark: {
     fontSize: 16,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: Theme.colors.background.primary,
   },
   streakInfo: {
     alignItems: 'center',
@@ -199,5 +249,8 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
     textAlign: 'center',
+  },
+  inactiveStreak: {
+    opacity: 0.4,
   },
 }); 

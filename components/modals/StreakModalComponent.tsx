@@ -1,7 +1,7 @@
 import Theme from '@/constants/theme';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import { Image, StyleSheet, Text, View } from 'react-native';
 import {
   default as Reanimated,
   useAnimatedStyle,
@@ -47,21 +47,45 @@ export default function StreakModalComponent({
   });
 
   const getWeekNumbers = () => {
-    // Show last 8 weeks, with current streak filled
-    const weeks = [];
-    for (let i = 0; i < 8; i++) {
+    /*
+      Show a sliding window of the last 8 weeks (or fewer if the streak is < 8).
+      Example:
+        currentStreak = 5  => weeks 1-5
+        currentStreak = 9  => weeks 2-9  (latest 8)
+        currentStreak = 15 => weeks 8-15 (latest 8)
+    */
+
+    const visibleWeeks = 8;
+
+    // Calculate the start and end week numbers for the window
+    const endWeek = currentStreak;
+    const startWeek = Math.max(1, endWeek - visibleWeeks + 1);
+
+    const weeks: { weekNumber: number; isCompleted: boolean }[] = [];
+    for (let week = startWeek; week <= endWeek; week++) {
       weeks.push({
-        weekNumber: i + 1,
-        isCompleted: i < currentStreak
+        weekNumber: week,
+        isCompleted: week <= currentStreak,
       });
     }
+
+    // If the streak is less than the visible window, prepend missing weeks so that
+    // the total count always equals `visibleWeeks`. This keeps spacing consistent.
+    while (weeks.length < visibleWeeks) {
+      const missingWeekNumber = weeks[0].weekNumber - 1;
+      weeks.unshift({
+        weekNumber: missingWeekNumber,
+        isCompleted: false,
+      });
+    }
+
     return weeks;
   };
 
   return (
     <View style={styles.centeredGroup}>
       <Reanimated.View style={[styles.streakDisplay, streakAnimatedStyle]}>
-        <Text style={styles.streakFlameIcon}>🔥</Text>
+        <Image source={require('@/assets/images/icons/streak.png')} style={styles.streakFlameIcon} />
         <Text style={styles.streakMainNumber}>{currentStreak}</Text>
         <Text style={styles.streakMainLabel}>week{currentStreak !== 1 ? 's' : ''} streak</Text>
       </Reanimated.View>
@@ -103,17 +127,21 @@ const styles = StyleSheet.create({
   },
   streakDisplay: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.xxxl,
+    marginBottom: Theme.spacing.xl,
+    // shadowColor: Theme.colors.special.primary.streak,
+    // shadowOffset: { width: 0, height: 0 },
+    // shadowOpacity: 0.5,
+    // shadowRadius: 4,
+    // elevation: 10,
   },
   streakFlameIcon: {
-    fontSize: 120,
-    marginBottom: Theme.spacing.lg,
+    width: 120,
+    height: 120,
   },
   streakMainNumber: {
     fontSize: 72,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.sm,
   },
   streakMainLabel: {
     fontSize: 24,
@@ -140,14 +168,14 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.sm,
   },
   streakWeekCircle: {
-    width: 40,
-    height: 40,
+    width: 30,
+    height: 30,
     borderRadius: 20,
     alignItems: 'center',
     justifyContent: 'center',
   },
   streakWeekCompleted: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.streak,
   },
   streakWeekIncomplete: {
     backgroundColor: Theme.colors.background.tertiary,
@@ -155,7 +183,7 @@ const styles = StyleSheet.create({
   streakCheckmark: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: Theme.colors.background.primary,
   },
   streakEncouragement: {
     fontSize: 18,

@@ -1,4 +1,5 @@
 import DayCard from '@/components/DayCard';
+import LoadingScreen from '@/components/LoadingScreen';
 import HealthModal from '@/components/modals/HealthModal';
 import InitialSyncModal from '@/components/modals/InitialSyncModal';
 import RestCelebrationModal from '@/components/modals/RestCelebrationModal';
@@ -13,10 +14,10 @@ import { Doc } from '@/convex/_generated/dataModel';
 import { useOnboardingSync } from '@/hooks/useOnboardingSync';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
-import Ionicons from '@expo/vector-icons/build/Ionicons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -27,6 +28,7 @@ const SCROLLING_BG_LOOP_WIDTH = 2000;
 const SCROLLING_BG_ANIMATION_DURATION = 8000;
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 const LEGACY_DEVICE = screenHeight < 700; // Approximate older, non-notch iPhones
+const isDarkBackground = true;
 
 interface DayData {
   date: string;
@@ -814,30 +816,33 @@ export default function HomeScreen() {
 
   // Show loading state when queries are loading
   if (!profile || !activities || plannedWorkouts === undefined || restActivities === undefined || simpleSchedule === undefined || scheduleHistory === undefined) {
-    return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>Loading...</Text>
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   if (!allDays.length) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <Text style={styles.loading}>Loading...</Text>
-      </SafeAreaView>
-    );
+    return <LoadingScreen />;
   }
 
   const selectedDayData = allDays[currentDayIndex];
+  const backgroundImages = [
+    require('@/assets/images/backgrounds/bg.jpg'),
+    require('@/assets/images/backgrounds/bgflours.png'),
+    require('@/assets/images/backgrounds/bglight.png'),
+    require('@/assets/images/backgrounds/bgparis.png'),
+  ];
 
   try {
     return (
       <SafeAreaView style={styles.container}>
-        {/* <LinearGradient
-          colors={[Theme.colors.background.tertiary, Theme.colors.background.secondary, Theme.colors.background.primary]}
+        <Image source={backgroundImages[0]} style={styles.imageBackground} resizeMode="cover" />
+        {/* Progressive blur overlays: strongest at top, weakest at bottom */}
+        {/* <BlurView intensity={10} tint="dark" style={[styles.blurOverlay, styles.blurTop]} />
+          <BlurView intensity={0} tint="dark" style={[styles.blurOverlay, styles.blurBottom]} /> */}
+
+        <LinearGradient
+          colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.primary]}
           style={styles.solidBackground}
-        /> */}
+        />
         <View style={styles.headerContainer}>
           <View style={styles.leftHeaderSection}>
             <View style={styles.titleContainer}>
@@ -855,7 +860,7 @@ export default function HomeScreen() {
                   onLongPress={handleDebugPress}
                   activeOpacity={0.7}
                 >
-                  <Text style={styles.levelText}>LVL {levelInfo.level}</Text>
+                  <Text style={styles.levelText}>lvl {levelInfo.level}</Text>
                 </TouchableOpacity>
               )}
             </View>
@@ -872,11 +877,14 @@ export default function HomeScreen() {
                 const currentLives = profile?.mascotHealth || 0;
                 const isAlive = index < currentLives;
                 return (
-                  <Ionicons
+                  <Image
                     key={index}
-                    name={isAlive ? "heart" : "heart-outline"}
-                    size={25}
-                    color={isAlive ? Theme.colors.special.primary.coin : Theme.colors.text.primary}
+                    source={require('@/assets/images/icons/heart.png')}
+                    style={{
+                      width: 25,
+                      height: 25,
+                      opacity: isAlive ? 1 : 0.5
+                    }}
                   />
                 );
               })}
@@ -895,14 +903,28 @@ export default function HomeScreen() {
               activeOpacity={0.7}
             >
               <View style={styles.coinContainer}>
-                <Image source={require('@/assets/images/icons/coal.png')} style={styles.coinIcon} />
                 <Text style={styles.coinText}>{profile?.coins || 0}</Text>
+                <Image source={require('@/assets/images/icons/coal.png')} style={styles.coinIcon} />
               </View>
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.streakContainer}
+              onPress={() => {
+                analytics.track({ name: 'streak_modal_viewed', properties: { source: 'header' } });
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowStreakModal(true);
+              }}
+              activeOpacity={0.7}
+            >
+              <Text style={styles.streakText}>{profile?.currentStreak || 0}</Text>
+              <Image source={require('@/assets/images/icons/streak.png')} style={styles.flameIcon} />
             </TouchableOpacity>
           </View>
         </View>
 
         <View style={styles.animationContainer}>
+          {/* <View style={styles.floor} /> */}
+
           {/* <View style={styles.shadowDisc} /> */}
           {/* <Image
             source={mascotImageSource}
@@ -920,7 +942,6 @@ export default function HomeScreen() {
             )}
           </View>
         </View>
-
         <ScrollView
           style={styles.mainScrollView}
           stickyHeaderIndices={[1]}
@@ -939,11 +960,6 @@ export default function HomeScreen() {
             weeks={weeks}
             onWeekChange={handleWeekChange}
             weekStartDay={weekStartDay}
-            streakInfo={profile ? {
-              currentStreak: profile.currentStreak,
-              longestStreak: profile.longestStreak,
-              lastStreakWeek: profile.lastStreakWeek || null,
-            } : undefined}
             simpleSchedule={simpleSchedule ? {
               runsPerWeek: simpleSchedule.runsPerWeek,
               preferredDays: simpleSchedule.preferredDays,
@@ -1165,20 +1181,34 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: Theme.colors.background.primary,
   },
+  imageBackground: {
+    position: 'absolute',
+    top: -200,
+    left: 0,
+    height: '100%',
+    width: '100%',
+    zIndex: 0,
+  },
+  imageBackgroundInner: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    height: '100%',
+    width: '100%',
+  },
   solidBackground: {
     position: 'absolute',
     top: 0,
     left: 0,
     height: '100%',
     width: '100%',
-    backgroundColor: '#0D0C0F'
   },
   headerContainer: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Theme.spacing.xl,
-    zIndex: 1,
+    zIndex: 2,
     backgroundColor: 'transparent',
   },
   leftHeaderSection: {
@@ -1191,12 +1221,12 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   title: {
-    fontSize: 32,
+    fontSize: 36,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: isDarkBackground ? Theme.colors.text.primary : Theme.colors.background.primary,
   },
   levelBadge: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.border.secondary,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 12,
@@ -1218,20 +1248,46 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: 10,
   },
+  streakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: isDarkBackground ? 'transparent' : Theme.colors.background.primary,
+    paddingHorizontal: isDarkBackground ? 0 : Theme.spacing.md,
+    paddingVertical: isDarkBackground ? 0 : Theme.spacing.xs,
+    borderRadius: Theme.borderRadius.medium,
+    // shadowColor: Theme.colors.special.primary.streak,
+    // shadowOffset: { width: 0, height: 0 },
+    // shadowOpacity: 0.5,
+    // shadowRadius: 4,
+    // elevation: 10,
+  },
+  streakText: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  flameIcon: {
+    width: 20,
+    height: 20,
+    marginLeft: 2,
+  },
   coinContainer: {
     flexDirection: 'row',
     alignItems: 'center',
-    shadowColor: Theme.colors.accent.primary,
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.5,
-    shadowRadius: 4,
-    elevation: 10,
+    backgroundColor: isDarkBackground ? 'transparent' : Theme.colors.background.primary,
+    paddingHorizontal: isDarkBackground ? 0 : Theme.spacing.md,
+    paddingVertical: isDarkBackground ? 0 : Theme.spacing.xs,
+    borderRadius: Theme.borderRadius.medium,
+    // shadowColor: Theme.colors.accent.primary,
+    // shadowOffset: { width: 0, height: 0 },
+    // shadowOpacity: 0.5,
+    // shadowRadius: 4,
+    // elevation: 10,
   },
   coinIcon: {
     width: 24,
     height: 24,
-    marginRight: 4,
-
+    marginLeft: 2,
   },
   coinText: {
     fontSize: 18,
@@ -1240,14 +1296,14 @@ const styles = StyleSheet.create({
   },
   mainScrollView: {
     position: 'absolute',
-    top: LEGACY_DEVICE ? 100 : 150,
+    top: 150,
     left: 0,
     right: 0,
     bottom: 0,
     zIndex: 2,
   },
   animationContainer: {
-    height: 350,
+    height: 220,
     alignItems: 'center',
     justifyContent: 'center',
     flexDirection: 'row',
@@ -1279,7 +1335,7 @@ const styles = StyleSheet.create({
   scrollContentContainer: {
   },
   scrollSpacer: {
-    height: 300,
+    height: LEGACY_DEVICE ? 180 : 230,
   },
   debugModal: {
     backgroundColor: Theme.colors.background.secondary,
@@ -1352,5 +1408,29 @@ const styles = StyleSheet.create({
   loadingText: {
     fontSize: 16,
     color: Theme.colors.text.tertiary,
+  },
+  blurOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    zIndex: 1,
+  },
+  blurTop: {
+    top: 0,
+    height: '40%', // Adjust as needed for the top blur
+  },
+  blurBottom: {
+    top: '70%', // Adjust as needed for the bottom blur
+    height: '30%', // Adjust as needed for the bottom blur
+  },
+  floor: {
+    position: 'absolute',
+    width: '100%',
+    height: 100,
+    backgroundColor: Theme.colors.background.secondary,
+    bottom: 0,
+    zIndex: 0,
   },
 });

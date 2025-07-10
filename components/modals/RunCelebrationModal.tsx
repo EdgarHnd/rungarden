@@ -620,17 +620,10 @@ export default function RunCelebrationModal({
     <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
       <StreakModalComponent
         currentStreak={streakInfo?.currentStreak || 0}
-        customMessage={
-          (streakInfo?.currentStreak || 0) >= 6 ?
-            "You've been learning for almost a week straight!" :
-            (streakInfo?.currentStreak || 0) >= 3 ?
-              "You're building an amazing habit!" :
-              "Keep going to build your streak!"
-        }
       />
 
       <TouchableOpacity
-        style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
+        style={[styles.actionButton, { backgroundColor: Theme.colors.special.primary.streak, borderBottomColor: Theme.colors.special.secondary.streak }]}
         onPress={handleContinue}
         activeOpacity={0.8}
       >
@@ -652,7 +645,7 @@ export default function RunCelebrationModal({
               style={[styles.rewardIcon, rewardIconAnimatedStyle]}
             />
             <Text style={styles.rewardMessage}>You earned {animatedCoinValue} embers</Text>
-            <Text style={styles.rewardSubtitle}>Spend them on new clothes and accessories for Blaze!</Text>
+            <Text style={styles.rewardSubtitle}>Start spending them when the shop is live!</Text>
           </View>
         </View>
       </View>
@@ -737,8 +730,8 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   image: {
-    width: 250,
-    height: 250,
+    width: 150,
+    height: 150,
   },
 
   // Content Section

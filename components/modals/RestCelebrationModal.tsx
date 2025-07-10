@@ -428,8 +428,8 @@ const styles = StyleSheet.create({
     marginBottom: Theme.spacing.xl,
   },
   image: {
-    width: 250,
-    height: 250,
+    width: 150,
+    height: 150,
   },
   // Rewards Section
   rewardsTitle: {

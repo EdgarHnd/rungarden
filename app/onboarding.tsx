@@ -47,8 +47,8 @@ export default function OnboardingScreen() {
   const router = useRouter();
   const convex = useConvex();
   const analytics = useAnalytics();
-  const [currentStep, setCurrentStep] = useState(0);
-  const [slideAnim] = useState(new Animated.Value(0));
+  const [currentStep, setCurrentStep] = useState(1);
+  const [slideAnim] = useState(new Animated.Value(1));
   const nameInputRef = useRef<TextInput>(null);
   const [pushService, setPushService] = useState<PushNotificationService | null>(null);
 
@@ -60,6 +60,12 @@ export default function OnboardingScreen() {
   const [textPulseAnim] = useState(new Animated.Value(1)); // For pulsing effect
   const [gifOpacityAnim] = useState(new Animated.Value(1));
   const [secondGifOpacityAnim] = useState(new Animated.Value(0));
+
+  // === Flame introduction animation state (step 1) ===
+  const [flameIntroOpacity] = useState(new Animated.Value(0));
+  const [flameButtonsOpacity] = useState(new Animated.Value(0));
+  const [flameTypewriterText, setFlameTypewriterText] = useState('');
+  const flameTypewriterIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
   const getStepName = (step: number) => {
     switch (step) {
@@ -98,7 +104,7 @@ export default function OnboardingScreen() {
 
   useEffect(() => {
     analytics.track({
-      name: 'onboarding_step_viewed',
+      name: `onboarding_${getStepName(currentStep)}_viewed`,
       properties: {
         step_number: currentStep,
         step_name: getStepName(currentStep),
@@ -177,6 +183,29 @@ export default function OnboardingScreen() {
     }
   }, [currentStep]);
 
+  useEffect(() => {
+    if (currentStep === 1) {
+      // Reset animation state whenever we enter the flame intro step
+      flameIntroOpacity.setValue(0);
+      flameButtonsOpacity.setValue(0);
+      setFlameTypewriterText('');
+
+      Animated.timing(flameIntroOpacity, {
+        toValue: 1,
+        duration: 1000,
+        useNativeDriver: true,
+      }).start(() => {
+        startFlameTypewriter();
+      });
+    } else {
+      // Clean-up when navigating away from the flame intro step
+      if (flameTypewriterIntervalRef.current) {
+        clearInterval(flameTypewriterIntervalRef.current);
+        flameTypewriterIntervalRef.current = null;
+      }
+    }
+  }, [currentStep]);
+
   const startPulseAnimation = () => {
     const pulseLoop = () => {
       Animated.sequence([
@@ -221,6 +250,29 @@ export default function OnboardingScreen() {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         // Start pulsing animation
         startPulseAnimation();
+      }
+    }, 100);
+  };
+
+  const startFlameTypewriter = () => {
+    const fullText = "You woke up a little flame";
+    let index = 0;
+
+    flameTypewriterIntervalRef.current = setInterval(() => {
+      if (index < fullText.length) {
+        setFlameTypewriterText(fullText.slice(0, index + 1));
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        index++;
+      } else {
+        if (flameTypewriterIntervalRef.current) {
+          clearInterval(flameTypewriterIntervalRef.current);
+          flameTypewriterIntervalRef.current = null;
+        }
+        Animated.timing(flameButtonsOpacity, {
+          toValue: 1,
+          duration: 500,
+          useNativeDriver: true,
+        }).start();
       }
     }, 100);
   };
@@ -288,7 +340,7 @@ export default function OnboardingScreen() {
   const nextStep = () => {
     if (currentStep < TOTAL_STEPS - 1) {
       analytics.track({
-        name: 'onboarding_step_completed',
+        name: `onboarding_${getStepName(currentStep)}_completed`,
         properties: {
           step_number: currentStep,
           step_name: getStepName(currentStep),
@@ -312,7 +364,7 @@ export default function OnboardingScreen() {
   const prevStep = () => {
     if (currentStep > 1) { // Don't go back from welcome step (0) or flame intro (1)
       analytics.track({
-        name: 'onboarding_step_revisited',
+        name: `onboarding_${getStepName(currentStep)}_revisited`,
         properties: {
           step_number: currentStep,
           step_name: getStepName(currentStep),
@@ -496,41 +548,15 @@ export default function OnboardingScreen() {
   };
 
   const renderFlameIntroduction = () => (
-    <View style={styles.stepContainer}>
+    <Animated.View style={[styles.stepContainer, { opacity: flameIntroOpacity }]}>
+      <Image source={require('@/assets/images/backgrounds/bg.jpg')} style={styles.imageBackground} resizeMode="cover" />
+      <Text style={styles.introTitle}>{flameTypewriterText}</Text>
       <View style={styles.flameIntroContainer}>
-        <View style={styles.blazeContainer}>
+        <View style={styles.blazeContainerIntro}>
           <Rive url={RIVE_URL_IDDLE} style={styles.blazeImage} autoplay={true} />
         </View>
-
-        <View style={styles.flameIntroButtons}>
-          <TouchableOpacity
-            style={styles.getStartedButton}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-              nextStep();
-            }}
-          >
-            <Text style={styles.getStartedButtonText}>Adopt it!</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity
-            style={styles.signInButton}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              // Jump directly to the auth step (step 13)
-              setCurrentStep(13);
-              Animated.timing(slideAnim, {
-                toValue: 13,
-                duration: 300,
-                useNativeDriver: true,
-              }).start();
-            }}
-          >
-            <Text style={styles.signInButtonText}>Already have an account? Sign in</Text>
-          </TouchableOpacity>
-        </View>
       </View>
-    </View>
+    </Animated.View>
   );
 
   const renderName = () => (
@@ -564,7 +590,7 @@ export default function OnboardingScreen() {
     const getStepInfo = () => {
       switch (currentStep) {
         case 0: return { title: '', subtitle: '' };
-        case 1: return { title: 'You found a lost flame', subtitle: '' };
+        case 1: return { title: '', subtitle: '' };
         case 2: return { title: 'What should we call it?', subtitle: '' };
         case 3: return { title: 'Choose your path', subtitle: '' };
         case 4: return { title: 'How long can you run now?', subtitle: '' };
@@ -1149,6 +1175,34 @@ export default function OnboardingScreen() {
           </TouchableOpacity>
         </View>
       )}
+      {currentStep === 1 && (
+        <Animated.View style={[styles.footer, { opacity: flameButtonsOpacity }]}>
+          <TouchableOpacity
+            style={[styles.nextButton, !canProceed() && styles.nextButtonDisabled]}
+            onPress={nextStep}
+            disabled={!canProceed()}
+          >
+            <Text style={[styles.nextButtonText, { textTransform: 'uppercase' }]}>
+              Adopt it!
+            </Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.signInButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              // Jump directly to the auth step (step 13)
+              setCurrentStep(13);
+              Animated.timing(slideAnim, {
+                toValue: 13,
+                duration: 300,
+                useNativeDriver: true,
+              }).start();
+            }}
+          >
+            <Text style={styles.signInButtonText}>Already have an account? Sign in</Text>
+          </TouchableOpacity>
+        </Animated.View>
+      )}
     </View>
   );
 }
@@ -1203,6 +1257,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     textAlign: 'center',
     maxWidth: screenWidth * 0.9,
+    zIndex: 10,
   },
   headerSubtitle: {
     fontSize: 18,
@@ -1224,11 +1279,10 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-start',
     paddingTop: LEGACY_DEVICE ? Theme.spacing.xs : Theme.spacing.lg,
   },
-  welcomeContainer: {
+  blazeContainerIntro: {
     alignItems: 'center',
-    justifyContent: 'center',
-    flex: 1,
-    paddingTop: Theme.spacing.xxxl,
+    marginBottom: Theme.spacing.lg,
+    marginTop: 250,
   },
   blazeContainer: {
     alignItems: 'center',
@@ -1737,14 +1791,14 @@ const styles = StyleSheet.create({
     paddingBottom: 40,
   },
   nextButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
     backgroundColor: Theme.colors.accent.primary,
     borderRadius: Theme.borderRadius.large,
     borderBottomWidth: 3,
     borderBottomColor: Theme.colors.accent.secondary,
     paddingVertical: Theme.spacing.lg,
+    alignItems: 'center',
+    justifyContent: 'center',
+    width: '100%',
   },
   nextButtonDisabled: {
     backgroundColor: Theme.colors.background.tertiary,
@@ -1915,39 +1969,39 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
   },
   // Flame introduction styles
+  introTitle: {
+    fontSize: 28,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginTop: 50,
+  },
+  imageBackground: {
+    position: 'absolute',
+    top: -150,
+    left: 0,
+    width: screenWidth,
+    height: screenHeight + 50,
+    backgroundColor: Theme.colors.background.primary,
+  },
   flameIntroContainer: {
     alignItems: 'center',
     flex: 1,
     justifyContent: 'space-between',
-    paddingTop: Theme.spacing.xl,
   },
   flameIntroButtons: {
-    marginTop: LEGACY_DEVICE ? 20 : 100,
+    position: 'absolute',
     width: '100%',
     gap: Theme.spacing.lg,
   },
-  getStartedButton: {
-    borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.lg,
-    alignItems: 'center',
-    borderColor: Theme.colors.accent.primary,
-    borderBottomWidth: 4,
-    borderBottomColor: Theme.colors.accent.secondary,
-    backgroundColor: Theme.colors.accent.primary,
-  },
-  getStartedButtonText: {
-    fontSize: 30,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-  },
   signInButton: {
     alignItems: 'center',
-    paddingVertical: Theme.spacing.lg,
+    paddingTop: Theme.spacing.lg,
   },
   signInButtonText: {
     fontSize: 16,
     fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
+    color: Theme.colors.text.primary,
     textDecorationLine: 'underline',
   },
 }); 

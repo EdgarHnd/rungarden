@@ -140,7 +140,7 @@ export default function DayCard({
     analytics.track({ name: 'simple_run_pressed' });
     if (!isToday && !isDatabasePlannedWorkout(plannedWorkout)) {
       router.push({
-        pathname: '/activities',
+        pathname: '/manage-schedule',
       });
     } else {
       analytics.track({ name: 'recording_modal_viewed_from_day_card' });

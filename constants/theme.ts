@@ -1,9 +1,9 @@
 export const Theme = {
   colors: {
     background: {
-      primary: '#192B31',      // Dark blue-gray - main background
-      secondary: '#243942',    // Lighter blue-gray - secondary background
-      tertiary: '#2F4852',     // Light blue-gray - tertiary background
+      primary: '#0D1B2A',      // Deep blue - main background
+      secondary: '#1B2D3C',    // Deeper blue - secondary background
+      tertiary: '#243B4D',     // Deep blue - tertiary background
       overlay: 'rgba(0, 0, 0, 0.8)', // Modal overlay
     },
 
@@ -47,6 +47,7 @@ export const Theme = {
         shadow: '#000000',       // Shadow color
         heart: '#EF4444',        // Red for heart
         energy: '#FFD700',        // Gold for energy
+        streak: '#FDD327',        // Gold for streak
       },
       secondary:{
         exp: '#3AA9DD',         // Darker blue
@@ -54,7 +55,8 @@ export const Theme = {
         level: '#0EA472',       // Darker green
         shadow: '#000000',       // Shadow color
         heart: '#E60000',       // Darker red
-        energy: '#FFD700',       // Darker gold for energy
+        energy: '#E6C200',       // Darker gold for energy
+        streak: '#FFB22B',       // Darker gold for streak
       }
     },
 

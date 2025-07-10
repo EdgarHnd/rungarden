@@ -1,11 +1,21 @@
+import LoadingScreen from '@/components/LoadingScreen';
 import Theme from '@/constants/theme';
 import { UserRankInfo } from '@/convex/leaderboard';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
-import { useQuery } from "convex/react";
+import { useMutation, useQuery } from 'convex/react';
+import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import React, { useEffect, useState } from 'react';
-import { ActivityIndicator, Animated, FlatList, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import {
+  Animated,
+  FlatList,
+  Pressable,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
 import { api } from '../convex/_generated/api';
 import FriendAvatar from './FriendAvatar';
 
@@ -50,6 +60,9 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
 
   const profile = useQuery(api.userProfile.getOrCreateProfile);
 
+  const incomingRequests = useQuery(api.friends.getPendingFriendRequests);
+  const respondRequest = useMutation(api.friends.respondToFriendRequest);
+
   const isLoading = leaderboard === undefined || userRank === undefined;
   const hasData = leaderboard !== undefined && userRank !== undefined;
 
@@ -59,6 +72,23 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
       setPreviousData({ leaderboard, userRank });
     }
   }, [hasData, leaderboard, userRank]);
+
+  const handleRespond = async (requestId: string, accept: boolean) => {
+    try {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+      analytics.track({
+        name: 'friend_request_responded',
+        properties: { request_id: requestId, accepted: accept, from_screen: 'leaderboard' },
+      });
+      await respondRequest({ requestId: requestId as any, accept });
+    } catch (e: any) {
+      if (onError) {
+        onError(e.message);
+      } else {
+        alert(e.message);
+      }
+    }
+  };
 
   // Handle smooth transitions when period changes
   useEffect(() => {
@@ -98,6 +128,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
   };
 
   const handlePeriodChange = (period: Period) => {
+    Haptics.selectionAsync();
     setSelectedPeriod(period);
     setShowPeriodMenu(false);
     analytics.track({
@@ -122,12 +153,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
 
   // Show initial loading only if we have no data at all
   if (!displayData.leaderboard && isLoading) {
-    return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={Theme.colors.accent.primary} />
-        <Text style={styles.loadingText}>Loading leaderboard...</Text>
-      </View>
-    );
+    return <LoadingScreen />;
   }
 
   return (
@@ -147,7 +173,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
             </TouchableOpacity>
             {showPeriodMenu && (
               <View style={styles.dropdownMenuCentered}>
-                {(["week", "month", "all"] as Period[]).map((p) => (
+                {(['week', 'month', 'all'] as Period[]).map((p) => (
                   <TouchableOpacity key={p} style={styles.dropdownItem} onPress={() => handlePeriodChange(p)}>
                     <Text style={[styles.dropdownItemText, selectedPeriod === p && styles.dropdownItemTextActive]}>
                       {getPeriodTitle(p)}
@@ -157,14 +183,47 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
               </View>
             )}
           </View>
-          <TouchableOpacity style={styles.addFriendButton} onPress={() => {
-            analytics.track({ name: 'leaderboard_add_friend_clicked' });
-            router.push('/add-friend');
-          }}>
+          <TouchableOpacity
+            style={styles.addFriendButton}
+            onPress={() => {
+              Haptics.selectionAsync();
+              analytics.track({ name: 'leaderboard_add_friend_clicked' });
+              router.push('/add-friend');
+            }}
+          >
             <FontAwesome5 name="user-plus" size={20} color={Theme.colors.special.primary.exp} />
             <Text style={styles.addFriendButtonText}>Add Friends</Text>
           </TouchableOpacity>
         </View>
+        {/* Friend Requests */}
+        {incomingRequests && incomingRequests.length > 0 && (
+          <View style={styles.requestsContainer}>
+            <Text style={styles.sectionTitle}>Friend Requests</Text>
+            <FlatList
+              data={incomingRequests}
+              keyExtractor={(item) => item._id as string}
+              renderItem={({ item }) => (
+                <View style={styles.requestRow}>
+                  <Text style={styles.requestName}>{item.name}</Text>
+                  <View style={styles.requestActions}>
+                    <TouchableOpacity
+                      style={[styles.acceptButton, styles.requestButton]}
+                      onPress={() => handleRespond(item._id as string, true)}
+                    >
+                      <Text style={styles.requestButtonText}>Accept</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[styles.rejectButton, styles.requestButton]}
+                      onPress={() => handleRespond(item._id as string, false)}
+                    >
+                      <Text style={styles.requestButtonText}>Decline</Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              )}
+            />
+          </View>
+        )}
         {/* Leaderboard */}
         <FlatList
           data={displayData.leaderboard || []}
@@ -178,6 +237,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
             />
           )}
           contentContainerStyle={styles.friendsGrid}
+          columnWrapperStyle={{ gap: Theme.spacing.xxl }}
           showsVerticalScrollIndicator={false}
           ListEmptyComponent={() => (
             <View style={styles.emptyState}>
@@ -307,7 +367,7 @@ const styles = StyleSheet.create({
     textAlign: 'right',
   },
   friendsGrid: {
-    padding: Theme.spacing.md,
+    paddingVertical: Theme.spacing.md,
   },
   timeDropdown: {
     marginTop: Theme.spacing.sm,
@@ -397,5 +457,47 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     textTransform: 'uppercase',
     color: Theme.colors.special.primary.exp,
+  },
+  requestsContainer: {
+    marginBottom: Theme.spacing.lg,
+  },
+  sectionTitle: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.sm,
+  },
+  requestRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.md,
+    borderBottomWidth: 1,
+    borderColor: Theme.colors.border.primary,
+  },
+  requestName: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+  },
+  requestActions: {
+    flexDirection: 'row',
+    flexShrink: 0,
+  },
+  requestButton: {
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.medium,
+    marginLeft: Theme.spacing.sm,
+  },
+  acceptButton: {
+    backgroundColor: Theme.colors.accent.primary,
+  },
+  rejectButton: {
+    backgroundColor: Theme.colors.background.tertiary,
+  },
+  requestButtonText: {
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
 }); 

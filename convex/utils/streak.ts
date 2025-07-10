@@ -122,11 +122,47 @@ export async function recalcStreak(db: DatabaseReader & DatabaseWriter, userId: 
   }
 
   // Calculate mascot health based on consecutive missed weeks from current week
-  // Start with full health and reduce by consecutive missed weeks (max reduction of 4)
+  // ────────────────────────────────────────────────
+  // Mascot health calculation
+  // Remove 1 HP for each **previous** week in a row where no run was logged.
+  // We purposely ignore the *current* week so users get a chance to save Blaze
+  // before Sunday night. Health can drop a maximum of 4 → 0.
   const maxHealth = 4;
-  const healthPenalty = Math.min(consecutiveMissedWeeks, maxHealth);
-  const mascotHealth = Math.max(0, maxHealth - healthPenalty);
 
+  // Fetch schedule history (goal requirements) once
+  const scheduleHistory = await db
+    .query("scheduleHistory")
+    .withIndex("by_user_date", (q: any) => q.eq("userId", userId))
+    .collect();
+
+  // Start health at 4 hearts and iterate over each week (including current)
+  let mascotHealth = 4;
+
+  let weekPtr = new Date(thisWeekStart); // current week first
+
+  // Iterate back until we have no more schedule history or the loop is excessive
+  for (let w = 0; w < 520; w++) {
+    const weekISO = weekPtr.toISOString().split("T")[0];
+
+    const schedule = getScheduleForWeek(weekISO, scheduleHistory);
+    if (!schedule) {
+      // No schedule yet → stop evaluating older weeks
+      break;
+    }
+
+    const runDays = countRunDaysInWeek(activities, weekISO);
+    const goalMet = runDays >= schedule.runsPerWeek;
+
+    if (goalMet) {
+      mascotHealth = Math.min(maxHealth, mascotHealth + 1);
+    } else {
+      mascotHealth = Math.max(0, mascotHealth - 1);
+    }
+
+    // Move one week back
+    weekPtr.setDate(weekPtr.getDate() - 7);
+  }
+   
   // Update user profile with new streak and health data
   await db.patch(profile._id, {
     currentStreak: streak,

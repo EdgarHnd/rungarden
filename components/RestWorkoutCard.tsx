@@ -66,13 +66,13 @@ export default function RestWorkoutCard({ restActivity, onPress }: RestWorkoutCa
           <Text style={styles.statLabel}>Embers</Text>
         </View>
 
-        <View style={styles.statDivider} />
+        {/* <View style={styles.statDivider} />
 
         <View style={styles.statItem}>
           <Ionicons name="heart" size={16} color={Theme.colors.status.success} />
           <Text style={styles.statValue}>100%</Text>
           <Text style={styles.statLabel}>Recovery</Text>
-        </View>
+        </View> */}
       </View>
 
       {/* Motivational Message */}

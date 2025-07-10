@@ -56,16 +56,18 @@ export default function HealthModal({ visible, mascotHealth, simpleSchedule, onC
           </View>
 
           <View style={styles.healthDisplay}>
-            <Image source={require('@/assets/images/blaze/blazelove.png')} style={styles.healthMascotIcon} resizeMode="contain" />
             <View style={styles.healthLivesDisplay}>
               {[...Array(4)].map((_, index) => {
                 const isAlive = index < mascotHealth;
                 return (
-                  <Ionicons
+                  <Image
                     key={index}
-                    name={isAlive ? "heart" : "heart-outline"}
-                    size={32}
-                    color={isAlive ? Theme.colors.special.primary.coin : Theme.colors.text.muted}
+                    source={require('@/assets/images/icons/heart.png')}
+                    style={{
+                      width: 45,
+                      height: 45,
+                      opacity: isAlive ? 1 : 0.5
+                    }}
                   />
                 );
               })}
@@ -74,21 +76,21 @@ export default function HealthModal({ visible, mascotHealth, simpleSchedule, onC
 
           <View style={styles.healthInfoSection}>
             <View style={styles.healthInfoItem}>
-              <Text style={styles.healthInfoIcon}>⚡</Text>
+              <Text style={styles.healthInfoIcon}>🔥</Text>
               <Text style={styles.healthInfoText}>
                 Your Flame starts with full health
               </Text>
             </View>
             <View style={styles.healthInfoItem}>
-              <Text style={styles.healthInfoIcon}>📅</Text>
+              <Text style={styles.healthInfoIcon}>⬇️</Text>
               <Text style={styles.healthInfoText}>
-                Health decreases by 1 for each consecutive week you miss your running goal
+                Health decreases by 1 for each week you miss your running goal
               </Text>
             </View>
             <View style={styles.healthInfoItem}>
-              <Text style={styles.healthInfoIcon}>🏃‍♂️</Text>
+              <Text style={styles.healthInfoIcon}>🙌</Text>
               <Text style={styles.healthInfoText}>
-                Hit your weekly goal to keep your flame healthy
+                Hit your weekly goal to bring it back to full health
               </Text>
             </View>
           </View>
@@ -152,7 +154,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     gap: Theme.spacing.xs,
-    marginBottom: Theme.spacing.md,
   },
   healthCurrentText: {
     fontSize: 18,
