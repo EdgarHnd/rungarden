@@ -50,6 +50,8 @@ export const createProfile = mutation({
       throw new Error("Not authenticated");
     }
 
+    const currentUser = await ctx.db.get(userId);
+
     const existingProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_user", (q) => q.eq("userId", userId))
@@ -78,6 +80,8 @@ export const createProfile = mutation({
       // Initialize mascot health
       mascotName: "Blaze",
       mascotHealth: 4,
+      firstName: currentUser?.name?.split(' ')[0] ?? undefined,
+      lastName: currentUser?.name?.split(' ').slice(1).join(' ') ?? undefined,
       // Onboarding profile data (initially empty)
       path: undefined,
       gender: undefined,
@@ -105,6 +109,8 @@ export const updateProfile = mutation({
     level: v.optional(v.number()),
     totalXP: v.optional(v.number()),
     coins: v.optional(v.number()),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
     mascotName: v.optional(v.string()),
     path: v.optional(v.union(
       v.literal("true-beginner"), v.literal("run-habit"),
@@ -180,6 +186,8 @@ export const updateProfile = mutation({
         currentStreak: 0,
         longestStreak: 0,
         streakFreezeAvailable: 0,
+        firstName: args.firstName,
+        lastName: args.lastName,
         mascotName: args.mascotName ?? "Blaze",
         mascotHealth: 4,
         path: args.path,
@@ -791,14 +799,29 @@ export const searchProfiles = query({
       received.forEach(fr => excludeIds.add(fr.fromUserId as string));
     }
 
-    // Simple search over users table (could be optimized with search index)
     const allUsers = await ctx.db.query("users").collect();
-    const matches = allUsers.filter((u: any) => {
-      if (!u.name) return false;
-      if (excludeIds.has(u._id)) return false;
-      return (u.name as string).toLowerCase().includes(searchText);
+    const profiles = await ctx.db.query("userProfiles").collect();
+    const profilesByUserId = new Map(profiles.map(p => [p.userId, p]));
+
+    const matches = allUsers.filter((user) => {
+      if (excludeIds.has(user._id)) return false;
+      const profile = profilesByUserId.get(user._id);
+      
+      // Construct full name from profile, fall back to user object name
+      const firstName = profile?.firstName || user.name?.split(' ')[0] || '';
+      const lastName = profile?.lastName || user.name?.split(' ').slice(1).join(' ') || '';
+      const fullName = `${firstName} ${lastName}`.trim();
+
+      if (!fullName) return false;
+      return fullName.toLowerCase().includes(searchText);
     }).slice(0, 20);
 
-    return matches.map((u: any) => ({ userId: u._id, name: u.name }));
+    return matches.map((user) => {
+      const profile = profilesByUserId.get(user._id);
+      const firstName = profile?.firstName || user.name?.split(' ')[0] || '';
+      const lastName = profile?.lastName || user.name?.split(' ').slice(1).join(' ') || '';
+      const fullName = `${firstName} ${lastName}`.trim();
+      return ({ userId: user._id, name: fullName });
+    });
   },
 }); 

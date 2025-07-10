@@ -498,6 +498,11 @@ export default function HomeScreen() {
     newLevel?: number;
     oldLevel?: number;
   } | null>(null);
+  const [initialSyncStreakInfo, setInitialSyncStreakInfo] = useState<{
+    currentStreak: number;
+    longestStreak: number;
+  } | null>(null);
+  const [initialSyncSource, setInitialSyncSource] = useState<'strava' | 'healthkit'>('strava');
 
   // Check for initial sync modal - this should trigger every time we navigate to index
   const checkInitialSyncModal = useCallback(async () => {
@@ -538,6 +543,12 @@ export default function HomeScreen() {
       const newLevel = profile?.level || 1;
       const leveledUp = newLevel > oldLevel;
 
+      // Also grab streak info to show in the modal
+      const streakInfo = {
+        currentStreak: profile?.currentStreak || 0,
+        longestStreak: profile?.longestStreak || 0,
+      };
+
       setInitialSyncResult({
         created: createdRuns,
         updated: 0,
@@ -547,12 +558,67 @@ export default function HomeScreen() {
         newLevel,
         oldLevel,
       });
+      setInitialSyncStreakInfo(streakInfo);
+      if (sourceFilter) {
+        setInitialSyncSource(sourceFilter);
+      }
       setInitialSyncModalVisible(true);
       console.log('[Index] Showing InitialSyncModal for', sourceFilter);
     } catch (err) {
       console.error('[Index] Error building initial sync modal:', err);
     }
   }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.healthKitSyncEnabled, profile?.stravaInitialSyncCompleted, (profile as any)?.healthKitInitialSyncCompleted, profile?.level, convex]);
+
+  // Force show initial sync modal for debugging
+  const forceShowInitialSyncModal = useCallback(async (source: 'strava' | 'healthkit') => {
+    console.log('[Index] Forcing initial sync modal for', source);
+
+    try {
+      // Get recent activities to compute stats
+      const recentActivities = await convex.query(api.activities.getUserActivities, { days: 365, limit: 1000 });
+      if (!recentActivities || !recentActivities.length) {
+        Alert.alert('No Activities', 'No recent activities found to show the sync modal.');
+        return;
+      }
+
+      const sourceActivities = recentActivities.filter(a => a.source === source);
+      if (sourceActivities.length === 0) {
+        Alert.alert('No Activities', `No recent activities found from ${source} to show the sync modal.`);
+        return;
+      }
+
+      const totalDistance = sourceActivities.reduce((sum, a) => sum + (a.distance || 0), 0);
+      const createdRuns = sourceActivities.length;
+
+      // Before-sync level assumed 1, after-sync from profile
+      const oldLevel = 1;
+      const newLevel = profile?.level || 1;
+      const leveledUp = newLevel > oldLevel;
+
+      // Also grab streak info to show in the modal
+      const streakInfo = {
+        currentStreak: profile?.currentStreak || 0,
+        longestStreak: profile?.longestStreak || 0,
+      };
+
+      setInitialSyncResult({
+        created: createdRuns,
+        updated: 0,
+        skipped: 0,
+        distanceGained: totalDistance,
+        leveledUp,
+        newLevel,
+        oldLevel,
+      });
+      setInitialSyncStreakInfo(streakInfo);
+      setInitialSyncSource(source);
+      setInitialSyncModalVisible(true);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    } catch (err) {
+      console.error('[Index] Error forcing initial sync modal:', err);
+      Alert.alert('Error', 'Could not show the initial sync modal.');
+    }
+  }, [profile, convex]);
 
   useEffect(() => {
     checkInitialSyncModal();
@@ -1105,6 +1171,26 @@ export default function HomeScreen() {
               <TouchableOpacity
                 style={styles.debugButton}
                 onPress={() => {
+                  setShowDebugModal(false);
+                  forceShowInitialSyncModal('strava');
+                }}
+              >
+                <Text style={styles.debugButtonText}>🔄 Test Strava Sync</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={() => {
+                  setShowDebugModal(false);
+                  forceShowInitialSyncModal('healthkit');
+                }}
+              >
+                <Text style={styles.debugButtonText}>🔄 Test HealthKit Sync</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={() => {
                   if (activities && activities.length > 0) {
                     const lastRun = activities[0]; // Most recent activity
                     const mockRewards = {
@@ -1148,6 +1234,8 @@ export default function HomeScreen() {
         <InitialSyncModal
           visible={initialSyncModalVisible}
           syncResult={initialSyncResult}
+          streakInfo={initialSyncStreakInfo}
+          source={initialSyncSource}
           onClose={() => {
             setInitialSyncModalVisible(false);
             setInitialSyncResult(null);

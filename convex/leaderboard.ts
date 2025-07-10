@@ -75,7 +75,7 @@ export const getLeaderboard = query({
                 _id: user._id as any,
                 _creationTime: user._creationTime,
                 userId: user._id,
-                name: user.name ?? 'New Friend',
+                name: user.name ?? 'Anonymous Runner',
                 totalDistance: 0,
                 totalWorkouts: 0,
                 level: 1,
@@ -100,7 +100,7 @@ export const getLeaderboard = query({
         leaderboard.push({
           rank: i + 1,
           userId: profile.userId,
-          name: (profile as any).name || profile.mascotName || "Unknown User",
+          name: (profile as any).name || profile.mascotName || "Anonymous Runner",
           totalDistance: profile.totalDistance || 0,
           level: profile.level || 1,
           totalWorkouts: profile.totalWorkouts || 0,
@@ -193,7 +193,7 @@ export const getLeaderboard = query({
       leaderboard.push({
         rank: stats.totalDistance > 0 ? rankCounter++ : 0, // Assign rank only if active
         userId: stats.userId,
-        name: profile?.mascotName || (user as any)?.name || "Unknown User",
+        name: profile?.firstName || (user as any)?.name || "Anonymous Runner",
         totalDistance: stats.totalDistance,
         level: profile?.level || 1,
         totalWorkouts: stats.totalWorkouts,

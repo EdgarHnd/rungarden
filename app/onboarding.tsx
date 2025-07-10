@@ -40,7 +40,7 @@ const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 // Simplified responsive constants: legacy devices (no notch) vs modern
 const LEGACY_DEVICE = screenHeight < 700; // Approximate older, non-notch iPhones
 
-const TOTAL_STEPS = 14;
+const TOTAL_STEPS = 15;
 
 export default function OnboardingScreen() {
   const { signIn } = useAuthActions();
@@ -50,6 +50,8 @@ export default function OnboardingScreen() {
   const [currentStep, setCurrentStep] = useState(1);
   const [slideAnim] = useState(new Animated.Value(1));
   const nameInputRef = useRef<TextInput>(null);
+  const firstNameInputRef = useRef<TextInput>(null);
+  const lastNameInputRef = useRef<TextInput>(null);
   const [pushService, setPushService] = useState<PushNotificationService | null>(null);
 
   // Cinematic effect state for welcome step
@@ -92,10 +94,12 @@ export default function OnboardingScreen() {
       case 10:
         return 'age_range';
       case 11:
-        return 'notifications_prompt';
+        return 'name_prompt';
       case 12:
-        return 'rating_prompt';
+        return 'notifications_prompt';
       case 13:
+        return 'rating_prompt';
+      case 14:
         return 'auth_prompt';
       default:
         return `unknown_step_${step}`;
@@ -116,6 +120,8 @@ export default function OnboardingScreen() {
   const RIVE_URL_IDDLE = "https://curious-badger-131.convex.cloud/api/storage/9caf3bc8-1fab-4dab-a8e5-4b6d563ca7d6";
 
   const [data, setData] = useState<OnboardingData>({
+    firstName: null,
+    lastName: null,
     mascotName: null,
     path: null,
     currentAbility: null,
@@ -350,6 +356,10 @@ export default function OnboardingScreen() {
       if (currentStep === 2 && nameInputRef.current) {
         nameInputRef.current.blur();
       }
+      if (currentStep === 11) {
+        firstNameInputRef.current?.blur();
+        lastNameInputRef.current?.blur();
+      }
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       Animated.timing(slideAnim, {
@@ -382,8 +392,8 @@ export default function OnboardingScreen() {
 
   const handleSelection = (updateFn: () => void) => {
     updateFn();
-    // Auto-advance for most steps, except name (2), path (3), days per week (5), and preferred days (6)
-    if (currentStep !== 2 && currentStep !== 3 && currentStep !== 5 && currentStep !== 6) {
+    // Auto-advance for most steps, except name (2), path (3), days per week (5), preferred days (6), and user name (11)
+    if (currentStep !== 2 && currentStep !== 3 && currentStep !== 5 && currentStep !== 6 && currentStep !== 11) {
       setTimeout(() => {
         nextStep();
       }, 300); // Small delay for visual feedback
@@ -403,9 +413,10 @@ export default function OnboardingScreen() {
       case 8: return data.metricSystem !== null; // Units
       case 9: return data.gender !== null; // Gender
       case 10: return data.age !== null; // Age
-      case 11: return data.pushNotificationsEnabled !== null; // Notifications
-      case 12: return data.hasRated !== null; // Rating
-      case 13: return true; // Auth step
+      case 11: return true; // Name step is skippable
+      case 12: return data.pushNotificationsEnabled !== null; // Notifications
+      case 13: return data.hasRated !== null; // Rating
+      case 14: return true; // Auth step
       default: return false;
     }
   };
@@ -441,6 +452,8 @@ export default function OnboardingScreen() {
       };
 
       const userProfileData = {
+        firstName: data.firstName,
+        lastName: data.lastName,
         mascotName: data.mascotName,
         path: data.path,
         metricSystem: data.metricSystem,
@@ -586,6 +599,39 @@ export default function OnboardingScreen() {
     </TouchableWithoutFeedback>
   );
 
+  const renderNamePrompt = () => (
+    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
+      <View style={styles.stepContainer}>
+        <View style={styles.nameContent}>
+          <TextInput
+            ref={firstNameInputRef}
+            style={styles.nameInput}
+            placeholder="First Name"
+            placeholderTextColor={Theme.colors.text.tertiary}
+            value={data.firstName || ''}
+            onChangeText={(text) => updateData({ firstName: text })}
+            returnKeyType="next"
+            onSubmitEditing={() => lastNameInputRef.current?.focus()}
+          />
+          <TextInput
+            ref={lastNameInputRef}
+            style={styles.nameInput}
+            placeholder="Last Name"
+            placeholderTextColor={Theme.colors.text.tertiary}
+            value={data.lastName || ''}
+            onChangeText={(text) => updateData({ lastName: text })}
+            returnKeyType="done"
+            onSubmitEditing={() => {
+              if (canProceed()) {
+                handleSelection(() => { });
+              }
+            }}
+          />
+        </View>
+      </View>
+    </TouchableWithoutFeedback>
+  );
+
   const renderHeader = () => {
     const getStepInfo = () => {
       switch (currentStep) {
@@ -600,9 +646,10 @@ export default function OnboardingScreen() {
         case 8: return { title: 'Units', subtitle: '' };
         case 9: return { title: 'Gender', subtitle: '' };
         case 10: return { title: 'What is your age range?', subtitle: '' };
-        case 11: return { title: 'Blaze works best with notifications', subtitle: '' };
-        case 12: return { title: 'We are a small team', subtitle: '' };
-        case 13: return { title: 'Save your progress', subtitle: '' };
+        case 11: return { title: "What's your name?", subtitle: 'It helps your friends to find you' };
+        case 12: return { title: 'Blaze works best with notifications', subtitle: '' };
+        case 13: return { title: 'We are a small team', subtitle: '' };
+        case 14: return { title: 'Save your progress', subtitle: '' };
         default: return { title: '', subtitle: '' };
       }
     };
@@ -1125,10 +1172,13 @@ export default function OnboardingScreen() {
     renderUnits,
     renderGender,
     renderAge,
+    renderNamePrompt,
     renderNotifications,
     renderRating,
     renderAuth,
   ];
+
+  const isNameStepEmpty = !data.firstName?.trim() && !data.lastName?.trim();
 
   return (
     <View style={styles.container}>
@@ -1162,7 +1212,7 @@ export default function OnboardingScreen() {
           })}
         </Animated.View>
       </View>
-      {(currentStep === 2 || currentStep === 3 || currentStep === 5 || currentStep === 6) && (
+      {(currentStep === 2 || currentStep === 3 || currentStep === 5 || currentStep === 6 || currentStep === 11) && (
         <View style={styles.footer}>
           <TouchableOpacity
             style={[styles.nextButton, !canProceed() && styles.nextButtonDisabled]}
@@ -1170,7 +1220,7 @@ export default function OnboardingScreen() {
             disabled={!canProceed()}
           >
             <Text style={styles.nextButtonText}>
-              Continue
+              {currentStep === 11 && isNameStepEmpty ? 'Skip' : 'Continue'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -1190,10 +1240,10 @@ export default function OnboardingScreen() {
             style={styles.signInButton}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              // Jump directly to the auth step (step 13)
-              setCurrentStep(13);
+              // Jump directly to the auth step (step 14)
+              setCurrentStep(14);
               Animated.timing(slideAnim, {
-                toValue: 13,
+                toValue: 14,
                 duration: 300,
                 useNativeDriver: true,
               }).start();
@@ -1282,7 +1332,7 @@ const styles = StyleSheet.create({
   blazeContainerIntro: {
     alignItems: 'center',
     marginBottom: Theme.spacing.lg,
-    marginTop: 250,
+    marginTop: LEGACY_DEVICE ? 200 : 250,
   },
   blazeContainer: {
     alignItems: 'center',
@@ -1817,6 +1867,8 @@ const styles = StyleSheet.create({
   nameContent: {
     alignItems: 'center',
     width: '100%',
+    paddingTop: Theme.spacing.xl,
+    gap: Theme.spacing.md,
   },
   nameInput: {
     fontSize: 24,

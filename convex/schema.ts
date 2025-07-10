@@ -9,6 +9,8 @@ const schema = defineSchema({
   /* ────────────────────────────── users */
   userProfiles: defineTable({
     userId: v.id("users"),
+    firstName: v.optional(v.string()),
+    lastName: v.optional(v.string()),
 
     weeklyGoal: v.number(),          // metres
     totalDistance: v.number(),       // metres

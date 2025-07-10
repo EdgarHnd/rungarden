@@ -1,7 +1,7 @@
 import {
-  OnboardingTrainingProfileData,
-  OnboardingUserProfileData,
-  StoredOnboardingData
+    OnboardingTrainingProfileData,
+    OnboardingUserProfileData,
+    StoredOnboardingData
 } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
@@ -70,6 +70,16 @@ export function useOnboardingSync() {
         
         console.log('[useOnboardingSync] Processing user profile data:', userProfileData);
         
+        if (userProfileData.firstName) {
+          profileUpdates.firstName = userProfileData.firstName;
+          console.log('[useOnboardingSync] Adding firstName to updates:', userProfileData.firstName);
+        }
+
+        if (userProfileData.lastName) {
+          profileUpdates.lastName = userProfileData.lastName;
+          console.log('[useOnboardingSync] Adding lastName to updates:', userProfileData.lastName);
+        }
+
         if (userProfileData.mascotName) {
           profileUpdates.mascotName = userProfileData.mascotName;
           console.log('[useOnboardingSync] Adding mascotName to updates:', userProfileData.mascotName);

@@ -202,7 +202,7 @@ export default function ProfileScreen() {
         {/* Profile Info Section */}
         <View style={styles.profileInfoSection}>
           {/* User Info */}
-          <Text style={styles.userName}>{currentUser?.name || profile?.mascotName}</Text>
+          <Text style={styles.userName}>{profile?.firstName + " " + profile?.lastName || currentUser?.name || 'Anonymous Runner'}</Text>
           <Text style={styles.userMeta}>Joined {new Date(profile?._creationTime || '').toLocaleDateString()}</Text>
           {/* <View style={styles.friendsInfoContainer}>
             <Text style={styles.friendsInfoText}> Friends: {0 || 0}</Text>

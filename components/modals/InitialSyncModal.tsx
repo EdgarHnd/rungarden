@@ -33,6 +33,7 @@ interface InitialSyncModalProps {
   } | null;
   onClose: () => void;
   metricSystem?: 'metric' | 'imperial';
+  source?: 'strava' | 'healthkit';
 }
 
 export default function InitialSyncModal({
@@ -41,6 +42,7 @@ export default function InitialSyncModal({
   streakInfo,
   onClose,
   metricSystem = 'metric',
+  source = 'strava',
 }: InitialSyncModalProps) {
   const [currentStep, setCurrentStep] = useState<'sync' | 'streak' | 'xp' | 'level'>('sync');
   const analytics = useAnalytics();
@@ -262,18 +264,18 @@ export default function InitialSyncModal({
     });
     if (currentStep === 'sync') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setCurrentStep('streak');
-    } else if (currentStep === 'streak') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('xp');
     } else if (currentStep === 'xp') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       if (syncResult?.leveledUp) {
         setCurrentStep('level');
       } else {
-        handleClose();
+        setCurrentStep('streak');
       }
     } else if (currentStep === 'level') {
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+      setCurrentStep('streak');
+    } else if (currentStep === 'streak') {
       handleClose();
     }
   };
@@ -318,7 +320,9 @@ export default function InitialSyncModal({
       <View style={styles.centeredGroup}>
         <View style={styles.headerSection}>
           <Text style={styles.headerEmoji}>🎉</Text>
-          <Text style={styles.headerTitle}>Strava Connected!</Text>
+          <Text style={styles.headerTitle}>
+            {source === 'strava' ? 'Strava' : 'Apple Health'} Connected!
+          </Text>
         </View>
 
         <View style={styles.contentSection}>
@@ -336,7 +340,7 @@ export default function InitialSyncModal({
 
           <Text style={styles.syncDescription}>
             {syncResult.created > 0
-              ? "We've imported all your runs from Strava! Let's see how much XP you've earned!"
+              ? `We've imported all your runs from ${source === 'strava' ? 'Strava' : 'Apple Health'}! Let's see how much XP you've earned!`
               : "We've synced your existing runs with the latest data. Let's see your XP!"
             }
           </Text>
@@ -362,11 +366,11 @@ export default function InitialSyncModal({
       />
 
       <TouchableOpacity
-        style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
-        onPress={handleContinue}
+        style={[styles.actionButton, { backgroundColor: Theme.colors.special.primary.streak, borderBottomColor: Theme.colors.special.secondary.streak }]}
+        onPress={handleClose}
         activeOpacity={0.8}
       >
-        <Text style={styles.actionButtonText}>Continue</Text>
+        <Text style={styles.actionButtonText}>I am committed!</Text>
       </TouchableOpacity>
     </Reanimated.View>
   );
@@ -408,7 +412,7 @@ export default function InitialSyncModal({
         activeOpacity={0.8}
       >
         <Text style={styles.actionButtonText}>
-          {syncResult.leveledUp ? 'Level Up!' : 'Continue'}
+          {syncResult.leveledUp ? 'Level Up!' : 'Check My Streak'}
         </Text>
       </TouchableOpacity>
     </Reanimated.View>
@@ -443,10 +447,10 @@ export default function InitialSyncModal({
 
       <TouchableOpacity
         style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
-        onPress={handleClose}
+        onPress={handleContinue}
         activeOpacity={0.8}
       >
-        <Text style={styles.actionButtonText}>Let's Go!</Text>
+        <Text style={styles.actionButtonText}>Check My Streak</Text>
       </TouchableOpacity>
     </Reanimated.View>
   );
@@ -530,13 +534,11 @@ const styles = StyleSheet.create({
 
   // Sync Stats Section
   syncStatsContainer: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
+    flexDirection: 'column',
     marginVertical: Theme.spacing.xxxl,
-    gap: Theme.spacing.lg,
+    gap: Theme.spacing.md,
   },
   syncStatCard: {
-    flex: 1,
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,

@@ -72,7 +72,10 @@ export default function StreakModalComponent({
     // If the streak is less than the visible window, prepend missing weeks so that
     // the total count always equals `visibleWeeks`. This keeps spacing consistent.
     while (weeks.length < visibleWeeks) {
-      const missingWeekNumber = weeks[0].weekNumber - 1;
+      // If weeks is empty, it's because currentStreak is 0.
+      // The "latest" week in this case is 0, so we start prepending from -1.
+      const firstWeekNumber = weeks.length > 0 ? weeks[0].weekNumber : 1;
+      const missingWeekNumber = firstWeekNumber - 1;
       weeks.unshift({
         weekNumber: missingWeekNumber,
         isCompleted: false,

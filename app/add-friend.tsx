@@ -36,9 +36,6 @@ export default function AddFriendScreen() {
     return () => clearTimeout(id);
   }, [query]);
 
-  // Friend suggestions (for demo, use top 3 from search or mock)
-  const suggestions = useQuery(api.userProfile.searchProfiles, { text: '' })?.slice(0, 3) || [];
-
   // For search/add UI
   const results = useQuery(api.userProfile.searchProfiles, { text: searchText });
   const outgoingRequests = useQuery(api.friends.getSentFriendRequests);
@@ -137,7 +134,7 @@ export default function AddFriendScreen() {
         )}
       </View>
       <FlatList
-        data={results || []}
+        data={searchText.length > 0 ? results : []}
         keyExtractor={(item) => item.userId}
         renderItem={({ item }) => (
           <View style={styles.resultRow}>

@@ -128,6 +128,8 @@ export type LongestDistance = 'never' | '1to2km' | '2to4km' | '5plusKm';
 
 // Main onboarding data interface
 export interface OnboardingData {
+  firstName: string | null;
+  lastName: string | null;
   mascotName: string | null;
   path: UserPath | null;
   currentAbility: CurrentAbility | null;
@@ -157,6 +159,8 @@ export interface OnboardingTrainingProfileData {
 
 // User profile data extracted from onboarding
 export interface OnboardingUserProfileData {
+  firstName: string | null;
+  lastName: string | null;
   mascotName: string | null;
   path: UserPath | null;
   metricSystem: MetricSystem | null;
