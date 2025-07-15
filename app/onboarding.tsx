@@ -485,6 +485,14 @@ export default function OnboardingScreen() {
         const code = new URL(url).searchParams.get("code")!;
         const signInResult = await signIn("google", { code });
         if (signInResult) {
+          analytics.track({
+            name: `onboarding_${getStepName(currentStep)}_completed`,
+            properties: {
+              step_number: currentStep,
+              step_name: getStepName(currentStep),
+              auth_method: 'google',
+            },
+          });
           router.replace('/(app)');
         }
       }
@@ -510,6 +518,14 @@ export default function OnboardingScreen() {
           });
           const result = await signIn('native-apple', credential);
           if (result) {
+            analytics.track({
+              name: `onboarding_${getStepName(currentStep)}_completed`,
+              properties: {
+                step_number: currentStep,
+                step_name: getStepName(currentStep),
+                auth_method: 'apple',
+              },
+            });
             router.replace('/(app)');
           }
         } catch (nativeErr: any) {
