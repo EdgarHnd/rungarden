@@ -15,7 +15,7 @@ export interface WorkoutStep {
 // Database type for planned workouts
 export type DatabasePlannedWorkout = Doc<"plannedWorkouts"> & {
   // Enriched with workout details
-  workout?: Doc<"workouts">;
+  workout?: Doc<"workoutTemplates">;
 };
 
 // Generated activity type for simple schedules and defaults

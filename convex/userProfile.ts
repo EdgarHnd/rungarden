@@ -3,8 +3,8 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { addCoins, spendCoinsInternal } from "./utils/coins";
 import {
-  calculateLevelFromXP,
-  distanceToXP
+    calculateLevelFromXP,
+    distanceToXP
 } from "./utils/gamification";
  
 export const currentUser = query({
@@ -86,6 +86,7 @@ export const createProfile = mutation({
       path: undefined,
       gender: undefined,
       age: undefined,
+      hasSkippedTrainingPlan: false,
       // Default preferences
       weekStartDay: 1, // Monday
       metricSystem: "metric",
@@ -120,6 +121,7 @@ export const updateProfile = mutation({
     age: v.optional(v.number()),
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
+    hasSkippedTrainingPlan: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -193,6 +195,7 @@ export const updateProfile = mutation({
         path: args.path,
         gender: args.gender,
         age: args.age,
+        hasSkippedTrainingPlan: args.hasSkippedTrainingPlan ?? false,
         metricSystem: args.metricSystem ?? "metric",
         weekStartDay: args.weekStartDay ?? 1,
         updatedAt: now,

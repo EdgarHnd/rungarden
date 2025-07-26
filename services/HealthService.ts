@@ -45,6 +45,11 @@ class HealthService {
    * Initialize Apple HealthKit with required permissions
    */
   async initializeHealthKit(): Promise<boolean> {
+    // If we've already initialised during this app session, just verify permissions again
+    if (this.isInitialized) {
+      return this.hasRequiredPermissions();
+    }
+
     return new Promise((resolve, reject) => {
       // First check if HealthKit is available
       if (Platform.OS !== 'ios') {
@@ -53,17 +58,56 @@ class HealthService {
       }
 
       // Initialize HealthKit
-      HealthKit.initHealthKit(this.permissions, (error: string) => {
-        if (error) {
+      HealthKit.initHealthKit(this.permissions, async (error: string) => {
+        if (error && !error.toLowerCase().includes('already')) {
           console.log('[HealthService] Error initializing HealthKit:', error);
           reject(new Error(error));
           return;
         }
 
-        console.log('[HealthService] HealthKit initialized successfully');
+        if (!error) {
+          console.log('[HealthService] HealthKit initialized successfully');
+        } else {
+          console.log('[HealthService] HealthKit already initialized, skipping init');
+        }
+
         this.isInitialized = true;
-        resolve(true);
+
+        // After initialization, verify that the critical permissions are actually authorized
+        const authorized = await this.hasRequiredPermissions();
+        resolve(authorized);
       });
+    });
+  }
+
+  /**
+   * Check if the user granted the essential Health permissions (e.g., Workout/Running distance).
+   * Returns true if authorized, false otherwise.
+   */
+  async hasRequiredPermissions(): Promise<boolean> {
+    return new Promise((resolve) => {
+      // On non-iOS platforms we consider it false
+      if (Platform.OS !== 'ios') {
+        resolve(false);
+        return;
+      }
+
+      try {
+        HealthKit.getAuthStatus(HealthKit.Constants.Permissions.Workout, (err: string, status: number) => {
+          if (err) {
+            console.log('[HealthService] Error checking workout auth status:', err);
+            resolve(false);
+            return;
+          }
+
+          console.log('[HealthService] Workout permission status:', status);
+          // According to docs: 0 = NotDetermined, 1 = Denied, 2 = Authorized. Some iOS/mac variants report >2 as authorised, so treat >=2 as granted.
+          resolve(status >= 2);
+        });
+      } catch (e) {
+        console.warn('[HealthService] getAuthStatus threw error:', e);
+        resolve(false);
+      }
     });
   }
 

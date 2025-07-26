@@ -71,6 +71,14 @@ function AuthenticatedApp() {
         }}
       />
       <Stack.Screen
+        name="run"
+        options={{
+          presentation: 'card',
+          gestureEnabled: true,
+          animation: 'slide_from_bottom',
+        }}
+      />
+      <Stack.Screen
         name="add-friend"
         options={{
           presentation: 'modal',

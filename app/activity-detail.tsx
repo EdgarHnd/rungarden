@@ -1,14 +1,14 @@
 import StatsBadges from '@/components/StatsBadges';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
-import { RunningActivity } from '@/services/HealthService';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
+  Alert,
   Animated,
   Image,
   ScrollView,
@@ -20,7 +20,8 @@ import {
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
-  const [activity, setActivity] = useState<RunningActivity | null>(null);
+  const [activity, setActivity] = useState<any | null>(null);
+  const deleteActivity = useMutation(api.activities.deleteActivity);
   const [linkedPlannedWorkout, setLinkedPlannedWorkout] = useState<any | null>(null);
   const [scaleAnim] = useState(new Animated.Value(0));
 
@@ -80,7 +81,12 @@ export default function ActivityDetailScreen() {
     reward: string;
   }> = [];
 
+  const activityFromId = useQuery(api.activities.getActivityById, params.id ? { activityId: params.id as any } : "skip");
+
   useEffect(() => {
+    if (activityFromId) {
+      setActivity(activityFromId as any);
+    }
     if (params.activity) {
       try {
         const activityData = JSON.parse(params.activity as string);
@@ -99,7 +105,7 @@ export default function ActivityDetailScreen() {
         router.back();
       }
     }
-  }, [params.activity]);
+  }, [params.activity, activityFromId]);
 
   const formatDistance = (meters: number) => {
     if (isMetric) {
@@ -190,6 +196,24 @@ export default function ActivityDetailScreen() {
   const runRank = getRunRank();
   const achievements = achievementsForActivity || [];
 
+  const handleDelete = () => {
+    if (!activity?._id) return;
+    Alert.alert('Delete Run', 'Are you sure you want to delete this activity?', [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete', style: 'destructive', onPress: async () => {
+          try {
+            await deleteActivity({ activityId: activity._id });
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            router.back();
+          } catch (e) {
+            Alert.alert('Error', 'Failed to delete activity');
+          }
+        }
+      },
+    ]);
+  };
+
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -203,7 +227,9 @@ export default function ActivityDetailScreen() {
         <Text style={styles.headerTitle}>
           {formatDetailedDate(activity.startDate)}
         </Text>
-        <View style={styles.placeholder} />
+        <TouchableOpacity onPress={handleDelete} style={styles.backButton}>
+          <Ionicons name="trash" size={24} color="#fff" />
+        </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>

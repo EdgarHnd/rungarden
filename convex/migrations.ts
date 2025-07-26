@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { mutation } from "./_generated/server";
+import { action, mutation, query } from "./_generated/server";
 
 /**
  * Database Migrations
@@ -286,7 +286,7 @@ export const resetDatabase = mutation({
 
       // 7. Workouts (can be system or user workouts)
       console.log(`[${isDryRun ? 'DRY RUN' : 'RESET'}] ${isDryRun ? 'Counting' : 'Deleting'} workouts...`);
-      const workouts = await ctx.db.query("workouts").collect();
+      const workouts = await ctx.db.query("workoutTemplates").collect();
       for (const item of workouts) {
         if (!isDryRun) await ctx.db.delete(item._id);
         stats.workouts++;
@@ -431,5 +431,236 @@ export const resetDatabase = mutation({
       console.error(`[${isDryRun ? 'DRY RUN' : 'RESET'}] Error during database ${isDryRun ? 'simulation' : 'reset'}:`, error);
       throw new Error(`Database ${isDryRun ? 'simulation' : 'reset'} failed: ${error}`);
     }
+  },
+}); 
+
+// Migration to backfill missing activity metrics and recalculate user profiles
+// Helper mutation to patch activity fields (called by the action)
+export const patchActivityFields = mutation({
+  args: {
+    activityId: v.id("activities"),
+    data: v.object({
+      pace: v.optional(v.number()),
+      calories: v.optional(v.number()),
+      totalElevationGain: v.optional(v.number()),
+      elevationHigh: v.optional(v.number()),
+      elevationLow: v.optional(v.number()),
+      averageTemp: v.optional(v.number()),
+      startLatLng: v.optional(v.array(v.number())),
+      endLatLng: v.optional(v.array(v.number())),
+      timezone: v.optional(v.string()),
+      isIndoor: v.optional(v.boolean()),
+      isCommute: v.optional(v.boolean()),
+      averageCadence: v.optional(v.number()),
+      averageWatts: v.optional(v.number()),
+      maxWatts: v.optional(v.number()),
+      kilojoules: v.optional(v.number()),
+      polyline: v.optional(v.string()),
+      maxSpeed: v.optional(v.number()),
+      averageSpeed: v.optional(v.number()),
+      syncedAt: v.optional(v.string()),
+    }),
+  },
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.activityId, args.data);
+  },
+});
+
+export const backfillActivityMetricsAndProfiles = action({
+  args: {
+    dryRun: v.optional(v.boolean()), // If true, no writes are made
+    limitPerUser: v.optional(v.number()), // Optional limit of activities to process per user
+  },
+  handler: async (ctx, args) => {
+    const dryRun = args.dryRun === true;
+    const limitPerUser = args.limitPerUser ?? undefined;
+
+    let totalUsers = 0;
+    let activitiesExamined = 0;
+    let activitiesUpdated = 0;
+
+    console.log(`[Migration] Starting backfillActivityMetricsAndProfiles (dryRun=${dryRun})`);
+
+    // Helper: estimate calories if missing
+    const estimateCalories = (distance: number, durationSec: number) => {
+      const avgWeightKg = 70;
+      const distanceKm = distance / 1000;
+      return Math.round(avgWeightKg * distanceKm * 0.75);
+    };
+
+    // Helper: refresh Strava token if expired
+    const refreshStravaToken = async (refreshToken: string) => {
+      try {
+        const clientId = process.env.STRAVA_CLIENT_ID;
+        const clientSecret = process.env.STRAVA_CLIENT_SECRET;
+        if (!clientId || !clientSecret) return null;
+
+        const resp = await fetch("https://www.strava.com/oauth/token", {
+          method: "POST",
+          headers: { "Content-Type": "application/x-www-form-urlencoded" },
+          body: new URLSearchParams({
+            client_id: clientId,
+            client_secret: clientSecret,
+            grant_type: "refresh_token",
+            refresh_token: refreshToken,
+          }),
+        });
+        if (!resp.ok) return null;
+        return (await resp.json()) as any;
+      } catch (err) {
+        console.error("[Migration] Failed to refresh Strava token", err);
+        return null;
+      }
+    };
+
+    // Helper: fetch Strava activity detail
+    const fetchStravaActivity = async (accessToken: string, activityId: number) => {
+      try {
+        const res = await fetch(`https://www.strava.com/api/v3/activities/${activityId}`, {
+          headers: { Authorization: `Bearer ${accessToken}` },
+        });
+        if (!res.ok) return null;
+        return (await res.json()) as any;
+      } catch (err) {
+        console.error(`[Migration] Error fetching Strava activity ${activityId}`, err);
+        return null;
+      }
+    };
+
+    // Iterate over all user profiles
+    const profiles = await ctx.runQuery("migrations:listAllUserProfiles" as any, {});
+
+    for (const profile of profiles) {
+      totalUsers++;
+      const userId = profile.userId;
+
+      const userActivities = await ctx.runQuery("migrations:listUserActivities" as any, {
+        userId,
+        limit: limitPerUser,
+      });
+
+      let userUpdatedAny = false;
+
+      // Prepare Strava token if needed
+      let stravaAccessToken: string | undefined = profile.stravaAccessToken ?? undefined;
+      const stravaRefreshToken: string | undefined = profile.stravaRefreshToken ?? undefined;
+      const stravaTokenExpiresAt: number | undefined = profile.stravaTokenExpiresAt ?? undefined;
+      const now = Math.floor(Date.now() / 1000);
+
+      if (stravaAccessToken && stravaTokenExpiresAt && stravaTokenExpiresAt <= now) {
+        if (stravaRefreshToken) {
+          const newTokens = await refreshStravaToken(stravaRefreshToken);
+          if (newTokens) {
+            stravaAccessToken = newTokens.access_token;
+            if (!dryRun) {
+              await ctx.runMutation("userProfile:updateStravaTokens" as any, {
+                userId: userId,
+                accessToken: newTokens.access_token,
+                refreshToken: newTokens.refresh_token,
+                expiresAt: newTokens.expires_at,
+              });
+            }
+          } else {
+            console.warn(`[Migration] Unable to refresh tokens for user ${userId}`);
+          }
+        }
+      }
+
+      for (const activity of userActivities) {
+        activitiesExamined++;
+        const updates: any = {};
+
+        // 1. Backfill pace
+        if ((activity.pace === undefined || activity.pace === 0) && activity.distance > 0) {
+          updates.pace = activity.duration / (activity.distance / 1000);
+        }
+
+        // 2. If Strava activity missing extended metrics, fetch from API
+        const needsStravaDetails =
+          activity.source === "strava" &&
+          (activity.totalElevationGain === undefined || activity.averageSpeed === undefined || activity.polyline === undefined);
+
+        if (needsStravaDetails && stravaAccessToken && activity.stravaId) {
+          const stravaData = await fetchStravaActivity(stravaAccessToken, activity.stravaId);
+          if (stravaData) {
+            updates.totalElevationGain = stravaData.total_elevation_gain;
+            updates.elevationHigh = stravaData.elev_high;
+            updates.elevationLow = stravaData.elev_low;
+            updates.averageTemp = stravaData.average_temp;
+            updates.startLatLng = stravaData.start_latlng;
+            updates.endLatLng = stravaData.end_latlng;
+            updates.timezone = stravaData.timezone;
+            updates.isIndoor = stravaData.is_indoor;
+            updates.isCommute = stravaData.is_commute;
+            updates.averageCadence = stravaData.average_cadence;
+            updates.averageWatts = stravaData.average_watts;
+            updates.maxWatts = stravaData.max_watts;
+            updates.kilojoules = stravaData.kilojoules;
+            updates.polyline = stravaData.map?.polyline;
+            updates.maxSpeed = stravaData.max_speed;
+            updates.averageSpeed = stravaData.average_speed;
+            if (stravaData.calories !== undefined && (activity.calories === undefined || activity.calories === 0)) {
+              updates.calories = stravaData.calories;
+            }
+          }
+        }
+
+        // 3. HealthKit / app activities: ensure calories if missing
+        if ((activity.calories === undefined || activity.calories === 0) && activity.distance > 0) {
+          updates.calories = estimateCalories(activity.distance, activity.duration * 60);
+        }
+
+        if (Object.keys(updates).length > 0) {
+          activitiesUpdated++;
+          if (!dryRun) {
+            await ctx.runMutation("migrations:patchActivityFields" as any, {
+              activityId: activity._id,
+              data: { ...updates, syncedAt: new Date().toISOString() },
+            });
+          }
+          userUpdatedAny = true;
+        }
+      }
+
+      // Recalculate user profile totals if any activity changed
+      if (userUpdatedAny && !dryRun) {
+        await ctx.runMutation("activities:updateUserProfileTotals" as any, { userId });
+      }
+    }
+
+    console.log(`[Migration] Completed. Examined ${activitiesExamined} activities; updated ${activitiesUpdated}.`);
+
+    return {
+      success: true,
+      dryRun,
+      totalUsers,
+      activitiesExamined,
+      activitiesUpdated,
+    };
+  },
+}); 
+
+// Helper query: list all user profiles (used by the action)
+export const listAllUserProfiles = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query("userProfiles").collect();
+  },
+});
+
+// Helper query: list activities for a specific user (optionally limited)
+export const listUserActivities = query({
+  args: {
+    userId: v.id("users"),
+    limit: v.optional(v.number()),
+  },
+  handler: async (ctx, args) => {
+    let q = ctx.db
+      .query("activities")
+      .withIndex("by_user", (q: any) => q.eq("userId", args.userId));
+    if (args.limit !== undefined) {
+      return await q.take(args.limit);
+    }
+    return await q.collect();
   },
 }); 

@@ -19,7 +19,7 @@ export default function ManagePlanScreen() {
   const router = useRouter();
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const updateTrainingProfile = useMutation(api.trainingProfile.updateTrainingProfile);
-  const regenerateTrainingPlan = useMutation(api.trainingPlan.regenerateTrainingPlan);
+  const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
   const deleteTrainingPlan = useMutation(api.trainingPlan.deleteTrainingPlan);
 
   const [goalDistance, setGoalDistance] = useState(trainingProfile?.goalDistance || '5K');
@@ -28,15 +28,21 @@ export default function ManagePlanScreen() {
   const [preferredDays, setPreferredDays] = useState<string[]>(trainingProfile?.preferredDays || []);
   const [datePickerOpen, setDatePickerOpen] = useState(false);
   const [isUpdating, setIsUpdating] = useState(false);
+  const [isGenerating, setIsGenerating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  const canSaveChanges = preferredDays.length === daysPerWeek;
+  // Check if this is a structured plan that only allows preferred days updates
+  const isStructuredPlan = ['5K', '10K', 'just-run-more'].includes(trainingProfile?.goalDistance || '');
+
+  // For structured plans, we need exactly the same number of days as the original plan
+  const requiredDaysCount = isStructuredPlan ? (trainingProfile?.daysPerWeek || 3) : daysPerWeek;
+  const canSaveChanges = preferredDays.length === requiredDaysCount;
 
   const handleSaveChanges = async () => {
     if (!canSaveChanges) {
       Alert.alert(
         "Invalid Selection",
-        `Please select exactly ${daysPerWeek} preferred training days. You have selected ${preferredDays.length}.`
+        `Please select exactly ${requiredDaysCount} preferred training days. You have selected ${preferredDays.length}.`
       );
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       return;
@@ -46,21 +52,35 @@ export default function ManagePlanScreen() {
       setIsUpdating(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-      // Update training profile
-      await updateTrainingProfile({
-        goalDistance: goalDistance as any,
-        goalDate: targetDate.toISOString(),
-        daysPerWeek,
-        preferredDays,
-      });
+      if (isStructuredPlan) {
+        // For structured plans, only update preferred days
+        await updateTrainingProfile({
+          preferredDays,
+        });
 
-      // Regenerate training plan with new parameters
-      await regenerateTrainingPlan();
+        // Generate new AI training plan with updated schedule
+        setIsGenerating(true);
+        await generateTrainingPlan();
+      } else {
+        // For flexible plans, update all settings
+        await updateTrainingProfile({
+          goalDistance: goalDistance as any,
+          goalDate: targetDate.toISOString(),
+          daysPerWeek,
+          preferredDays,
+        });
+
+        // Generate new AI training plan
+        setIsGenerating(true);
+        await generateTrainingPlan();
+      }
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       Alert.alert(
         "Plan Updated!",
-        "Your training plan has been updated with the new settings.",
+        isStructuredPlan
+          ? "Your training schedule has been updated with the new preferred days."
+          : "Your training plan has been updated with the new settings.",
         [{ text: "OK", onPress: () => router.back() }]
       );
     } catch (error) {
@@ -69,6 +89,7 @@ export default function ManagePlanScreen() {
       Alert.alert("Error", "Failed to update your plan. Please try again.");
     } finally {
       setIsUpdating(false);
+      setIsGenerating(false);
     }
   };
 
@@ -96,7 +117,7 @@ export default function ManagePlanScreen() {
               Alert.alert(
                 "Plan Deleted",
                 "Your training plan has been deleted successfully.",
-                [{ text: "OK", onPress: () => router.back() }]
+                [{ text: "OK", onPress: () => router.replace('/path') }]
               );
             } catch (error) {
               console.error('Failed to delete plan:', error);
@@ -126,96 +147,113 @@ export default function ManagePlanScreen() {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Goal Distance */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Goal Distance</Text>
-          <View style={styles.goalOptions}>
-            {[
-              { value: 'just-run-more', title: 'Just run more', subtitle: 'Build a consistent habit', emoji: '🌱' },
-              { value: '5K', title: 'From 0 to 5K', subtitle: 'Perfect for beginners', emoji: '🏃‍♀️' },
-              { value: '10K', title: 'First 10K', subtitle: 'Ready for a challenge', emoji: '🏃‍♂️' },
-              { value: 'half-marathon', title: 'Half Marathon', subtitle: 'Coming Soon!', emoji: '🏆', disabled: true },
-              { value: 'marathon', title: 'Marathon', subtitle: 'Coming Soon!', emoji: '👑', disabled: true },
-            ].map((option) => (
-              <TouchableOpacity
-                key={option.value}
-                style={[
-                  styles.goalOption,
-                  goalDistance === option.value && styles.goalOptionSelected,
-                  (option as any).disabled && styles.goalOptionDisabled,
-                ]}
-                onPress={() => {
-                  if ((option as any).disabled) return;
-                  setGoalDistance(option.value as '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon');
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-                disabled={(option as any).disabled}
-              >
-                <Text style={styles.goalEmoji}>{option.emoji}</Text>
-                <View style={styles.goalContent}>
-                  <Text style={styles.goalTitle}>{option.title}</Text>
-                  <Text style={styles.goalSubtitle}>{option.subtitle}</Text>
-                </View>
-                {goalDistance === option.value && (
-                  <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent.primary} />
-                )}
-              </TouchableOpacity>
-            ))}
+        {isStructuredPlan && (
+          <View style={styles.infoSection}>
+            <View style={styles.infoCard}>
+              <Ionicons name="information-circle" size={24} color={Theme.colors.accent.primary} />
+              <Text style={styles.infoText}>
+                This is a structured training plan. You can only adjust your preferred training days.
+              </Text>
+            </View>
           </View>
-        </View>
+        )}
 
-        {/* Target Date */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Target Date</Text>
-          <TouchableOpacity
-            style={styles.dateButton}
-            onPress={() => {
-              setDatePickerOpen(true);
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            }}
-          >
-            <Ionicons name="calendar" size={24} color={Theme.colors.accent.primary} />
-            <Text style={styles.dateText}>
-              {targetDate.toLocaleDateString('en-US', {
-                weekday: 'long',
-                year: 'numeric',
-                month: 'long',
-                day: 'numeric'
-              })}
-            </Text>
-          </TouchableOpacity>
-        </View>
-
-        {/* Training Frequency */}
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Training Days Per Week</Text>
-          <View style={styles.daysSelector}>
-            {[2, 3, 4, 5, 6].map((days) => (
-              <TouchableOpacity
-                key={days}
-                style={[
-                  styles.dayButton,
-                  daysPerWeek === days && styles.dayButtonSelected
-                ]}
-                onPress={() => {
-                  setDaysPerWeek(days);
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                }}
-              >
-                <Text style={[
-                  styles.dayButtonText,
-                  daysPerWeek === days && styles.dayButtonTextSelected
-                ]}>{days}</Text>
-              </TouchableOpacity>
-            ))}
+        {/* Goal Distance - Only show for non-structured plans */}
+        {!isStructuredPlan && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Goal Distance</Text>
+            <View style={styles.goalOptions}>
+              {[
+                { value: 'just-run-more', title: 'Just run more', subtitle: 'Build a consistent habit', emoji: '🌱' },
+                { value: '5K', title: 'From 0 to 5K', subtitle: 'Perfect for beginners', emoji: '🏃‍♀️' },
+                { value: '10K', title: 'First 10K', subtitle: 'Ready for a challenge', emoji: '🏃‍♂️' },
+                { value: 'half-marathon', title: 'Half Marathon', subtitle: 'Coming Soon!', emoji: '🏆', disabled: true },
+                { value: 'marathon', title: 'Marathon', subtitle: 'Coming Soon!', emoji: '👑', disabled: true },
+              ].map((option) => (
+                <TouchableOpacity
+                  key={option.value}
+                  style={[
+                    styles.goalOption,
+                    goalDistance === option.value && styles.goalOptionSelected,
+                    (option as any).disabled && styles.goalOptionDisabled,
+                  ]}
+                  onPress={() => {
+                    if ((option as any).disabled) return;
+                    setGoalDistance(option.value as '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon');
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                  disabled={(option as any).disabled}
+                >
+                  <Text style={styles.goalEmoji}>{option.emoji}</Text>
+                  <View style={styles.goalContent}>
+                    <Text style={styles.goalTitle}>{option.title}</Text>
+                    <Text style={styles.goalSubtitle}>{option.subtitle}</Text>
+                  </View>
+                  {goalDistance === option.value && (
+                    <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent.primary} />
+                  )}
+                </TouchableOpacity>
+              ))}
+            </View>
           </View>
-        </View>
+        )}
+
+        {/* Target Date - Only show for non-structured plans */}
+        {!isStructuredPlan && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Target Date</Text>
+            <TouchableOpacity
+              style={styles.dateButton}
+              onPress={() => {
+                setDatePickerOpen(true);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              }}
+            >
+              <Ionicons name="calendar" size={24} color={Theme.colors.accent.primary} />
+              <Text style={styles.dateText}>
+                {targetDate.toLocaleDateString('en-US', {
+                  weekday: 'long',
+                  year: 'numeric',
+                  month: 'long',
+                  day: 'numeric'
+                })}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+
+        {/* Training Frequency - Only show for non-structured plans */}
+        {!isStructuredPlan && (
+          <View style={styles.section}>
+            <Text style={styles.sectionTitle}>Training Days Per Week</Text>
+            <View style={styles.daysSelector}>
+              {[2, 3, 4, 5, 6].map((days) => (
+                <TouchableOpacity
+                  key={days}
+                  style={[
+                    styles.dayButton,
+                    daysPerWeek === days && styles.dayButtonSelected
+                  ]}
+                  onPress={() => {
+                    setDaysPerWeek(days);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  }}
+                >
+                  <Text style={[
+                    styles.dayButtonText,
+                    daysPerWeek === days && styles.dayButtonTextSelected
+                  ]}>{days}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
 
         {/* Preferred Days */}
         <View style={styles.section}>
           <View style={styles.preferredDaysHeader}>
             <Text style={styles.sectionTitle}>Preferred Training Days</Text>
-            <Text style={styles.preferredDaysSubtitle}>Select {daysPerWeek} days</Text>
+            <Text style={styles.preferredDaysSubtitle}>Select {requiredDaysCount} days</Text>
           </View>
           <View style={styles.weekDaysContainer}>
             {['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'].map((day) => (
@@ -252,7 +290,8 @@ export default function ManagePlanScreen() {
           disabled={isUpdating || !canSaveChanges}
         >
           <Text style={styles.saveButtonText}>
-            {isUpdating ? 'Updating Plan...' : 'Save Changes & Regenerate Plan'}
+            {isUpdating || isGenerating ? (isGenerating ? 'Updating Schedule...' : 'Updating...') :
+              isStructuredPlan ? 'Update Schedule' : 'Save Changes & Generate Plan'}
           </Text>
         </TouchableOpacity>
 
@@ -321,6 +360,26 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     paddingHorizontal: Theme.spacing.xl,
+  },
+  infoSection: {
+    marginBottom: Theme.spacing.xl,
+  },
+  infoCard: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: Theme.colors.transparent.accent20,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.lg,
+    gap: Theme.spacing.md,
+    borderWidth: 1,
+    borderColor: Theme.colors.transparent.accent30,
+  },
+  infoText: {
+    flex: 1,
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
+    lineHeight: 20,
   },
   section: {
     marginBottom: Theme.spacing.xxxl,

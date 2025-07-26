@@ -36,6 +36,27 @@ export default function SettingsScreen() {
   const [isSyncing, setIsSyncing] = useState(false);
   const [isStravaAuthenticated, setIsStravaAuthenticated] = useState(false);
   const [isDeduplicating, setIsDeduplicating] = useState(false);
+  // Track if we've already shown the Health permissions explanation so we can open Settings directly next time
+  const [healthPermissionPrompted, setHealthPermissionPrompted] = useState(false);
+
+  /**
+   * Attempt to open the specific Health privacy page in iOS Settings. If that fails, fall back to the
+   * app-specific settings screen.
+   */
+  const openHealthSettings = async () => {
+    try {
+      const url = 'x-apple-health://';
+
+      const can = await Linking.canOpenURL(url);
+      if (can) {
+        await Linking.openURL(url);
+        return;
+      }
+
+    } catch (err) {
+      console.warn('Unable to open iOS Settings:', err);
+    }
+  };
 
   useEffect(() => {
     if (isAuthenticated && convex) {
@@ -88,9 +109,13 @@ export default function SettingsScreen() {
           if (!hasPermissions) {
             Alert.alert(
               'Health Permissions Required',
-              'Please enable Health permissions in your iPhone Settings:\n\n1. Open Settings\n2. Scroll down and tap on "Privacy & Security"\n3. Tap on "Health"\n4. Find "Blaze" and enable all permissions',
-              [{ text: 'OK' }]
+              'Please enable Health permissions in your Health Settings:\n\n1. Tap “Your Profile”\n2. Select "Privacy" > “Apps”\n3. Choose “Blaze” and enable all permissions',
+              [
+                { text: 'Open Health Settings', onPress: openHealthSettings },
+                { text: 'Cancel', style: 'cancel' }
+              ]
             );
+            setHealthPermissionPrompted(true);
             return;
           }
         }
@@ -138,8 +163,12 @@ export default function SettingsScreen() {
           Alert.alert(
             'Health Permissions Required',
             'Please enable Health permissions in your iPhone Settings to use HealthKit as your data source.',
-            [{ text: 'OK' }]
+            [
+              { text: 'Open Settings', onPress: openHealthSettings },
+              { text: 'Cancel', style: 'cancel' }
+            ]
           );
+          setHealthPermissionPrompted(true);
           return;
         }
       }
@@ -283,9 +312,13 @@ export default function SettingsScreen() {
         if (!hasPermissions) {
           Alert.alert(
             'Health Permissions Required',
-            'Please enable Health permissions in your iPhone Settings:\n\n1. Open Settings\n2. Scroll down and tap on "Privacy & Security"\n3. Tap on "Health"\n4. Find "Blaze" and enable all permissions',
-            [{ text: 'OK' }]
+            'Please enable Health permissions in your Health Settings:\n\n1. Tap “Your Profile”\n2. Select "Privacy" > “Apps”\n3. Choose “Blaze” and enable all permissions',
+            [
+              { text: 'Open Settings', onPress: openHealthSettings },
+              { text: 'Cancel', style: 'cancel' }
+            ]
           );
+          setHealthPermissionPrompted(true);
           return;
         }
       }
@@ -471,6 +504,48 @@ export default function SettingsScreen() {
       Alert.alert('Error', 'Failed to switch to Strava');
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  /**
+   * Select Blaze in-app recording as the primary source (disables Strava & HealthKit)
+   */
+  const handleBlazeSelect = async () => {
+    try {
+      // If another source is active, confirm the switch
+      if (profile?.healthKitSyncEnabled || profile?.stravaSyncEnabled) {
+        Alert.alert(
+          'Switch to Blaze',
+          'This will disable syncing from Strava and HealthKit to prevent duplicate activities. Continue?',
+          [
+            { text: 'Cancel', style: 'cancel' },
+            {
+              text: 'Switch',
+              onPress: async () => {
+                try {
+                  setIsLoading(true);
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                  await updateSyncPreferences({
+                    healthKitSyncEnabled: false,
+                    stravaSyncEnabled: false,
+                    lastHealthKitSync: null,
+                    lastStravaSync: null,
+                  });
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                } catch (err) {
+                  console.error('Error switching to Blaze:', err);
+                  Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                  Alert.alert('Error', 'Failed to switch data source');
+                } finally {
+                  setIsLoading(false);
+                }
+              }
+            }
+          ]
+        );
+      }
+    } catch (error) {
+      console.error('Error selecting Blaze:', error);
     }
   };
 
@@ -847,6 +922,33 @@ export default function SettingsScreen() {
           <Text style={styles.sectionDescription}>
             Choose your primary data source for running activities. Only one source can be active at a time.
           </Text>
+
+          {/* Blaze In-App Recording */}
+          <TouchableOpacity
+            style={styles.section}
+            onPress={handleBlazeSelect}
+            activeOpacity={0.7}
+          >
+            <View style={styles.sectionContent}>
+              <View style={styles.syncOptionContent}>
+                <View style={styles.syncOptionHeader}>
+                  <Image source={require('@/assets/images/icon.png')} style={[styles.iconImage, { borderRadius: 10 }]} />
+                  <Text style={styles.syncOptionTitle}>Blaze In-App Recording</Text>
+                  {!profile?.healthKitSyncEnabled && !profile?.stravaSyncEnabled && (
+                    <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.status.success }]}>
+                      <Text style={styles.comingSoonText}>Selected</Text>
+                    </View>
+                  )}
+                </View>
+                <Text style={styles.syncOptionDescription}>Record runs directly with Blaze's built-in tracker</Text>
+              </View>
+              <FontAwesome5
+                name={!profile?.healthKitSyncEnabled && !profile?.stravaSyncEnabled ? 'check' : 'chevron-right'}
+                size={20}
+                color={Theme.colors.text.primary}
+              />
+            </View>
+          </TouchableOpacity>
           {/* Strava Sync */}
           <TouchableOpacity
             style={styles.section}
@@ -1016,7 +1118,6 @@ export default function SettingsScreen() {
               </View>
             </TouchableOpacity>
           )}
-
           {/* Manual Sync Buttons - Only show for connected sources */}
           {profile?.healthKitSyncEnabled && (
             <TouchableOpacity

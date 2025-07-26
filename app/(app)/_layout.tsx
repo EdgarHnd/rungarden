@@ -2,11 +2,11 @@ import RecordingModal from '@/components/modals/RecordingModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useTrackNavigation } from '@/hooks/useTrackNavigation';
-import { FontAwesome5 } from '@expo/vector-icons';
+import { FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Tabs } from 'expo-router';
+import { Tabs, router } from 'expo-router';
 import React, { useState } from 'react';
 import { TouchableOpacity, View } from 'react-native';
 
@@ -15,7 +15,7 @@ function LeaderboardIcon({ color, size }: { color: string; size: number }) {
   const hasPending = (pending?.length ?? 0) > 0;
   return (
     <View style={{ position: 'relative' }}>
-      <FontAwesome5 name="trophy" size={size} color={color} />
+      <FontAwesome6 name="fire-burner" size={size} color={color} />
       {hasPending && (
         <View style={{
           position: 'absolute',
@@ -34,6 +34,7 @@ function LeaderboardIcon({ color, size }: { color: string; size: number }) {
 export default function AppLayout() {
   useTrackNavigation();
   const [showRecordingModal, setShowRecordingModal] = useState(false);
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
 
   const createTabBarButton = (onPress: () => void) => {
     return ({ children, style, ...props }: any) => (
@@ -103,12 +104,12 @@ export default function AppLayout() {
           })}
         />
         <Tabs.Screen
-          name="activities"
+          name="path"
           options={({ navigation }) => ({
             tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="calendar-alt" size={size} color={color} />
+              <FontAwesome5 name="running" size={size} color={color} />
             ),
-            tabBarButton: createTabBarButton(() => navigation.navigate('activities')),
+            tabBarButton: createTabBarButton(() => navigation.navigate('path')),
           })}
         />
         <Tabs.Screen
@@ -126,7 +127,13 @@ export default function AppLayout() {
                 <FontAwesome5 name="circle" size={40} color={Theme.colors.text.primary} />
               </View>
             ),
-            tabBarButton: createTabBarButton(() => setShowRecordingModal(true)),
+            tabBarButton: createTabBarButton(() => {
+              if (profile && !profile.healthKitSyncEnabled && !profile.stravaSyncEnabled) {
+                router.push('/run');
+              } else {
+                setShowRecordingModal(true);
+              }
+            }),
           })}
         />
         <Tabs.Screen

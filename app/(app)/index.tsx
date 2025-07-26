@@ -73,6 +73,8 @@ export default function HomeScreen() {
   const markCelebrationShown = useMutation(api.activities.markCelebrationShown);
   const refreshStreak = useMutation(api.streak.refreshStreak);
   const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
+  const simulateTrainingProgress = useMutation(api.trainingPlan.simulateTrainingProgress);
+  const resetTrainingPlan = useMutation(api.trainingPlan.resetTrainingPlan);
   // const processAchievements = useMutation(api.achievements.processAchievementsForActivity);
 
   // Proper state management for week navigation
@@ -1148,13 +1150,38 @@ export default function HomeScreen() {
 
               <TouchableOpacity
                 style={styles.debugButton}
-                onPress={() => {
-                  toggleBgAnimation();
+                onPress={async () => {
+                  try {
+                    setShowDebugModal(false);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+                    const result = await simulateTrainingProgress({ weeksToComplete: 2 });
+                    Alert.alert('Success', result.message);
+                  } catch (error) {
+                    Alert.alert('Error', 'Failed to simulate training progress');
+                    console.error('Simulate training progress error:', error);
+                  }
                 }}
               >
-                <Text style={styles.debugButtonText}>
-                  {isBgAnimationRunning ? '⏸️ Stop Background' : '▶️ Start Background'}
-                </Text>
+                <Text style={styles.debugButtonText}>📅 Simulate 2 Weeks Progress</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.debugButton}
+                onPress={async () => {
+                  try {
+                    setShowDebugModal(false);
+                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+                    const result = await resetTrainingPlan({});
+                    Alert.alert('Success', result.message);
+                  } catch (error) {
+                    Alert.alert('Error', 'Failed to reset training plan');
+                    console.error('Reset training plan error:', error);
+                  }
+                }}
+              >
+                <Text style={styles.debugButtonText}>🔄 Reset Training Plan</Text>
               </TouchableOpacity>
 
               <TouchableOpacity

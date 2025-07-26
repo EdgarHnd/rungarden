@@ -30,6 +30,7 @@
     "expo-image": "~2.1.7",
     "expo-linear-gradient": "^14.1.4",
     "expo-linking": "~7.1.5",
+    "expo-location": "~18.1.6",
     "expo-notifications": "~0.31.3",
     "expo-router": "~5.0.6",
     "expo-secure-store": "~14.2.3",
@@ -38,6 +39,7 @@
     "expo-store-review": "~8.1.5",
     "expo-symbols": "~0.4.4",
     "expo-system-ui": "~5.0.7",
+    "expo-task-manager": "~13.1.6",
     "expo-video": "~2.2.2",
     "expo-web-browser": "~14.1.6",
     "lottie-react-native": "7.2.2",
@@ -53,7 +55,9 @@
     "react-native-screens": "~4.10.0",
     "react-native-web": "~0.20.0",
     "react-native-webview": "13.13.5",
-    "rive-react-native": "^9.3.1"
+    "rive-react-native": "^9.3.1",
+    "expo-background-task": "~0.2.8",
+    "react-native-svg": "15.11.2"
   },
   "devDependencies": {
     "@babel/core": "^7.25.2",

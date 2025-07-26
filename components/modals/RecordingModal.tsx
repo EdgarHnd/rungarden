@@ -1,7 +1,12 @@
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
+import DatabaseHealthService from '@/services/DatabaseHealthService';
+import DatabaseStravaService from '@/services/DatabaseStravaService';
+import { useConvex, useMutation } from 'convex/react';
+import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
-import React from 'react';
-import { Dimensions, Image, Modal, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { Alert, Dimensions, Image, Modal, Platform, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface RecordingModalProps {
   visible: boolean;
@@ -9,6 +14,123 @@ interface RecordingModalProps {
 }
 
 export default function RecordingModal({ visible, onClose }: RecordingModalProps) {
+  const convex = useConvex();
+  const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
+
+  const [selected, setSelected] = useState<'strava' | 'healthkit' | 'app' | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [step, setStep] = useState<'options' | 'confirmation'>('options');
+
+  // Reset when modal is reopened
+  useEffect(() => {
+    if (visible) {
+      setSelected(null);
+      setStep('options');
+    }
+  }, [visible]);
+
+  // Handlers
+  const handleConnectStrava = async () => {
+    if (isProcessing) return;
+    try {
+      setIsProcessing(true);
+      const stravaService = new DatabaseStravaService(convex);
+      const success = await stravaService.authenticate();
+      if (success) {
+        await updateSyncPreferences({
+          stravaSyncEnabled: true,
+          healthKitSyncEnabled: false,
+          lastStravaSync: undefined,
+          lastHealthKitSync: null,
+        });
+        setSelected('strava');
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        setStep('confirmation');
+      } else {
+        Alert.alert('Error', 'Failed to connect to Strava.');
+      }
+    } catch (error) {
+      console.error('[RecordingModal] Strava connect error', error);
+      Alert.alert('Error', 'Failed to connect to Strava.');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleConnectHealthKit = async () => {
+    if (isProcessing) return;
+    try {
+      setIsProcessing(true);
+      const healthService = new DatabaseHealthService(convex);
+      const permitted = await healthService.initializeHealthKit();
+      if (!permitted) {
+        Alert.alert('Permission Required', 'Blaze does not have Health access. You will be redirected to Settings to enable it.');
+        onClose();
+        router.push('/settings');
+        return;
+      }
+      await healthService.setHealthKitSyncEnabled(true);
+      // Disable Strava sync to avoid duplicates
+      await updateSyncPreferences({
+        stravaSyncEnabled: false,
+        healthKitSyncEnabled: true,
+        lastHealthKitSync: undefined,
+        lastStravaSync: null,
+      });
+      setSelected('healthkit');
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      setStep('confirmation');
+    } catch (error) {
+      console.error('[RecordingModal] HealthKit connect error', error);
+      Alert.alert('Error', 'Failed to connect to HealthKit');
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleAppRecording = () => {
+    setSelected('app');
+    onClose();
+    router.push('/run' as any);
+  };
+
+  /* Confirmation Modal */
+  if (step === 'confirmation' && visible) {
+    return (
+      <Modal
+        visible={visible}
+        transparent
+        animationType="fade"
+        onRequestClose={onClose}
+      >
+        <Pressable style={styles.overlay} onPress={onClose}>
+          <Pressable style={styles.modalContainer} onPress={() => { }}>
+            <View style={styles.header}>
+              <Text style={styles.title}>{selected === 'strava' ? 'Strava Connected!' : 'HealthKit Connected!'}</Text>
+              <Text style={styles.subtitle}>Record a run in Blaze and it will sync automatically.</Text>
+            </View>
+
+            <View style={styles.buttonContainer}>
+              <TouchableOpacity
+                style={styles.settingsButton}
+                onPress={() => {
+                  onClose();
+                  router.push('/settings');
+                }}
+              >
+                <Text style={styles.buttonText}>Change Source</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity style={styles.button} onPress={onClose}>
+                <Text style={styles.buttonText}>Got it</Text>
+              </TouchableOpacity>
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
+    );
+  }
+
   return (
     <Modal
       visible={visible}
@@ -16,15 +138,16 @@ export default function RecordingModal({ visible, onClose }: RecordingModalProps
       animationType="fade"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+      <Pressable style={styles.overlay} onPress={onClose}>
+        <Pressable style={styles.modalContainer} onPress={() => { }}>
           <View style={styles.header}>
             <Text style={styles.title}>Record Your Run</Text>
             <Text style={styles.subtitle}>Connect your fitness apps to log activities</Text>
           </View>
 
           <View style={styles.content}>
-            <View style={styles.integrationItem}>
+            {/* Strava Option */}
+            <View style={[styles.integrationItem, selected === 'strava' && styles.selectedIntegration]}>
               <View style={styles.iconContainer}>
                 <Image source={require('@/assets/images/icons/strava.png')} style={styles.icon} />
               </View>
@@ -36,39 +159,66 @@ export default function RecordingModal({ visible, onClose }: RecordingModalProps
               </View>
             </View>
 
-            <View style={styles.integrationItem}>
+            {/* Apple Health Option (iOS only) */}
+            {Platform.OS === 'ios' && (
+              <View style={[styles.integrationItem, selected === 'healthkit' && styles.selectedIntegration]}>
+                <View style={styles.iconContainer}>
+                  <Image source={require('@/assets/images/icons/apple-health.png')} style={styles.icon} />
+                </View>
+                <View style={styles.textContainer}>
+                  <Text style={styles.integrationTitle}>Apple Health</Text>
+                  <Text style={styles.integrationDescription}>
+                    Sync your workouts from Apple Health and other fitness apps
+                  </Text>
+                </View>
+              </View>
+            )}
+
+            {/* Blaze Free Run */}
+            <View style={[styles.integrationItem, selected === 'app' && styles.selectedIntegration]}>
               <View style={styles.iconContainer}>
-                <Image source={require('@/assets/images/icons/apple-health.png')} style={styles.icon} />
+                <Image source={require('@/assets/images/blaze/blazeidle.png')} style={styles.icon} />
               </View>
               <View style={styles.textContainer}>
-                <Text style={styles.integrationTitle}>Apple Health</Text>
+                <Text style={styles.integrationTitle}>Blaze Free Run</Text>
                 <Text style={styles.integrationDescription}>
-                  Sync your workouts from Apple Health and other fitness apps
+                  Record your run directly with Blaze's built-in GPS tracker
                 </Text>
               </View>
             </View>
-
-            <View style={styles.noteContainer}>
-              <Text style={styles.noteText}>
-                Manual recording is coming soon! For now, use one of the integrations above to track your runs.
-              </Text>
-            </View>
           </View>
           <View style={styles.buttonContainer}>
-            <TouchableOpacity style={styles.settingsButton} onPress={
-              () => {
-                onClose();
-                router.push('/settings');
-              }
-            }>
-              <Text style={styles.buttonText}>Open Settings</Text>
+            {/* Strava button */}
+            <TouchableOpacity
+              style={styles.settingsButton}
+              disabled={isProcessing}
+              onPress={handleConnectStrava}
+            >
+              <Text style={styles.buttonText}>{selected === 'strava' ? 'Connected ✓' : 'Connect Strava'}</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.button} onPress={onClose}>
-              <Text style={styles.buttonText}>Got it</Text>
+
+            {/* Apple Health button (only show on iOS) */}
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                style={styles.settingsButton}
+                disabled={isProcessing}
+                onPress={handleConnectHealthKit}
+              >
+                <Text style={styles.buttonText}>{selected === 'healthkit' ? 'Connected ✓' : 'Connect Apple Health'}</Text>
+              </TouchableOpacity>
+            )}
+
+            {/* Blaze button */}
+            <TouchableOpacity
+              style={styles.button}
+              disabled={isProcessing}
+              onPress={handleAppRecording}
+            >
+              <Text style={styles.buttonText}>{selected === 'app' ? 'Selected ✓' : 'Record with Blaze (Beta)'}</Text>
             </TouchableOpacity>
           </View>
-        </View>
-      </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -158,7 +308,7 @@ const styles = StyleSheet.create({
   },
   buttonContainer: {
     marginTop: Theme.spacing.xl,
-    flexDirection: 'row',
+    flexDirection: 'column',
     gap: Theme.spacing.md,
   },
   settingsButton: {
@@ -168,7 +318,6 @@ const styles = StyleSheet.create({
     borderColor: Theme.colors.border.primary,
     paddingVertical: Theme.spacing.md,
     paddingHorizontal: Theme.spacing.md,
-    flex: 1,
     alignItems: 'center',
   },
   button: {
@@ -178,12 +327,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.md,
     borderBottomWidth: 3,
     borderColor: Theme.colors.accent.secondary,
-    flex: 1,
     alignItems: 'center',
   },
   buttonText: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+  },
+  selectedIntegration: {
+    backgroundColor: Theme.colors.background.tertiary,
   },
 }); 

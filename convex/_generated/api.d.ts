@@ -20,6 +20,7 @@ import type * as http from "../http.js";
 import type * as internal_verifyAppleToken from "../internal/verifyAppleToken.js";
 import type * as leaderboard from "../leaderboard.js";
 import type * as migrations from "../migrations.js";
+import type * as planTemplates from "../planTemplates.js";
 import type * as pushNotifications from "../pushNotifications.js";
 import type * as restReward from "../restReward.js";
 import type * as simpleTrainingSchedule from "../simpleTrainingSchedule.js";
@@ -33,6 +34,7 @@ import type * as utils_challenges from "../utils/challenges.js";
 import type * as utils_coins from "../utils/coins.js";
 import type * as utils_gamification from "../utils/gamification.js";
 import type * as utils_streak from "../utils/streak.js";
+import type * as workoutLibrary from "../workoutLibrary.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -50,6 +52,7 @@ declare const fullApi: ApiFromModules<{
   "internal/verifyAppleToken": typeof internal_verifyAppleToken;
   leaderboard: typeof leaderboard;
   migrations: typeof migrations;
+  planTemplates: typeof planTemplates;
   pushNotifications: typeof pushNotifications;
   restReward: typeof restReward;
   simpleTrainingSchedule: typeof simpleTrainingSchedule;
@@ -63,6 +66,7 @@ declare const fullApi: ApiFromModules<{
   "utils/coins": typeof utils_coins;
   "utils/gamification": typeof utils_gamification;
   "utils/streak": typeof utils_streak;
+  workoutLibrary: typeof workoutLibrary;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

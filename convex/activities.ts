@@ -1196,6 +1196,23 @@ export const fullStravaSyncServer = action({
         calories: activity.calories ?? estimateCalories(activity.distance, activity.moving_time),
         averageHeartRate: activity.average_heartrate,
         workoutName: activity.name,
+        // Enhanced running metrics
+        totalElevationGain: activity.total_elevation_gain,
+        elevationHigh: activity.elev_high,
+        elevationLow: activity.elev_low,
+        averageTemp: activity.average_temp,
+        startLatLng: activity.start_latlng,
+        endLatLng: activity.end_latlng,
+        timezone: activity.timezone,
+        isIndoor: activity.is_indoor,
+        isCommute: activity.is_commute,
+        averageCadence: activity.average_cadence,
+        averageWatts: activity.average_watts,
+        maxWatts: activity.max_watts,
+        kilojoules: activity.kilojoules,
+        polyline: activity.map?.polyline,
+        maxSpeed: activity.max_speed,
+        averageSpeed: activity.average_speed,
         // mark as not new for initial sync
         isNewActivity: false,
       };
@@ -1218,3 +1235,61 @@ function estimateCalories(distance: number, durationSec: number) {
   const distanceKm = distance / 1000;
   return Math.round(avgWeightKg * distanceKm * 0.75);
 } 
+
+// -----------------------------------------------------------------------------
+// Record a manual run from the Blaze app (free-run v1)
+export const recordManualRun = mutation({
+  args: {
+    startDate: v.string(),
+    endDate: v.string(),
+    duration: v.number(), // minutes
+    distance: v.number(), // metres
+    calories: v.optional(v.number()),
+    averageHeartRate: v.optional(v.number()),
+    polyline: v.optional(v.string()), // JSON encoded for now
+    plannedWorkoutId: v.optional(v.id("plannedWorkouts")), // Link to planned workout
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const pace = args.distance > 0 ? args.duration / (args.distance / 1000) : undefined; // min/km
+
+    const newActivityId = await ctx.db.insert("activities", {
+      userId,
+      source: "app",
+      startDate: args.startDate,
+      endDate: args.endDate,
+      duration: args.duration,
+      distance: args.distance,
+      calories: args.calories ?? Math.round(args.distance / 1000 * 70),
+      averageHeartRate: args.averageHeartRate,
+      pace,
+      polyline: args.polyline,
+      plannedWorkoutId: args.plannedWorkoutId,
+      isNewActivity: true,
+      syncedAt: new Date().toISOString(),
+    });
+
+    // Update totals & streaks using existing helpers
+    await updateUserProfileTotalsInternal(ctx, userId);
+    try {
+      await recalcStreak(ctx.db, userId, args.startDate.split('T')[0]);
+    } catch (e) {
+      console.error('[recordManualRun] Failed to recalc streak', e);
+    }
+
+    return newActivityId;
+  }
+}); 
+
+export const getActivityById = query({
+  args: { activityId: v.id("activities") },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity || activity.userId !== userId) return null;
+    return activity;
+  },
+}); 

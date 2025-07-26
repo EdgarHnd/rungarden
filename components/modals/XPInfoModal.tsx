@@ -3,7 +3,7 @@ import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import React, { useEffect } from 'react';
-import { Image, Modal, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 interface XPInfoModalProps {
   visible: boolean;
@@ -59,26 +59,25 @@ export default function XPInfoModal({ visible, onClose, levelInfo, metricSystem 
       animationType="fade"
       onRequestClose={handleClose}
     >
-      <View style={styles.overlay}>
-        <View style={styles.modalContainer}>
+      <Pressable style={styles.overlay} onPress={handleClose}>
+        <Pressable style={styles.modalContainer} onPress={() => { }}>
           <View style={styles.header}>
-            <Text style={styles.title}>Leveling Up your Flame</Text>
+            <Text style={styles.title}>Current Progress</Text>
             <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
               <Ionicons name="close" size={24} color={Theme.colors.text.secondary} />
             </TouchableOpacity>
           </View>
 
-          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+          <View style={styles.content}>
             {/* Current Level Progress */}
             {levelInfo && (
               <View style={styles.section}>
-                <Text style={styles.sectionTitle}>Current Progress</Text>
                 <View style={styles.currentLevelCard}>
                   <View style={styles.levelHeader}>
                     <Image source={require('@/assets/images/flame/age0.png')} style={styles.mascotImage} />
                     <View style={styles.levelTextInfo}>
-                      <Text style={styles.currentLevelTitle}>{LevelingService.getLevelTitle(levelInfo.level)}</Text>
-                      <Text style={styles.currentLevelNumber}>Level {levelInfo.level}</Text>
+                      <Text style={styles.currentLevelTitle}>Level {levelInfo.level}</Text>
+                      <Text style={styles.currentLevelNumber}>{LevelingService.getLevelTitle(levelInfo.level)}</Text>
                     </View>
                   </View>
 
@@ -100,7 +99,7 @@ export default function XPInfoModal({ visible, onClose, levelInfo, metricSystem 
 
                 {/* Mascot Evolution */}
                 <View style={styles.mascotEvolutionContainer}>
-                  <Text style={styles.mascotEvolutionTitle}>Run to Level Up!</Text>
+                  <Text style={styles.mascotEvolutionTitle}>Run to level up your flame</Text>
                   <View style={styles.mascotEvolutionRow}>
                     {flameStages.map((stage, idx) => (
                       <React.Fragment key={idx}>
@@ -120,20 +119,14 @@ export default function XPInfoModal({ visible, onClose, levelInfo, metricSystem 
               </View>
             )}
 
-            <View style={styles.section}>
-              <Text style={styles.sectionTitle}>XP from Running</Text>
-              <Text style={styles.description}>
-                You gain XP based on the distance you run.
+            <View style={styles.formulaContainer}>
+              <Text style={styles.formula}>
+                {isMetric ? '1 kilometer = 100 XP' : '1 mile = 161 XP'}
               </Text>
-              <View style={styles.formulaContainer}>
-                <Text style={styles.formula}>
-                  {isMetric ? '1 kilometer = 100 XP' : '1 mile = 161 XP'}
-                </Text>
-              </View>
             </View>
-          </ScrollView>
-        </View>
-      </View>
+          </View>
+        </Pressable>
+      </Pressable>
     </Modal>
   );
 }
@@ -148,19 +141,15 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     backgroundColor: Theme.colors.background.primary,
-    borderRadius: Theme.borderRadius.xl,
-    maxWidth: 400,
+    borderRadius: Theme.borderRadius.medium,
     width: '100%',
-    maxHeight: '80%',
-    ...Theme.shadows.large,
   },
   header: {
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    padding: Theme.spacing.xl,
-    borderBottomWidth: 1,
-    borderBottomColor: Theme.colors.border.primary,
+    paddingTop: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xl,
   },
   title: {
     fontSize: 20,
@@ -174,23 +163,9 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.xl,
   },
   section: {
-    marginBottom: Theme.spacing.xl,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
-  },
-  description: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
-    lineHeight: 24,
-    marginBottom: Theme.spacing.md,
   },
   formulaContainer: {
-    backgroundColor: Theme.colors.background.secondary,
+    //backgroundColor: Theme.colors.background.secondary,
     padding: Theme.spacing.lg,
     borderRadius: Theme.borderRadius.medium,
   },
@@ -203,18 +178,15 @@ const styles = StyleSheet.create({
   // Level Progress Styles
   currentLevelCard: {
     borderRadius: Theme.borderRadius.medium,
-    padding: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
-    backgroundColor: Theme.colors.background.secondary,
+    padding: 20,
+    marginBottom: 10,
+    borderWidth: 2,
+    borderColor: Theme.colors.background.tertiary,
   },
   levelHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: Theme.spacing.md,
-  },
-  currentLevelEmoji: {
-    fontSize: 24,
-    marginRight: Theme.spacing.md,
   },
   levelTextInfo: {
     flex: 1,
@@ -226,9 +198,9 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   currentLevelNumber: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
+    color: Theme.colors.text.tertiary,
   },
   progressContainer: {
     alignItems: 'center',
@@ -246,19 +218,20 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.xs,
   },
   progressText: {
-    fontSize: 12,
+    fontSize: 14,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
-    marginTop: Theme.spacing.xs,
+    marginTop: Theme.spacing.md,
   },
   mascotEvolutionContainer: {
     marginTop: Theme.spacing.lg,
   },
   mascotEvolutionTitle: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.semibold,
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginBottom: Theme.spacing.md,
+    marginBottom: Theme.spacing.xl,
+    textAlign: 'center',
   },
   mascotEvolutionRow: {
     flexDirection: 'row',
@@ -272,29 +245,5 @@ const styles = StyleSheet.create({
   arrowIcon: {
     alignSelf: 'center',
     marginHorizontal: Theme.spacing.xs,
-  },
-  tipSection: {
-    backgroundColor: Theme.colors.background.secondary,
-    padding: Theme.spacing.lg,
-    borderRadius: Theme.borderRadius.medium,
-    borderWidth: 1,
-    borderColor: Theme.colors.special.primary.exp,
-  },
-  tipHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: Theme.spacing.sm,
-    gap: Theme.spacing.sm,
-  },
-  tipTitle: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.special.primary.exp,
-  },
-  tipText: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
-    lineHeight: 20,
   },
 }); 

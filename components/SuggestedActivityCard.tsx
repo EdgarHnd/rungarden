@@ -296,7 +296,7 @@ export default function SuggestedActivityCard({
 
 const styles = StyleSheet.create({
   card: {
-    backgroundColor: Theme.colors.background.tertiary,
+    backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     marginVertical: Theme.spacing.sm,

@@ -143,7 +143,7 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.xl,
   },
   container: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.primary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     width: '100%',

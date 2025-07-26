@@ -1,6 +1,7 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { formatDate, formatDistance, formatDuration, formatPace } from '@/utils/formatters';
+import { FontAwesome6 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import React from 'react';
 import {
@@ -33,7 +34,7 @@ export const ActivityCard = ({
           <Text style={styles.activityType}>{activity.workoutName || 'Running'}</Text>
           <Text style={styles.activityDate}>{formatDate(activity.startDate)}</Text>
         </View>
-        <Text style={styles.chevron}>›</Text>
+        <FontAwesome6 name="chevron-right" size={18} color="#fff" />
       </View>
       <View style={styles.activityStats}>
         <View style={styles.activityStat}>

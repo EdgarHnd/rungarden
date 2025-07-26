@@ -1,9 +1,13 @@
 import Theme from '@/constants/theme';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
+import { router } from 'expo-router';
 import React from 'react';
 import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from 'react-native';
 
@@ -183,15 +187,21 @@ export const ActivityGrid = ({ activities, profile }: ActivityGridProps) => {
 
   return (
     <View style={styles.activityGrid}>
-      <View style={styles.activityGridHeader}>
-        <Text style={styles.activityGridPeriod}>{new Date().getFullYear()}</Text>
-        <Text style={styles.activityGridStats}>
-          {totalActivities} runs • {(profile?.metricSystem ?? 'metric') === 'metric'
-            ? `${totalDistance.toFixed(0)}km`
-            : `${(totalDistance * 0.621371).toFixed(0)}mi`
-          }
-        </Text>
-      </View>
+      <TouchableOpacity style={styles.activityGridHeader} onPress={() => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        router.push('/activities');
+      }}>
+        <Text style={styles.activityGridPeriod}>{new Date().getFullYear()} • {totalActivities} runs • {(profile?.metricSystem ?? 'metric') === 'metric'
+          ? `${totalDistance.toFixed(0)}km`
+          : `${(totalDistance * 0.621371).toFixed(0)}mi`
+        }</Text>
+        <View style={styles.activityGridViewAll}>
+          <Text style={styles.activityGridStats}>
+            View all
+          </Text>
+          <Ionicons name="arrow-forward" size={20} color={Theme.colors.text.primary} />
+        </View>
+      </TouchableOpacity>
 
       <View style={styles.activityGridWrapper}>
         {/* Month labels */}
@@ -279,8 +289,10 @@ export const ActivityGrid = ({ activities, profile }: ActivityGridProps) => {
 
 const styles = StyleSheet.create({
   activityGrid: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.primary,
     borderRadius: Theme.borderRadius.xl,
+    borderWidth: 0,
+    borderColor: Theme.colors.background.tertiary,
     padding: Theme.spacing.lg,
   },
   activityGridHeader: {
@@ -293,6 +305,11 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
+  },
+  activityGridViewAll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.xs,
   },
   activityGridStats: {
     fontSize: 14,
@@ -322,7 +339,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'flex-end',
-    marginTop: Theme.spacing.md,
     gap: Theme.spacing.sm,
   },
   activityGridLegendText: {

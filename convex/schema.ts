@@ -39,6 +39,7 @@ const schema = defineSchema({
     )),
     gender: v.optional(v.union(v.literal("female"), v.literal("male"), v.literal("other"))),
     age: v.optional(v.number()),
+    hasSkippedTrainingPlan: v.optional(v.boolean()),
 
     // Preferences
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
@@ -111,8 +112,7 @@ const schema = defineSchema({
   }).index("by_user_date", ["userId", "effectiveFromDate"]),
 
   /* ────────────────────────────── structured workouts */
-  workouts: defineTable({
-    userId: v.optional(v.id("users")),       // null -> system template
+  workoutTemplates: defineTable({
     name: v.optional(v.string()),
     type: v.union(
       v.literal("run"), v.literal("cross-train"),
@@ -137,7 +137,6 @@ const schema = defineSchema({
 
     updatedAt: v.string()
   })
-    .index("by_user", ["userId"])
     .index("by_type", ["type"]),
 
   /* ────────────────────────────── training plan */
@@ -158,12 +157,10 @@ const schema = defineSchema({
         v.literal("peak"), v.literal("taper")
       ),
       days: v.array(v.object({
-        date: v.string(),            // YYYY-MM-DD
-        type: v.union(
-          v.literal("easy"), v.literal("tempo"), v.literal("interval"),
-          v.literal("long"), v.literal("rest"), v.literal("cross-train")
-        ),
-        description: v.string()
+        date: v.string(),
+        workoutTemplateId: v.optional(v.id("workoutTemplates")),
+        description: v.string(),
+        type: v.optional(v.string()),
       }))
     })),
 
@@ -176,7 +173,7 @@ const schema = defineSchema({
   plannedWorkouts: defineTable({
     userId: v.id("users"),
     trainingPlanId: v.id("trainingPlans"),
-    workoutId: v.id("workouts"),            // <-- REQUIRED
+    workoutTemplateId: v.id("workoutTemplates"),            // <-- REQUIRED
 
     scheduledDate: v.string(),              // YYYY-MM-DD
     status: v.union(
@@ -185,7 +182,10 @@ const schema = defineSchema({
       v.literal("skipped"),
       v.literal("missed")
     ),
-    completedAt: v.optional(v.string())
+    completedAt: v.optional(v.string()),
+    // Token-based plan metadata
+    token: v.optional(v.string()),          // e.g. "E4"
+    hydrated: v.optional(v.any())           // resolved placeholders JSON
   })
     .index("by_user", ["userId"])
     .index("by_user_date", ["userId", "scheduledDate"])

@@ -213,7 +213,7 @@ export default function WeekView({
       {(simpleSchedule?.isActive && todaysRunStatus) ? (
         <TouchableOpacity style={styles.progressContainer} onPress={() => {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          router.push('/activities');
+          router.push('/path');
         }}>
           <View style={styles.progressHeader}>
             <View style={styles.progressTextContainer}>

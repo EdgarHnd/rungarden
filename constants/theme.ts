@@ -47,7 +47,8 @@ export const Theme = {
         shadow: '#000000',       // Shadow color
         heart: '#EF4444',        // Red for heart
         energy: '#FFD700',        // Gold for energy
-        streak: '#FDD327',        // Gold for streak
+        streak: '#FDD327',
+        plan: '#FE580F',        // Gold for streak
       },
       secondary:{
         exp: '#3AA9DD',         // Darker blue
@@ -57,6 +58,7 @@ export const Theme = {
         heart: '#E60000',       // Darker red
         energy: '#E6C200',       // Darker gold for energy
         streak: '#FFB22B',       // Darker gold for streak
+        plan: '#D4520B',        // Darker gold for streak
       }
     },
 

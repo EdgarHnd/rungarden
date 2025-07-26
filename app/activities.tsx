@@ -1,10 +1,10 @@
 import { ActivityCard } from '@/components/ActivityCard';
-import { ActivityGrid } from '@/components/ActivityGrid';
 import LoadingScreen from '@/components/LoadingScreen';
 import { MonthHeader } from '@/components/MonthHeader';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { formatDistanceValue, getDistanceUnit } from '@/utils/formatters';
+import { Ionicons } from '@expo/vector-icons';
 import { useConvexAuth, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
@@ -17,7 +17,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 interface WeekSummary {
@@ -222,31 +222,7 @@ export default function ProgressScreen() {
     return <LoadingScreen />;
   }
 
-  // No data source configured
-  if (profile && !profile.healthKitSyncEnabled && !profile.stravaSyncEnabled) {
-    return (
-      <SafeAreaView style={styles.container}>
-        <View style={styles.pageHeader}>
-          <Text style={styles.headerTitle}>Progress</Text>
-        </View>
-        <View style={styles.permissionContainer}>
-          <Text style={styles.title}>Connect a Data Source</Text>
-          <Text style={styles.description}>
-            Connect to HealthKit or Strava in Settings to start tracking your running progress.
-          </Text>
-          <TouchableOpacity
-            style={styles.button}
-            onPress={() => {
-              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-              router.push('/settings');
-            }}
-          >
-            <Text style={styles.buttonText}>Open Settings</Text>
-          </TouchableOpacity>
-        </View>
-      </SafeAreaView>
-    );
-  }
+  // Previously we required a data source; now always show progress.
 
   return (
     <SafeAreaView style={styles.container}>
@@ -280,122 +256,10 @@ export default function ProgressScreen() {
           <>
             {/* Page Header - now part of scrollable content */}
             <View style={styles.pageHeader}>
-              <View style={styles.headerContainer}>
-                <Text style={styles.headerTitle}>Progress</Text>
-              </View>
-            </View>
-
-            {/* Training Plan Section */}
-            {trainingPlan && trainingProfile ? (
-              <View style={styles.trainingPlanContainer}>
-                <TouchableOpacity onPress={() => router.push('/training')}>
-                  <View style={styles.overviewCard}>
-                    <View style={styles.overviewHeader}>
-                      <View style={styles.planInfo}>
-                        <Text style={styles.planTitle}>{planName}</Text>
-                      </View>
-
-                      {/* Manage Plan Button at top right */}
-                      <TouchableOpacity
-                        style={styles.inCardButton}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          router.push('/manage-plan');
-                        }}
-                      >
-                        <Text style={styles.inCardButtonText}>View</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.statsRow}>
-                      <View style={styles.statItem}>
-                        {trainingProfile.goalDistance !== 'just-run-more' && trainingProfile.goalDate && (
-                          <View>
-                            <Text style={styles.statLabel}>Race Day</Text>
-                            <Text style={styles.statValue}>
-                              {new Date(trainingProfile.goalDate).toLocaleDateString('en-US', {
-                                month: 'short',
-                                day: 'numeric',
-                                year: 'numeric'
-                              }).toUpperCase()}
-                            </Text>
-                          </View>
-                        )}
-                      </View>
-                      <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Weeks Completed</Text>
-                        <Text style={styles.statValue}>{progress.weeksCompleted}/{progress.totalWeeks}</Text>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              </View>
-            ) : simpleSchedule && simpleSchedule.isActive ? (
-              <View style={styles.trainingPlanContainer}>
-                <TouchableOpacity onPress={() => {
-                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  router.push('/manage-schedule');
-                }}>
-                  <View style={styles.overviewCard}>
-                    <View style={styles.overviewHeader}>
-                      <View style={styles.planInfo}>
-                        <Text style={styles.planTitle}>Basic Training</Text>
-                      </View>
-
-                      {/* Manage Schedule Button at top right */}
-                      <TouchableOpacity
-                        style={styles.inCardButton}
-                        onPress={(e) => {
-                          e.stopPropagation();
-                          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                          router.push('/manage-schedule');
-                        }}
-                      >
-                        <Text style={styles.inCardButtonText}>Manage</Text>
-                      </TouchableOpacity>
-                    </View>
-
-                    <View style={styles.statsRow}>
-                      <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Runs per week</Text>
-                        <Text style={styles.statValue}>{simpleSchedule.runsPerWeek}</Text>
-                      </View>
-                      <View style={styles.statItem}>
-                        <Text style={styles.statLabel}>Preferred Days</Text>
-                        <Text style={styles.statValue}>{simpleSchedule.preferredDays.join(', ')}</Text>
-                      </View>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-
-                {/* Start Custom Training Plan button outside */}
-                <TouchableOpacity
-                  style={styles.actionButton}
-                  onPress={handleStartNowPress}
-                >
-                  <Text style={styles.actionButtonText}>Start Custom Training Plan</Text>
-                </TouchableOpacity>
-              </View>
-            ) : (
-              <View style={styles.trainingPlanContainer}>
-                <View style={styles.trainingPlanCard}>
-                  <Text style={styles.trainingPlanText}>No training schedule</Text>
-                  <TouchableOpacity
-                    style={styles.generateButton}
-                    onPress={handleStartNowPress}
-                  >
-                    <Text style={styles.generateButtonText}>Start Now</Text>
-                  </TouchableOpacity>
-                </View>
-              </View>
-            )}
-
-            {/* GitHub-style Activity Grid */}
-            <View style={styles.activityGridContainer}>
-              <Text style={styles.activityGridTitle}>Activity Overview</Text>
-              <ActivityGrid activities={activitiesForYear || []} profile={profile} />
-
+              <TouchableOpacity onPress={() => router.back()}>
+                <Ionicons name="arrow-back" size={24} color={Theme.colors.text.primary} />
+              </TouchableOpacity>
+              <Text style={styles.headerTitle}>Activities</Text>
             </View>
           </>
         )}
@@ -426,6 +290,7 @@ const styles = StyleSheet.create({
   headerTitle: {
     fontSize: 32,
     fontFamily: Theme.fonts.bold,
+    marginLeft: Theme.spacing.lg,
     color: Theme.colors.text.primary,
   },
   editButton: {
@@ -541,9 +406,10 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
   },
   pageHeader: {
-    paddingTop: Theme.spacing.xl,
+    flexDirection: 'row',
+    alignItems: 'center',
     paddingBottom: Theme.spacing.xl,
-    paddingHorizontal: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
   },
   activityItemWrapper: {
     paddingHorizontal: Theme.spacing.xl,

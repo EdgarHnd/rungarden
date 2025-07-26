@@ -2,13 +2,14 @@ import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { Id } from '@/convex/_generated/dataModel';
 import { Ionicons } from '@expo/vector-icons';
-import { useQuery } from 'convex/react';
+import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Animated,
   Image,
+  SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
@@ -25,6 +26,7 @@ interface Activity {
   emoji: string;
   date?: string;
   workoutSections?: WorkoutSection[];
+  executableSteps?: any[]; // <-- Add this
 }
 
 interface WorkoutSection {
@@ -65,19 +67,45 @@ export default function TrainingDetailScreen() {
     scheduleWorkoutId ? { plannedWorkoutId: scheduleWorkoutId } : "skip"
   );
 
+  // Add mutation for rest day completion
+  const completeRestDay = useMutation(api.userProfile.completeRestDay);
+  const [completingRest, setCompletingRest] = useState(false);
+
   // Check if the current planned workout is completed
   const isWorkoutCompleted = plannedWorkout?.status === 'completed' || (linkedActivities?.length ?? 0) > 0;
+
+  // Handle rest day completion
+  const handleRestDayCompletion = async () => {
+    if (!plannedWorkout || completingRest) return;
+
+    setCompletingRest(true);
+    try {
+      await completeRestDay({
+        date: plannedWorkout.scheduledDate,
+        notes: "Rest day completed from training plan"
+      });
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      router.back();
+    } catch (error) {
+      console.error('Failed to complete rest day:', error);
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+    } finally {
+      setCompletingRest(false);
+    }
+  };
 
   // Transform planned workout data to match the existing Activity interface
   const activity: Activity | null = plannedWorkout ? {
     type: plannedWorkout.workout?.subType || plannedWorkout.workout?.type || 'run',
-    title: plannedWorkout.workout?.name || 'Training Session',
-    description: plannedWorkout.workout?.description || '',
-    duration: extractDurationFromSteps(plannedWorkout.workout?.steps || []),
+    title: (plannedWorkout.workout?.name?.startsWith('TOKEN_') ? plannedWorkout.workout?.description : plannedWorkout.workout?.name) || 'Training Session',
+    description: plannedWorkout.hydrated?.globalDescription || plannedWorkout.workout?.description || '',
+    duration: extractDurationFromSteps(plannedWorkout.executableSteps || plannedWorkout.workout?.steps || []),
     distance: extractDistanceFromSteps(plannedWorkout.workout?.steps || []),
     emoji: getWorkoutEmoji(plannedWorkout.workout?.subType || plannedWorkout.workout?.type || 'run'),
     date: plannedWorkout.scheduledDate,
-    workoutSections: transformStepsToSections(plannedWorkout.workout?.steps || [])
+    workoutSections: transformStepsToSections(plannedWorkout.workout?.steps || []),
+    executableSteps: plannedWorkout.executableSteps || [],
   } : null;
 
   // Debug logging
@@ -90,32 +118,34 @@ export default function TrainingDetailScreen() {
 
   // Helper functions to extract data from workout steps
   function extractDurationFromSteps(steps: any[]): string {
-    console.log('Extracting duration from steps:', steps);
-    const totalDuration = steps.reduce((total, step) => {
+    const totalSeconds = steps.reduce((total, step) => {
       if (step.duration) {
-        const match = step.duration.match(/(\d+)\s*min/);
-        if (match) {
-          return total + parseInt(match[1]);
+        const minMatch = step.duration.match(/(\d+(?:\.\d+)?)\s*min/);
+        if (minMatch) {
+          return total + parseFloat(minMatch[1]) * 60;
+        }
+        const secMatch = step.duration.match(/(\d+(?:\.\d+)?)\s*sec/);
+        if (secMatch) {
+          return total + parseFloat(secMatch[1]);
         }
       }
       return total;
     }, 0);
-    const result = totalDuration > 0 ? `${totalDuration} min` : '30 min';
-    console.log('Extracted duration:', result);
-    return result;
+
+    if (totalSeconds > 0) {
+      return `${Math.round(totalSeconds / 60)} min`;
+    }
+    return '30 min'; // Default
   }
 
   function extractDistanceFromSteps(steps: any[]): number {
-    console.log('Extracting distance from steps:', steps);
     const totalDistance = steps.reduce((total, step) => {
       if (step.distance) {
         return total + step.distance;
       }
       return total;
     }, 0);
-    const result = totalDistance > 0 ? totalDistance / 1000 : 3; // Convert to km, default to 3km
-    console.log('Extracted distance:', result);
-    return result;
+    return totalDistance > 0 ? totalDistance / 1000 : 0; // Convert to km, no default distance
   }
 
   function getWorkoutEmoji(type: string): string {
@@ -129,15 +159,31 @@ export default function TrainingDetailScreen() {
   }
 
   function transformStepsToSections(steps: any[]): WorkoutSection[] {
-    return steps.map((step, index) => ({
-      id: index + 1,
-      type: getSectionType(step.label || ''),
-      title: step.label || `Step ${index + 1}`,
-      subtitle: step.notes || step.target || '',
-      duration: step.duration || '',
-      distance: step.distance ? (isMetric ? `${(step.distance / 1000).toFixed(1)}km` : `${((step.distance / 1000) * 0.621371).toFixed(1)}mi`) : '',
-      pace: step.pace ? formatPace(step.pace) : '',
-    }));
+    return steps.map((step, index) => {
+      const hasSubtitle = step.notes || step.target;
+      const stepType = getSectionType(step.label || '');
+
+      let title = step.label || `Step ${index + 1}`;
+      if (!hasSubtitle && step.duration) {
+        title = `${step.duration} ${step.label}`;
+      }
+      if (stepType === 'warmup' && step.duration) {
+        title = `${step.duration} Warmup`;
+      }
+      if (stepType === 'cooldown' && step.duration) {
+        title = `${step.duration} Cooldown`;
+      }
+
+      return {
+        id: index + 1,
+        type: stepType,
+        title: title,
+        subtitle: step.notes || step.target || '',
+        duration: step.duration || '',
+        distance: step.distance ? (isMetric ? `${(step.distance / 1000).toFixed(1)}km` : `${((step.distance / 1000) * 0.621371).toFixed(1)}mi`) : '',
+        pace: step.pace ? formatPace(step.pace) : '',
+      };
+    });
   }
 
   function getSectionType(label: string): 'warmup' | 'run' | 'rest' | 'repeat' | 'cooldown' {
@@ -146,6 +192,7 @@ export default function TrainingDetailScreen() {
     if (lower.includes('cool')) return 'cooldown';
     if (lower.includes('rest')) return 'rest';
     if (lower.includes('repeat')) return 'repeat';
+    if (lower.includes('main set')) return 'run'; // Treat "Main Set" as a run type for icon purposes
     return 'run';
   }
 
@@ -216,27 +263,45 @@ export default function TrainingDetailScreen() {
   };
 
   const getSimpleRewards = (activity: Activity) => {
-    // Simple reward calculation based on workout type
-    const distanceKm = activity.distance || 3; // Use the activity distance directly in km
+    // Reward calculation based on workout type, duration, and distance.
+    const distanceKm = activity.distance || 0;
+    const durationMin = parseInt(activity.duration.replace(' min', ''), 10) || 30;
 
-    // Rest days get minimal rewards, running days get full rewards
+    const XP_PER_KM = 100;
+    const COINS_PER_KM = 10;
+    const XP_PER_MIN_RUN = 5; // Less than distance to incentivize completing goals
+    const COINS_PER_MIN_RUN = 1;
+    const XP_PER_MIN_OTHER = 3;
+    const COINS_PER_MIN_OTHER = 0.5;
+    const REST_XP = 25;
+    const REST_COINS = 10;
+
+    let xp = 0;
+    let coins = 0;
+
     if (activity.type === 'rest') {
-      return {
-        distance: 0,
-        coins: 1, // Small reward for rest day completion
-        xp: 50,   // Small XP for recovery
-        progress: 'Recovery',
-      };
+      xp = REST_XP;
+      coins = REST_COINS;
+    } else if (distanceKm > 0) {
+      // Prioritize distance for rewards if available
+      xp = Math.max(10, Math.floor(distanceKm * XP_PER_KM));
+      coins = Math.max(1, Math.floor(distanceKm * COINS_PER_KM));
+    } else {
+      // Fallback to time-based rewards
+      if (activity.type === 'run' || activity.type === 'long' || activity.type === 'easy' || activity.type === 'tempo') {
+        xp = Math.max(10, Math.floor(durationMin * XP_PER_MIN_RUN));
+        coins = Math.max(1, Math.floor(durationMin * COINS_PER_MIN_RUN));
+      } else { // Cross-train, strength, etc.
+        xp = Math.max(10, Math.floor(durationMin * XP_PER_MIN_OTHER));
+        coins = Math.max(1, Math.floor(durationMin * COINS_PER_MIN_OTHER));
+      }
     }
-
-    const coins = Math.max(1, Math.floor(distanceKm * 10));  // 10 coins per km
-    const xp = Math.max(5, Math.floor(distanceKm * 100));    // 100 XP per km
 
     return {
       distance: distanceKm,
+      duration: durationMin,
       coins: coins,
       xp: xp,
-      progress: 'Fitness',
     };
   };
 
@@ -357,7 +422,7 @@ export default function TrainingDetailScreen() {
       case 'warmup':
         return 'flame-outline';
       case 'run':
-        return 'fitness-outline';
+        return 'footsteps-outline';
       case 'rest':
         return 'pause-outline';
       case 'repeat':
@@ -372,15 +437,15 @@ export default function TrainingDetailScreen() {
   const getSectionColor = (type: string) => {
     switch (type) {
       case 'warmup':
-        return '#FF9500';
+        return Theme.colors.special.primary.coin;
       case 'run':
-        return '#007AFF';
+        return Theme.colors.special.primary.exp;
       case 'rest':
         return '#8E8E93';
       case 'repeat':
         return '#FF3B30';
       case 'cooldown':
-        return '#30D158';
+        return Theme.colors.special.primary.level;
       default:
         return Theme.colors.text.tertiary;
     }
@@ -393,82 +458,76 @@ export default function TrainingDetailScreen() {
       <View style={styles.workoutBreakdownSection}>
         <View style={styles.descriptionHeader}>
           <View style={styles.descriptionHeaderLeft}>
-            <Ionicons name="clipboard-outline" size={24} color={Theme.colors.text.primary} />
-            <Text style={styles.descriptionHeaderText}>Description</Text>
+            <Ionicons name="list-outline" size={24} color={Theme.colors.text.primary} />
+            <Text style={styles.descriptionHeaderText}>Workout Session</Text>
           </View>
-          {/* <View style={styles.workoutTypeButtons}>
-            <View style={[styles.workoutTypeButton, styles.workoutTypeButtonActive]}>
-              <Text style={styles.workoutTypeButtonText}>OUTDOOR</Text>
-            </View>
-            <View style={styles.workoutTypeButton}>
-              <Text style={[styles.workoutTypeButtonText, styles.workoutTypeButtonInactive]}>TREADMILL</Text>
-            </View>
-          </View> */}
         </View>
+        <View style={styles.workoutBreakdownContainer}>
 
-        {/* If complex workout, show all sections */}
-        {isComplexWorkout(activity) ? (
-          activity.workoutSections!.map((section, index) => (
-            <View key={section.id} style={styles.workoutSectionContainer}>
-              {section.type === 'repeat' && (
-                <View style={styles.repeatBanner}>
-                  <Ionicons name="repeat-outline" size={20} color="#fff" />
-                  <Text style={styles.repeatText}>Repeat x{section.repeats || 4}</Text>
-                </View>
-              )}
+          {/* If complex workout, show all sections */}
+          {isComplexWorkout(activity) ? (
+            activity.workoutSections!.map((section, index) => (
+              <View key={section.id} style={styles.workoutSectionContainer}>
+                {section.type === 'repeat' && (
+                  <View style={styles.repeatBanner}>
+                    <Ionicons name="repeat-outline" size={20} color="#fff" />
+                    <Text style={styles.repeatText}>Repeat x{section.repeats || 4}</Text>
+                  </View>
+                )}
 
-              {section.type !== 'repeat' && (
-                <View style={styles.workoutSection}>
-                  <Text style={styles.sectionNumber}>{index + 1}</Text>
-                  <View style={styles.sectionDivider} />
-                  <View style={styles.sectionContent}>
-                    <Text style={styles.workoutSectionTitle}>{section.title}</Text>
-                    {section.subtitle && (
-                      <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
-                    )}
+                {section.type !== 'repeat' && (
+                  <View style={styles.workoutSection}>
+                    <Text style={styles.sectionNumber}>{index + 1}</Text>
+                    <View style={[styles.sectionDivider]} />
+                    <View style={styles.sectionContent}>
+                      <Text style={styles.workoutSectionTitle}>{section.title}</Text>
+                      {section.subtitle && (
+                        <Text style={styles.sectionSubtitle}>{section.subtitle}</Text>
+                      )}
+                    </View>
+                    <View style={styles.sectionType}>
+                      <Ionicons
+                        name={getSectionIcon(section.type) as any}
+                        size={24}
+                        color={getSectionColor(section.type)}
+                      />
+                      <Text style={[styles.sectionTypeText, { color: getSectionColor(section.type) }]}>
+                        {section.type.toUpperCase()}
+                      </Text>
+                    </View>
                   </View>
-                  <View style={styles.sectionType}>
-                    <Ionicons
-                      name={getSectionIcon(section.type) as any}
-                      size={20}
-                      color={Theme.colors.text.tertiary}
-                    />
-                    <Text style={styles.sectionTypeText}>
-                      {section.type.toUpperCase()}
-                    </Text>
-                  </View>
-                </View>
-              )}
-            </View>
-          ))
-        ) : (
-          /* If simple activity, show as single workout section */
-          <View style={styles.workoutSectionContainer}>
-            <View style={styles.workoutSection}>
-              <Text style={styles.sectionNumber}>1</Text>
-              <View style={styles.sectionDivider} />
-              <View style={styles.sectionContent}>
-                <Text style={styles.workoutSectionTitle}>
-                  {preferTimeOverDistance
-                    ? `${activity.duration} at a conversational pace`
-                    : (rewards.distance > 0 ? `${formatDistanceForDisplay(rewards.distance)} at a conversational pace` : activity.title)
-                  }
-                </Text>
-                {activity.description && (
-                  <Text style={styles.sectionSubtitle}>{activity.description}</Text>
                 )}
               </View>
-              <View style={styles.sectionType}>
-                <Ionicons
-                  name="fitness-outline"
-                  size={20}
-                  color={Theme.colors.text.tertiary}
-                />
-                <Text style={styles.sectionTypeText}>RUN</Text>
+            ))
+          ) : (
+            /* If simple activity, show as single workout section */
+            <View style={styles.workoutSectionContainer}>
+              <View style={styles.workoutSection}>
+                <Text style={styles.sectionNumber}>1</Text>
+                <View style={styles.sectionDivider} />
+                <View style={styles.sectionContent}>
+                  <Text style={styles.workoutSectionTitle}>
+                    {preferTimeOverDistance
+                      ? `${activity.duration} at a conversational pace`
+                      : (rewards.distance > 0 ? `${formatDistanceForDisplay(rewards.distance)} at a conversational pace` : activity.title)
+                    }
+                  </Text>
+                  {activity.description && (
+                    <Text style={styles.sectionSubtitle}>{activity.description}</Text>
+                  )}
+                </View>
+                <View style={styles.sectionType}>
+                  <Ionicons
+                    name="fitness-outline"
+                    size={20}
+                    color={Theme.colors.text.tertiary}
+                  />
+                  <Text style={styles.sectionTypeText}>RUN</Text>
+                </View>
               </View>
             </View>
-          </View>
-        )}
+          )}
+        </View>
       </View>
     );
   };
@@ -499,10 +558,9 @@ export default function TrainingDetailScreen() {
 
   const workoutInfo = getWorkoutTypeInfo(activity.type);
   const rewards = getSimpleRewards(activity);
-  const helpfulTips = getHelpfulTips(activity);
 
   return (
-    <View style={styles.container}>
+    <SafeAreaView style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
         <TouchableOpacity onPress={() => {
@@ -532,48 +590,19 @@ export default function TrainingDetailScreen() {
           )}
           <View style={styles.workoutTypeContainer}>
             <Text style={styles.workoutType}>{activity.title.toUpperCase()}</Text>
-            <Text style={styles.workoutSubtitle}>
-              {workoutInfo.subtitle}
-              {preferTimeOverDistance
-                ? (activity.duration && ` • ${activity.duration}`)
-                : (rewards.distance > 0 && ` • ${formatDistanceForDisplay(rewards.distance)}`)
-              }
-            </Text>
+            {/* Show duration as primary if distance is 0 or not preferred */}
+            {(preferTimeOverDistance || (rewards.distance === 0 && rewards.duration > 0)) ? (
+              <Text style={styles.mainInfoValue}>{activity.duration}</Text>
+            ) : (
+              <Text style={styles.mainInfoValue}>{(activity.distance || 0) > 0 ? formatDistanceForDisplay(activity.distance!) : '--'}</Text>
+            )}
           </View>
         </Animated.View>
 
         {/* Main Training Info */}
         <View style={styles.mainInfoSection}>
           <Text style={styles.sectionTitle}>Training Details</Text>
-          <View style={styles.mainInfoGrid}>
-            {/* Show based on user preference, but always show something */}
-            {preferTimeOverDistance ? (
-              <View style={styles.mainInfoCard}>
-                <View style={[styles.mainInfoIcon, { backgroundColor: Theme.colors.special.primary.level }]}>
-                  <Ionicons name="time-outline" size={28} color="#fff" />
-                </View>
-                <Text style={styles.mainInfoValue}>{activity.duration}</Text>
-                <Text style={styles.mainInfoLabel}>Duration</Text>
-              </View>
-            ) : (
-              <View style={styles.mainInfoCard}>
-                <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
-                  <Ionicons name="location-outline" size={28} color="#fff" />
-                </View>
-                <Text style={styles.mainInfoValue}>{formatDistanceForDisplay(activity.distance || 3)}</Text>
-                <Text style={styles.mainInfoLabel}>Distance</Text>
-              </View>
-            )}
-
-            {/* Show secondary info */}
-            <View style={styles.mainInfoCard}>
-              <View style={[styles.mainInfoIcon, { backgroundColor: getWorkoutTypeColor(activity.type) }]}>
-                <Ionicons name="fitness-outline" size={28} color="#fff" />
-              </View>
-              <Text style={styles.mainInfoValue}>{activity.type.toUpperCase()}</Text>
-              <Text style={styles.mainInfoLabel}>Workout Type</Text>
-            </View>
-          </View>
+          <Text style={styles.mainInfoDescription}>{activity.description}</Text>
         </View>
 
         {/* Debug Section - remove this later */}
@@ -634,7 +663,7 @@ export default function TrainingDetailScreen() {
             <Text style={styles.sectionTitle}>Expected Rewards</Text>
             <View style={styles.rewardsGrid}>
               <View style={styles.rewardCard}>
-                <Ionicons name="flash" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
+                <Ionicons name="flash-outline" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
                 <Text style={styles.rewardExpValue}>+{rewards.xp}</Text>
                 <Text style={styles.rewardLabel}>XP</Text>
               </View>
@@ -646,40 +675,43 @@ export default function TrainingDetailScreen() {
             </View>
           </View>
         )}
+      </ScrollView>
 
-        {/* Helpful Tips */}
-        <View style={styles.tipsSection}>
-          <Text style={styles.sectionTitle}>Helpful Tips</Text>
-          {helpfulTips.map((tip, index) => (
-            <View key={index} style={styles.tipCard}>
-              <View style={styles.tipIcon}>
-                <Text style={styles.tipIconText}>{tip.icon}</Text>
-              </View>
-              <View style={styles.tipContent}>
-                <Text style={styles.tipCategory}>{tip.category}</Text>
-                <Text style={styles.tipText}>{tip.tip}</Text>
-              </View>
-            </View>
-          ))}
-        </View>
-
-        {/* Start Workout Button */}
-        {/* <View style={styles.actionSection}>
+      {/* Start Workout Button */}
+      {!isWorkoutCompleted && (
+        <View style={styles.actionSection}>
           <TouchableOpacity
             style={styles.startButton}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-              router.back();
+              if (activity.type === 'rest') {
+                // Handle rest day completion
+                handleRestDayCompletion();
+              } else {
+                // Start the structured workout
+                router.push({
+                  pathname: '/run',
+                  params: {
+                    plannedWorkoutId: scheduleWorkoutId,
+                    // Pass executable steps to the run screen
+                    executableSteps: JSON.stringify(activity.executableSteps || [])
+                  }
+                });
+              }
             }}
             activeOpacity={0.8}
+            disabled={completingRest}
           >
             <Text style={styles.startButtonText}>
-              {activity.type === 'rest' ? '😴 TAKE REST' : '🏃‍♂️ START WORKOUT'}
+              {activity.type === 'rest'
+                ? (completingRest ? '😴 COMPLETING...' : '😴 TAKE REST')
+                : 'START WORKOUT'
+              }
             </Text>
           </TouchableOpacity>
-        </View> */}
-      </ScrollView>
-    </View>
+        </View>
+      )}
+    </SafeAreaView>
   );
 }
 
@@ -693,8 +725,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Theme.spacing.xl,
-    paddingTop: 60,
-    paddingBottom: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.md,
   },
   backButton: {
     padding: Theme.spacing.sm,
@@ -717,10 +748,12 @@ const styles = StyleSheet.create({
   heroSection: {
     alignItems: 'center',
     paddingHorizontal: Theme.spacing.xl,
-    paddingBottom: Theme.spacing.xxxl,
   },
   workoutTypeContainer: {
+    flexDirection: 'row',
+    gap: Theme.spacing.md,
     alignItems: 'center',
+    marginBottom: Theme.spacing.xl,
   },
   workoutType: {
     fontSize: 28,
@@ -747,17 +780,11 @@ const styles = StyleSheet.create({
   },
   mainInfoGrid: {
     flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Theme.spacing.xl,
   },
   mainInfoCard: {
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
     alignItems: 'center',
     minWidth: 120,
     flex: 1,
-    marginHorizontal: Theme.spacing.sm,
   },
   mainInfoIcon: {
     width: 56,
@@ -770,14 +797,15 @@ const styles = StyleSheet.create({
   mainInfoValue: {
     fontSize: 24,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: Theme.colors.text.tertiary,
     marginBottom: Theme.spacing.xs,
   },
-  mainInfoLabel: {
-    fontSize: 14,
+  mainInfoDescription: {
+    fontSize: 16,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
-    textAlign: 'center',
+    textAlign: 'left',
+    marginBottom: Theme.spacing.xxxl,
   },
   descriptionCard: {
     backgroundColor: Theme.colors.background.secondary,
@@ -793,7 +821,7 @@ const styles = StyleSheet.create({
   },
   rewardsSection: {
     paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
+    marginBottom: 100,
   },
   rewardsGrid: {
     flexDirection: 'row',
@@ -801,20 +829,17 @@ const styles = StyleSheet.create({
   },
   rewardCard: {
     flex: 1,
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
     alignItems: 'center',
-    marginHorizontal: 4,
   },
   rewardEmoji: {
     marginTop: Theme.spacing.xs,
     marginBottom: Theme.spacing.lg,
   },
   rewardImage: {
-    width: 32,
-    height: 32,
+    width: 28,
+    height: 28,
     marginBottom: Theme.spacing.md,
+    marginTop: Theme.spacing.xs,
   },
   rewardExpValue: {
     fontSize: 20,
@@ -876,8 +901,14 @@ const styles = StyleSheet.create({
     lineHeight: 20,
   },
   actionSection: {
+    position: 'absolute',
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: Theme.spacing.xl,
-    paddingBottom: 100,
+    paddingBottom: 40, // Adjust for safe area
+    paddingTop: Theme.spacing.md,
+    backgroundColor: 'transparent',
   },
   startButton: {
     backgroundColor: Theme.colors.accent.primary,
@@ -946,10 +977,13 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
   },
   workoutSectionContainer: {
+    marginVertical: Theme.spacing.sm,
+  },
+  workoutBreakdownContainer: {
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.lg,
-    marginBottom: Theme.spacing.md,
+    paddingHorizontal: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.sm,
   },
   repeatBanner: {
     backgroundColor: '#FF6B35',
@@ -981,8 +1015,7 @@ const styles = StyleSheet.create({
   },
   sectionDivider: {
     width: 2,
-    backgroundColor: Theme.colors.text.tertiary,
-    height: 50,
+    height: '100%',
     marginHorizontal: Theme.spacing.lg,
   },
   sectionContent: {
@@ -1003,7 +1036,7 @@ const styles = StyleSheet.create({
   sectionType: {
     alignItems: 'center',
     justifyContent: 'center',
-    minWidth: 60,
+    minWidth: 80,
   },
   sectionTypeText: {
     fontSize: 10,

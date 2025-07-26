@@ -23,6 +23,11 @@ interface HealthKitType {
   getAnchoredWorkouts: (options: WorkoutInputOptions, callback: (error: string, results: any) => void) => void;
   getDailyStepCountSamples: (options: HealthInputOptions, callback: (error: string, results: any) => void) => void;
   getDailyDistanceWalkingRunningSamples: (options: HealthInputOptions, callback: (error: string, results: any) => void) => void;
+  /**
+   * Returns the authorization status for a given permission constant.
+   * 0 = NotDetermined, 1 = Denied, 2 = Authorized (matches AppleHealthKit docs)
+   */
+  getAuthStatus: (permission: HealthPermission, callback: (error: string, status: number) => void) => void;
   saveWorkout: (options: any, callback: (error: string, results: any) => void) => void;
   Constants: {
     Permissions: {
@@ -48,6 +53,7 @@ export const HealthKit: HealthKitType = Platform.OS !== 'ios' ? {} as HealthKitT
   getAnchoredWorkouts: AppleHealthKit.getAnchoredWorkouts,
   getDailyStepCountSamples: AppleHealthKit.getDailyStepCountSamples,
   getDailyDistanceWalkingRunningSamples: AppleHealthKit.getDailyDistanceWalkingRunningSamples,
+  getAuthStatus: AppleHealthKit.getAuthStatus,
   saveWorkout: AppleHealthKit.saveWorkout,
   
   Constants: {
