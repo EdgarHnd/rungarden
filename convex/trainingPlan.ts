@@ -8,10 +8,26 @@ import { WORKOUT_LIBRARY } from "./workoutLibrary";
 
 // Split a token like "E4" → { base: "E", param: "4" }
 function splitToken(token: string) {
-  const [basePart, variantPart] = token.split("/");
+  // Handle variant tokens with an explicit slash first (e.g. "WR/5A")
+  if (token.includes("/")) {
+    const [basePart, variantPart] = token.split("/");
+    return {
+      base: basePart,
+      param: variantPart ?? "",
+    };
+  }
+
+  // Otherwise, separate leading alphabetic base from the rest (digits, decimals, etc.)
+  const match = token.match(/^([A-Za-z]+)(.*)$/);
+  if (!match) {
+    // Fallback – treat whole token as base to avoid undefined behaviour
+    return { base: token, param: "" };
+  }
+
+  const [, baseLetters, rest] = match;
   return {
-    base: basePart,
-    param: variantPart ?? "",
+    base: baseLetters,
+    param: rest ?? "",
   };
 }
 
@@ -71,8 +87,9 @@ function hydrateData(base: string, param: string, units: "metric" | "imperial") 
   };
 
   // Helper to hydrate global description
-  const hydrateGlobalDescription = (description: string, values: any) => {
-    return description
+  const hydrateString = (str: string, values: any) => {
+    if (!str) return str;
+    return str
       .replace('{{mi}}', values.mi)
       .replace('{{km}}', values.km)
       .replace('{{min}}', values.min);
@@ -133,15 +150,25 @@ function hydrateData(base: string, param: string, units: "metric" | "imperial") 
     const km = Fmt(miles * 1.60934);
     const hydratedValues = { mi: Fmt(miles), km, min: 0 };
     
-    // For these simple types, executable and display steps are the same
     const steps = (skeleton.steps || []).map((s: any) => hydrateStep(s, hydratedValues));
     
+    let descriptionTemplate = skeleton.description;
+    let summary;
+    if (units === 'metric') {
+      descriptionTemplate = descriptionTemplate.replace('{{mi}} mi', '{{km}} km');
+      summary = `${hydratedValues.km} km`;
+    } else {
+      summary = `${hydratedValues.mi} mi`;
+    }
+
     return {
       distanceMi: miles,
       distanceKm: km,
       steps: steps,
       displaySteps: steps,
-      globalDescription: skeleton.globalDescription,
+      description: hydrateString(descriptionTemplate, hydratedValues),
+      summary: summary,
+      globalDescription: hydrateString(skeleton.globalDescription, hydratedValues),
     };
   }
 
@@ -156,7 +183,9 @@ function hydrateData(base: string, param: string, units: "metric" | "imperial") 
       minutes: minutes,
       steps: steps,
       displaySteps: steps,
-      globalDescription: skeleton.globalDescription,
+      description: hydrateString(skeleton.description, hydratedValues),
+      summary: `${minutes} min`,
+      globalDescription: hydrateString(skeleton.globalDescription, hydratedValues),
     };
   }
 
@@ -215,8 +244,12 @@ async function generateTokenBasedPlan(
 ) {
   // Map goal → template key
   const goalMap: Record<string, string> = {
-    "5K": "C25K",
-    marathon: "M16",
+    "5K": "C25K",          // Beginner couch-to-5K
+    "5K_PB": "F5K8",       // 5K improvement (optional sub-goal key)
+    "10K": "B10K",         // First 10 K / beginner-to-PB
+    "RETURN": "RTR6",      // Returning to running
+    "MAINTAIN": "MAINT12", // General maintenance
+    marathon: "M16",         // Marathon 16-wk template
   };
 
   const planKey = goalMap[profile.goalDistance] || "C25K";
@@ -242,7 +275,6 @@ async function generateTokenBasedPlan(
 
   // 2) Build schedule --------------------------------------------------------
   const weekStartDay = userProfile?.weekStartDay ?? 1; // 0=Sun,1=Mon
-  const startOfWeek = getWeekStart(new Date(), weekStartDay);
   const units = userProfile?.metricSystem === "imperial" ? "imperial" : "metric";
 
   // Get user's preferred days and map them to day indices based on week start preference
@@ -258,8 +290,55 @@ async function generateTokenBasedPlan(
   
   const preferredDayIndices = preferredDays.map((day: string) => dayNameToIndex[day as keyof typeof dayNameToIndex]);
 
+  // Find the next occurrence of the closest preferred day (never in the past)
+  const today = new Date();
+  const todayDayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+  
+  // Convert today's day to our week start system
+  let todayIndex;
+  if (weekStartDay === 1) { // Monday start
+    todayIndex = todayDayOfWeek === 0 ? 6 : todayDayOfWeek - 1;
+  } else { // Sunday start
+    todayIndex = todayDayOfWeek;
+  }
+
+  console.log(`DEBUG: weekStartDay=${weekStartDay}, preferredDays=${JSON.stringify(preferredDays)}, preferredDayIndices=${JSON.stringify(preferredDayIndices)}, todayDayOfWeek=${todayDayOfWeek}, todayIndex=${todayIndex}`);
+
+  // Find the closest preferred day that's today or later
+  let closestPreferredDayIndex = 0; // Default to start of week (Monday for Monday start, Sunday for Sunday start)
+  let daysUntilFirstWorkout = 0;
+
+  if (preferredDayIndices.length > 0) {
+    // If user has preferred days, find the closest one
+    closestPreferredDayIndex = preferredDayIndices[0]; // Default to first preferred day
+    
+    // Look for the closest preferred day starting from today
+    for (let i = 0; i < 7; i++) {
+      const checkDayIndex = (todayIndex + i) % 7;
+      if (preferredDayIndices.includes(checkDayIndex)) {
+        closestPreferredDayIndex = checkDayIndex;
+        daysUntilFirstWorkout = i;
+        break;
+      }
+    }
+  } else {
+    // If no preferred days, default to tomorrow (to never schedule in the past)
+    daysUntilFirstWorkout = 1;
+    closestPreferredDayIndex = (todayIndex + 1) % 7;
+  }
+
+  console.log(`DEBUG: closestPreferredDayIndex=${closestPreferredDayIndex}, daysUntilFirstWorkout=${daysUntilFirstWorkout}`);
+
+  // Calculate the actual start date for the training plan (never in the past)
+  const planStartDate = new Date(today);
+  planStartDate.setDate(today.getDate() + daysUntilFirstWorkout);
+  planStartDate.setHours(0, 0, 0, 0);
+
   const planWeeks: any[] = [];
   const pendingPlanned: any[] = [];
+
+  // Keep track of the current date as we build the plan
+  let currentPlanDate = new Date(planStartDate);
 
   for (let wIdx = 0; wIdx < template.weeks.length; wIdx++) {
     const weekTokens = template.weeks[wIdx];
@@ -271,24 +350,89 @@ async function generateTokenBasedPlan(
     // Create a 7-day schedule with rest days by default
     const weekSchedule = Array(7).fill("R");
 
-    // Map workout tokens to user's preferred days
-    for (let i = 0; i < Math.min(workoutTokens.length, preferredDayIndices.length); i++) {
-      const dayIndex = preferredDayIndices[i];
-      weekSchedule[dayIndex] = workoutTokens[i];
+    if (preferredDayIndices.length > 0) {
+      // For users with preferred days
+      if (wIdx === 0 && workoutTokens.length > 0) {
+        // For the first week, ensure the first workout lands on our calculated closest preferred day
+        weekSchedule[closestPreferredDayIndex] = workoutTokens[0];
+        
+        // Place remaining workouts on other preferred days if available
+        let tokenIndex = 1;
+        for (const dayIndex of preferredDayIndices) {
+          if (dayIndex !== closestPreferredDayIndex && tokenIndex < workoutTokens.length) {
+            weekSchedule[dayIndex] = workoutTokens[tokenIndex];
+            tokenIndex++;
+          }
+        }
+      } else {
+        // For subsequent weeks, use normal mapping to preferred days
+        for (let i = 0; i < Math.min(workoutTokens.length, preferredDayIndices.length); i++) {
+          const dayIndex = preferredDayIndices[i];
+          weekSchedule[dayIndex] = workoutTokens[i];
+        }
+      }
+    } else {
+      // For users without preferred days, space workouts evenly (every other day)
+      if (wIdx === 0 && workoutTokens.length > 0) {
+        // For first week, start from our calculated position
+        let currentDayIndex = closestPreferredDayIndex;
+        for (let i = 0; i < workoutTokens.length; i++) {
+          weekSchedule[currentDayIndex] = workoutTokens[i];
+          currentDayIndex = (currentDayIndex + 2) % 7; // Space workouts 2 days apart
+        }
+      } else {
+        // For subsequent weeks, distribute evenly
+        for (let i = 0; i < workoutTokens.length; i++) {
+          const dayIndex = (i * 2) % 7; // Space workouts 2 days apart starting from day 0
+          weekSchedule[dayIndex] = workoutTokens[i];
+        }
+      }
     }
 
-    // Now schedule each day
+    // Calculate the start date for this week
+    let weekStartDate: Date;
+    if (wIdx === 0) {
+      // For the first week, we already calculated planStartDate to be the date of the first workout
+      // Now we need to find the start of that week based on user's week start preference
+      weekStartDate = new Date(planStartDate);
+      weekStartDate.setDate(planStartDate.getDate() - closestPreferredDayIndex);
+      
+      // Store the first week start for subsequent weeks
+      currentPlanDate = new Date(weekStartDate);
+    } else {
+      // For subsequent weeks, add 7 days per week from the first week start
+      weekStartDate = new Date(currentPlanDate);
+      weekStartDate.setDate(currentPlanDate.getDate() + (wIdx * 7));
+    }
+
+    // Now schedule each day of this week
     for (let dIdx = 0; dIdx < 7; dIdx++) {
       const token = weekSchedule[dIdx];
       const { base, param } = splitToken(token);
 
       const skeletonId = await getOrCreateSkeletonTemplate(ctx, base);
 
-      const scheduleDate = new Date(startOfWeek);
-      scheduleDate.setDate(startOfWeek.getDate() + wIdx * 7 + dIdx);
+      // Calculate the exact date for this day
+      const scheduleDate = new Date(weekStartDate);
+      scheduleDate.setDate(weekStartDate.getDate() + dIdx);
       const dateStr = scheduleDate.toISOString().split("T")[0];
 
+      // Final safety check: never schedule workouts in the past
+      const todayStr = today.toISOString().split("T")[0];
+      if (dateStr < todayStr) {
+        console.warn(`Skipping workout scheduled for past date: ${dateStr}`);
+        continue;
+      }
+
       const hydrated = hydrateData(base, param, units);
+      
+      // Debug log for workout scheduling
+      if (base !== "R") {
+        const dayNames = weekStartDay === 1 
+          ? ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+          : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+        console.log(`DEBUG: Scheduling ${token} on ${dayNames[dIdx]} (${dateStr}) - week ${wIdx + 1}, day ${dIdx}`);
+      }
 
       // For rest days (R) we include in plan structure but DON'T create a DB plannedWorkout entry
       if (base !== "R") {
@@ -651,8 +795,6 @@ async function generateTrainingPlanInternal(ctx: any, userId: string) {
     .withIndex("by_user", (q: any) => q.eq("userId", userId))
     .first();
 
-  const weekStartDay = userProfile?.weekStartDay ?? 1;
-
   // ────────────────────────────── token-based generator
   const tokenPlan = await generateTokenBasedPlan(ctx, userId, profile, userProfile);
   if (tokenPlan) {
@@ -698,7 +840,7 @@ export const simulateTrainingProgress = mutation({
     const weekStartDay = userProfile?.weekStartDay ?? 1;
 
     // Calculate how far back to move the plan (add extra days to ensure we have full completed weeks)
-    const daysToBackdate = (weeksToComplete * 7) + 10; // Extra buffer
+    const daysToBackdate = (weeksToComplete * 7) + 1; // Extra buffer
     const newStartDate = new Date(now);
     newStartDate.setDate(now.getDate() - daysToBackdate);
     const newWeekStart = getWeekStart(newStartDate, weekStartDay);

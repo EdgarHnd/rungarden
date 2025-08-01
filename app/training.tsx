@@ -85,7 +85,7 @@ const getWorkoutDisplayName = (type: string): string => {
 
 const getGoalDisplayName = (goal: string): string => {
   const names: Record<string, string> = {
-    '5K': 'From 0 to 5K',
+    '5K': '0 to 5K',
     '10K': 'First 10K',
     'just-run-more': 'Get Fit'
   };
@@ -227,19 +227,25 @@ export default function TrainingPlanScreen() {
           const workoutType = enrichedWorkout.subType || enrichedWorkout.type || day.type;
 
           let workoutTitle = getWorkoutDisplayName(workoutType);
-          if (enrichedWorkout.name?.startsWith('TOKEN_')) {
+          if (scheduledWorkout.hydrated?.description) {
+            workoutTitle = scheduledWorkout.hydrated.description;
+          } else if (enrichedWorkout.name?.startsWith('TOKEN_')) {
             workoutTitle = enrichedWorkout.description;
           }
 
           let workoutSummary = '';
-          const mainSet = enrichedWorkout.steps?.find((s: any) => s.label === 'Main Set');
+          if (scheduledWorkout.hydrated?.summary) {
+            workoutSummary = scheduledWorkout.hydrated.summary;
+          } else {
+            const mainSet = enrichedWorkout.steps?.find((s: any) => s.label === 'Main Set');
 
-          if (mainSet?.notes) {
-            workoutSummary = mainSet.notes;
-          } else if (distance > 0) {
-            workoutSummary = formatDistance(distance, isMetric);
-          } else if (duration > 0) {
-            workoutSummary = `${duration} min`;
+            if (mainSet?.notes) {
+              workoutSummary = mainSet.notes;
+            } else if (distance > 0) {
+              workoutSummary = formatDistance(distance, isMetric);
+            } else if (duration > 0) {
+              workoutSummary = `${duration} min`;
+            }
           }
 
           return {

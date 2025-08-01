@@ -1,4 +1,5 @@
 // Gamification utilities - centralized XP, level, and coin calculations
+import { WORKOUT_LIBRARY } from "../workoutLibrary";
 
 // Calculate level from total XP
 export function calculateLevelFromXP(totalXP: number): number {
@@ -18,7 +19,37 @@ export function getXPForLevel(level: number): number {
   return Math.floor(Math.pow(level - 1, 2) * 250);
 }
 
-// Convert distance to XP (1km = 100 XP)
+// Fixed XP for runs (new system)
+export const FIXED_RUN_XP = 500;
+
+// Get XP for completing a run activity (fixed amount)
+export function getRunXP(): number {
+  return FIXED_RUN_XP;
+}
+
+// Get XP for completing a planned workout based on workout type
+export function getPlannedWorkoutXP(workoutTemplate: any): number {
+  // Return base run XP + workout-specific XP
+  const baseRunXP = FIXED_RUN_XP; // 500 XP base for all runs
+  const workoutBonusXP = workoutTemplate?.xp || 0; // Additional XP from workout library
+  
+  return baseRunXP + workoutBonusXP;
+}
+
+// Get XP from workout library by token
+export function getWorkoutLibraryXP(token: string): number {
+  const workout = WORKOUT_LIBRARY[token];
+  return workout?.xp || 0;
+}
+
+// Calculate total XP from activities (new system)
+export function calculateTotalXPFromActivities(activities: any[]): number {
+  return activities.reduce((total, activity) => {
+    return total + (activity.xpEarned || 0);
+  }, 0);
+}
+
+// Convert distance to XP (legacy - for migration purposes)
 export function distanceToXP(distanceMeters: number): number {
   return Math.floor(distanceMeters * 0.1);
 }

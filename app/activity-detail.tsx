@@ -1,7 +1,6 @@
 import StatsBadges from '@/components/StatsBadges';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
-import LevelingService from '@/services/LevelingService';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
@@ -270,13 +269,13 @@ export default function ActivityDetailScreen() {
         </View>
 
         {/* Rewards Section */}
-        <View style={styles.rewardsSection}>
+        {/* <View style={styles.rewardsSection}>
           <Text style={styles.sectionTitle}>🎁 Rewards Earned</Text>
           <View style={styles.rewardsGrid}>
             <View style={styles.rewardCard}>
               <Ionicons name="flash" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
-              <Text style={[styles.rewardValue, { color: Theme.colors.special.primary.exp }]}>+{LevelingService.distanceToXP(activity.distance)}</Text>
-              <Text style={styles.rewardLabel}>Distance XP</Text>
+              <Text style={[styles.rewardValue, { color: Theme.colors.special.primary.exp }]}>+{activity.xpEarned || 500}</Text>
+              <Text style={styles.rewardLabel}>Activity XP</Text>
             </View>
             <View style={styles.rewardCard}>
               <Image
@@ -287,7 +286,7 @@ export default function ActivityDetailScreen() {
               <Text style={styles.rewardLabel}>Embers</Text>
             </View>
           </View>
-        </View>
+        </View> */}
 
         {/* Achievements Section - Now using real data */}
         {achievements.length > 0 && (

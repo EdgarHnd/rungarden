@@ -1,3 +1,4 @@
+import DayBridge from '@/components/DayBridge';
 import DayCard from '@/components/DayCard';
 import LoadingScreen from '@/components/LoadingScreen';
 import HealthModal from '@/components/modals/HealthModal';
@@ -6,7 +7,7 @@ import RestCelebrationModal from '@/components/modals/RestCelebrationModal';
 import RunCelebrationModal from '@/components/modals/RunCelebrationModal';
 import StreakDisplay from '@/components/modals/StreakDisplay';
 import XPInfoModal from '@/components/modals/XPInfoModal';
-import WeekView from '@/components/WeekView';
+import WeekViewHorizontal from '@/components/WeekViewHorizontal';
 import Theme from '@/constants/theme';
 import { getActivityType, SuggestedActivity } from '@/constants/types';
 import { api } from '@/convex/_generated/api';
@@ -14,13 +15,13 @@ import { Doc } from '@/convex/_generated/dataModel';
 import { useOnboardingSync } from '@/hooks/useOnboardingSync';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService, { LevelInfo } from '@/services/LevelingService';
+import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Easing, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Animated, Dimensions, Easing, Image, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import Rive, { RiveRef } from "rive-react-native";
 
 // Constants for scrolling background
@@ -129,6 +130,12 @@ export default function HomeScreen() {
 
   // XP Info modal state
   const [showXPModal, setShowXPModal] = useState(false);
+
+  // Weekly Progress modal state
+  const [showWeeklyProgressModal, setShowWeeklyProgressModal] = useState(false);
+
+  // Selected day position in week view (0-4)
+  const [selectedDayPosition, setSelectedDayPosition] = useState(2); // Default to center position
 
   // Refresh streak on first app load of the day
   const [streakRefreshed, setStreakRefreshed] = useState(false);
@@ -262,6 +269,35 @@ export default function HomeScreen() {
     const date = new Date(dateString);
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return days[date.getDay()];
+  };
+
+  // Helper function to format selected date for display
+  const getSelectedDateDisplayText = (dateString: string): string => {
+    const selectedDate = new Date(dateString);
+    const today = new Date();
+
+    // Reset time to compare dates only
+    selectedDate.setHours(0, 0, 0, 0);
+    today.setHours(0, 0, 0, 0);
+
+    const diffTime = selectedDate.getTime() - today.getTime();
+    const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+    if (diffDays === 0) {
+      return 'Today';
+    } else if (diffDays === 1) {
+      return 'Tomorrow';
+    } else if (diffDays === -1) {
+      return 'Yesterday';
+    } else {
+      // Format as "Mon, Jan 15"
+      const options: Intl.DateTimeFormatOptions = {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric'
+      };
+      return selectedDate.toLocaleDateString('en-US', options);
+    }
   };
 
   // Generate proper week data for WeekView
@@ -676,10 +712,16 @@ export default function HomeScreen() {
       const activityTocelebrate = activitiesNeedingCelebration[0]; // Get the most recent one
 
       // Calculate rewards for this activity
+      const currentTotalXP = profile?.totalXP || 0;
+      const xpGained = activityTocelebrate.xpEarned || 500; // Use stored XP or default to 500
+      const levelUpResult = LevelingService.addXP(currentTotalXP, xpGained);
+
       const mockRewards = {
         distanceGained: activityTocelebrate.distance,
         coinsGained: Math.floor(activityTocelebrate.distance / 100), // 10 coins per km
-        leveledUp: false,
+        leveledUp: levelUpResult.leveledUp,
+        oldLevel: levelUpResult.oldLevel,
+        newLevel: levelUpResult.newLevel,
         challengesUnlocked: [],
       };
 
@@ -841,9 +883,7 @@ export default function HomeScreen() {
 
   // Helper function to calculate week-specific run progress
   const getWeekProgress = (weekIndex: number) => {
-    if (!simpleSchedule?.isActive || !activities) {
-      return null;
-    }
+    if (!activities) return null;
 
     // Get the week start date for the specified week
     const today = new Date();
@@ -858,7 +898,7 @@ export default function HomeScreen() {
     const weekStartISO = getLocalDateString(targetWeekStart);
     const weekEndISO = getLocalDateString(weekEnd);
 
-    // Count unique run days in this week
+    // 1) Count completed runs in this week ------------------------------------
     const runDays = new Set<string>();
     activities.forEach((activity: any) => {
       const activityDate = getLocalDateString(new Date(activity.startDate));
@@ -867,9 +907,26 @@ export default function HomeScreen() {
       }
     });
 
+    // 2) Determine weekly target ---------------------------------------------
+    let target = 3; // sane default
+
+    if (trainingPlan?.isActive && plannedWorkouts) {
+      // Count non-rest planned workouts in the active training plan for this week
+      const workoutsThisWeek = plannedWorkouts.filter((pw: any) => {
+        if (pw.scheduledDate < weekStartISO || pw.scheduledDate > weekEndISO) return false;
+
+        // Use helper to detect type if available; fall back to field checks
+        const type = getActivityType(pw as any);
+        return type !== 'rest';
+      });
+      target = workoutsThisWeek.length;
+    } else if (simpleSchedule?.isActive) {
+      target = simpleSchedule.runsPerWeek;
+    }
+
     return {
       completed: runDays.size,
-      target: simpleSchedule.runsPerWeek,
+      target,
     };
   };
 
@@ -902,175 +959,128 @@ export default function HomeScreen() {
   try {
     return (
       <SafeAreaView style={styles.container}>
-        <Image source={backgroundImages[0]} style={styles.imageBackground} resizeMode="cover" />
-        {/* Progressive blur overlays: strongest at top, weakest at bottom */}
-        {/* <BlurView intensity={10} tint="dark" style={[styles.blurOverlay, styles.blurTop]} />
-          <BlurView intensity={0} tint="dark" style={[styles.blurOverlay, styles.blurBottom]} /> */}
-
-        <LinearGradient
-          colors={[Theme.colors.background.primary, Theme.colors.background.secondary, Theme.colors.background.primary]}
-          style={styles.solidBackground}
-        />
         <View style={styles.headerContainer}>
           <View style={styles.leftHeaderSection}>
-            <View style={styles.titleContainer}>
-              <TouchableOpacity onPress={handleTitlePress}>
-                <Text style={styles.title}>{profile?.mascotName || "Blaze"}</Text>
-              </TouchableOpacity>
-              {levelInfo && (
-                <TouchableOpacity
-                  style={styles.levelBadge}
-                  onPress={() => {
-                    analytics.track({ name: 'xp_info_modal_viewed', properties: { source: 'level_badge_press' } });
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                    setShowXPModal(true);
-                  }}
-                  onLongPress={handleDebugPress}
-                  activeOpacity={0.7}
-                >
-                  <Text style={styles.levelText}>lvl {levelInfo.level}</Text>
-                </TouchableOpacity>
-              )}
-            </View>
-            <TouchableOpacity
-              style={styles.livesRowContainer}
-              onPress={() => {
-                analytics.track({ name: 'health_modal_viewed' });
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowHealthModal(true);
-              }}
-              activeOpacity={0.7}
-            >
-              {[...Array(4)].map((_, index) => {
-                const currentLives = profile?.mascotHealth || 0;
-                const isAlive = index < currentLives;
-                return (
+            <TouchableOpacity onPress={handleTitlePress}>
+              <Text style={styles.title}>{profile?.mascotName || "Blaze"}</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Character and Streak Row */}
+        <View style={styles.characterStreakContainer}>
+          {/* Week Streak - Left Side */}
+          <TouchableOpacity style={styles.weekStreakContainer} onPress={() => {
+            analytics.track({ name: 'week_streak_viewed', properties: { source: 'week_streak_viewed' } });
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            setShowStreakModal(true);
+          }}>
+            <Text style={styles.weekStreakNumber}>
+              {profile?.currentStreak}
+            </Text>
+            <Text style={styles.weekStreakLabel}>{profile?.currentStreak > 0 ? 'Weeks' : 'Week'} streak</Text>
+          </TouchableOpacity>
+
+          {/* Character with Flames Above - Center */}
+          <View style={styles.characterWithFlamesContainer}>
+            {/* Three Flames for Weekly Progress */}
+            <TouchableOpacity style={styles.flamesContainer} onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              setShowWeeklyProgressModal(true);
+            }}>
+              {(() => {
+                const weekProgress = getWeekProgress(currentWeekIndex);
+                const runsCompleted = weekProgress?.completed || 0;
+                const runsTarget = weekProgress?.target || 3;
+
+                return [...Array(runsTarget)].map((_, index) => (
                   <Image
-                    key={index}
-                    source={require('@/assets/images/icons/heart.png')}
-                    style={{
-                      width: 25,
-                      height: 25,
-                      opacity: isAlive ? 1 : 0.5
-                    }}
+                    key={`flame-${index}`}
+                    style={[
+                      styles.weeklyFlameIcon,
+                      { opacity: index < runsCompleted ? 1 : 0.3 }
+                    ]}
+                    source={index < runsCompleted
+                      ? require('@/assets/images/icons/streak.png')
+                      : require('@/assets/images/icons/streak-grey.png')
+                    }
                   />
-                );
-              })}
+                ));
+              })()}
             </TouchableOpacity>
-          </View>
-          <View style={styles.rightHeaderSection}>
-            <TouchableOpacity
-              onPress={() => {
-                analytics.track({ name: 'store_button_clicked' });
-                Alert.alert(
-                  "Coming Soon",
-                  "Store is coming soon!",
-                  [{ text: "OK", style: "default" }]
-                )
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.coinContainer}>
-                <Text style={styles.coinText}>{profile?.coins || 0}</Text>
-                <Image source={require('@/assets/images/icons/coal.png')} style={styles.coinIcon} />
-              </View>
-            </TouchableOpacity>
-            <TouchableOpacity
-              style={styles.streakContainer}
-              onPress={() => {
-                analytics.track({ name: 'streak_modal_viewed', properties: { source: 'header' } });
-                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                setShowStreakModal(true);
-              }}
-              activeOpacity={0.7}
-            >
-              <Text style={styles.streakText}>{profile?.currentStreak || 0}</Text>
-              <Image source={require('@/assets/images/icons/streak.png')} style={styles.flameIcon} />
-            </TouchableOpacity>
+
+            {/* Character */}
+            <View style={styles.characterContainer}>
+              <TouchableOpacity
+                onPress={() => {
+                  analytics.track({ name: 'xp_info_modal_viewed', properties: { source: 'character_press' } });
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowXPModal(true);
+                }}
+                activeOpacity={0.7}
+              >
+                {riveUrl && (
+                  <View pointerEvents="none">
+                    <Rive
+                      ref={riveRef as any}
+                      url={riveUrl}
+                      style={styles.blazeImage}
+                      autoplay={true}
+                    />
+                  </View>
+                )}
+              </TouchableOpacity>
+            </View>
           </View>
         </View>
 
-        <View style={styles.animationContainer}>
-          {/* <View style={styles.floor} /> */}
-
-          {/* <View style={styles.shadowDisc} /> */}
-          {/* <Image
-            source={mascotImageSource}
-            style={styles.blazeImage}
-            resizeMode="contain"
-          /> */}
-          <View style={styles.animationContainer}>
-            {riveUrl && (
-              <Rive
-                ref={riveRef as any}
-                url={riveUrl}
-                style={styles.blazeImage}
-                autoplay={true}
-              />
-            )}
-          </View>
-        </View>
-        <ScrollView
-          style={styles.mainScrollView}
-          stickyHeaderIndices={[1]}
-          showsVerticalScrollIndicator={false}
-          contentContainerStyle={styles.scrollContentContainer}
-        >
-          <View style={styles.scrollSpacer} onTouchStart={handleJump} />
-
-          {/* Fixed Week View */}
-          <WeekView
+        {/* Horizontal Week View */}
+        <View style={styles.weekViewContainer}>
+          <WeekViewHorizontal
             dayData={allDays}
             currentDayIndex={currentDayIndex}
             onDaySelect={handleDaySelect}
-            levelInfo={levelInfo}
-            currentWeekIndex={currentWeekIndex}
-            weeks={weeks}
-            onWeekChange={handleWeekChange}
-            weekStartDay={weekStartDay}
-            simpleSchedule={simpleSchedule ? {
-              runsPerWeek: simpleSchedule.runsPerWeek,
-              preferredDays: simpleSchedule.preferredDays,
-              isActive: simpleSchedule.isActive,
-            } : null}
-            todaysRunStatus={(() => {
-              const weekProgress = getWeekProgress(currentWeekIndex);
-              if (!weekProgress) return null;
-
-              return {
-                runsThisWeek: weekProgress.completed,
-                runsNeeded: Math.max(0, weekProgress.target - weekProgress.completed),
-                weeklyGoalMet: weekProgress.completed >= weekProgress.target,
-              };
-            })()}
-            metricSystem={profile?.metricSystem || 'metric'}
+            onSelectedPositionChange={setSelectedDayPosition}
           />
 
-          {/* Day Card */}
-          <View style={styles.selectedDayCardContainer}>
-            {selectedDayData && (
-              <DayCard
-                key={`selected-day-${selectedDayData.date}`}
-                date={selectedDayData.date}
-                activities={selectedDayData.activities}
-                plannedWorkout={selectedDayData.plannedWorkout}
-                restActivity={(() => {
-                  // Get rest activity for this date from restActivitiesMap
-                  const restActivitiesMap = new Map<string, any>();
-                  restActivities?.forEach(restActivity => {
-                    restActivitiesMap.set(restActivity.date, restActivity);
-                  });
-                  return restActivitiesMap.get(selectedDayData.date) || null;
-                })()}
-                streakInfo={{
-                  currentStreak: profile?.currentStreak || 0,
-                  longestStreak: profile?.longestStreak || 0,
-                }}
-                isRestDayCompleted={selectedDayData.isRestDayCompleted}
-              />
-            )}
-          </View>
-        </ScrollView>
+          {/* Smooth Bridge Transition */}
+          <DayBridge
+            selectedDayPosition={selectedDayPosition}
+            isVisible={true}
+          />
+        </View>
+
+        {/* Selected Day Section Header */}
+        <View style={styles.todaySectionHeader}>
+          <Text style={styles.todaySectionTitle}>
+            {selectedDayData ? getSelectedDateDisplayText(selectedDayData.date) : 'Today'}
+          </Text>
+        </View>
+
+        {/* Day Card */}
+        <View style={styles.selectedDayCardContainer}>
+          {selectedDayData && (
+            <DayCard
+              key={`selected-day-${selectedDayData.date}`}
+              date={selectedDayData.date}
+              activities={selectedDayData.activities}
+              plannedWorkout={selectedDayData.plannedWorkout}
+              restActivity={(() => {
+                // Get rest activity for this date from restActivitiesMap
+                const restActivitiesMap = new Map<string, any>();
+                restActivities?.forEach(restActivity => {
+                  restActivitiesMap.set(restActivity.date, restActivity);
+                });
+                return restActivitiesMap.get(selectedDayData.date) || null;
+              })()}
+              streakInfo={{
+                currentStreak: profile?.currentStreak || 0,
+                longestStreak: profile?.longestStreak || 0,
+              }}
+              isRestDayCompleted={selectedDayData.isRestDayCompleted}
+            />
+          )}
+        </View>
 
         {/* Run Celebration Modal */}
         <RunCelebrationModal
@@ -1220,10 +1230,16 @@ export default function HomeScreen() {
                 onPress={() => {
                   if (activities && activities.length > 0) {
                     const lastRun = activities[0]; // Most recent activity
+                    const currentTotalXP = profile?.totalXP || 0;
+                    const xpGained = lastRun.xpEarned || 500; // Use stored XP or default to 500
+                    const levelUpResult = LevelingService.addXP(currentTotalXP, xpGained);
+
                     const mockRewards = {
                       distanceGained: lastRun.distance,
                       coinsGained: Math.floor(lastRun.distance / 1000) * 10, // 10 coins per km
-                      leveledUp: false,
+                      leveledUp: levelUpResult.leveledUp,
+                      oldLevel: levelUpResult.oldLevel,
+                      newLevel: levelUpResult.newLevel,
                       challengesUnlocked: [],
                     };
 
@@ -1279,6 +1295,76 @@ export default function HomeScreen() {
           levelInfo={levelInfo}
           metricSystem={profile?.metricSystem || 'metric'}
         />
+
+        {/* Weekly Progress Modal */}
+        <Modal
+          visible={showWeeklyProgressModal}
+          transparent={true}
+          animationType="fade"
+          onRequestClose={() => setShowWeeklyProgressModal(false)}
+        >
+          <TouchableOpacity
+            style={styles.weeklyProgressOverlay}
+            activeOpacity={1}
+            onPress={() => setShowWeeklyProgressModal(false)}
+          >
+            <View style={styles.weeklyProgressModal}>
+              {(() => {
+                const weekProgress = getWeekProgress(currentWeekIndex);
+                const runsCompleted = weekProgress?.completed || 0;
+                const runsTarget = weekProgress?.target || 3;
+
+                return (
+                  <>
+                    {/* Header */}
+                    <View style={styles.weeklyProgressHeader}>
+                      <Text style={styles.weeklyProgressTitle}>Weekly Progress</Text>
+                      <TouchableOpacity
+                        onPress={() => setShowWeeklyProgressModal(false)}
+                        style={styles.weeklyProgressCloseButton}
+                      >
+                        <Ionicons name="close" size={24} color={Theme.colors.text.secondary} />
+                      </TouchableOpacity>
+                    </View>
+
+                    {/* Progress Content */}
+                    <View style={styles.weeklyProgressContent}>
+                      <View style={styles.weeklyProgressFlames}>
+                        {[...Array(runsTarget)].map((_, index) => (
+                          <Image
+                            key={`modal-flame-${index}`}
+                            style={[
+                              styles.weeklyProgressFlameIcon,
+                              { opacity: index < runsCompleted ? 1 : 0.3 }
+                            ]}
+                            source={index < runsCompleted
+                              ? require('@/assets/images/icons/streak.png')
+                              : require('@/assets/images/icons/streak-grey.png')
+                            }
+                          />
+                        ))}
+                      </View>
+                      <Text style={styles.weeklyProgressText}>
+                        {runsCompleted}/{runsTarget} runs completed this week
+                      </Text>
+                    </View>
+
+                    {/* Buttons */}
+                    <TouchableOpacity
+                      style={styles.weeklyProgressButton}
+                      onPress={() => {
+                        setShowWeeklyProgressModal(false);
+                        router.push('/path');
+                      }}
+                    >
+                      <Text style={styles.weeklyProgressButtonText}>See Training Plan</Text>
+                    </TouchableOpacity>
+                  </>
+                );
+              })()}
+            </View>
+          </TouchableOpacity>
+        </Modal>
       </SafeAreaView >
     );
   } catch (error) {
@@ -1382,9 +1468,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
   },
   flameIcon: {
-    width: 20,
-    height: 20,
-    marginLeft: 2,
+    fontSize: 20,
   },
   coinContainer: {
     flexDirection: 'row',
@@ -1411,7 +1495,7 @@ const styles = StyleSheet.create({
   },
   mainScrollView: {
     position: 'absolute',
-    top: 150,
+    top: 280, // Adjusted for header (80px) + character section (200px)
     left: 0,
     right: 0,
     bottom: 0,
@@ -1447,10 +1531,43 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
   },
-  scrollContentContainer: {
+  characterStreakContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: Theme.spacing.xxxl,
+    marginBottom: 30
   },
-  scrollSpacer: {
-    height: LEGACY_DEVICE ? 180 : 230,
+  flamesContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  characterContainer: {
+    width: '100%',
+
+  },
+  blazeImage: {
+    width: 150,
+    height: 150,
+    zIndex: 10,
+  },
+  weekStreakContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    height: 90,
+  },
+  weekStreakNumber: {
+    fontSize: 90,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  weekStreakLabel: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    marginTop: 2,
+    marginLeft: 10,
   },
   debugModal: {
     backgroundColor: Theme.colors.background.secondary,
@@ -1493,59 +1610,113 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.semibold,
     textAlign: 'center',
   },
-  blazeImage: {
-    marginTop: 50,
-    position: 'absolute',
-    width: 200,
-    height: 200,
-    zIndex: 10,
-    shadowColor: Theme.colors.accent.primary,
-    shadowOffset: { width: 0, height: 0 },
-    //shadowOpacity: 0.2,
-    shadowRadius: 20,
-    elevation: 10,
+  todaySectionHeader: {
+    backgroundColor: Theme.colors.background.tertiary,
+    paddingHorizontal: Theme.spacing.xxl,
+    paddingTop: Theme.spacing.xl,
+    paddingBottom: Theme.spacing.sm,
   },
-  shadowDisc: {
-    position: 'absolute',
-    width: 500,
-    height: 30,
-    backgroundColor: 'rgba(0, 0, 0, 0.2)',
-    borderRadius: '100%',
-    bottom: 40,
-    zIndex: 5,
+  todaySectionTitle: {
+    fontSize: 28,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
-  loadingContainer: {
-    flex: 1,
-    backgroundColor: Theme.colors.background.primary,
-    justifyContent: 'center',
+  spacer: {
+    width: 10,
+  },
+  characterWithFlamesContainer: {
+    flexDirection: 'column',
     alignItems: 'center',
+    justifyContent: 'center',
   },
-  loadingText: {
-    fontSize: 16,
-    color: Theme.colors.text.tertiary,
+  weeklyFlameIcon: {
+    width: 24,
+    height: 24,
   },
-  blurOverlay: {
+  rightSpacer: {
+    width: 10,
+    flex: 1,
+  },
+  bridgeContainer: {
     position: 'absolute',
     top: 0,
     left: 0,
     right: 0,
     bottom: 0,
     zIndex: 1,
+    backgroundColor: 'transparent',
   },
-  blurTop: {
-    top: 0,
-    height: '40%', // Adjust as needed for the top blur
+  weekViewContainer: {
+    position: 'relative',
+    zIndex: 2,
   },
-  blurBottom: {
-    top: '70%', // Adjust as needed for the bottom blur
-    height: '30%', // Adjust as needed for the bottom blur
+  weeklyProgressOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Theme.spacing.xl,
   },
-  floor: {
-    position: 'absolute',
+  weeklyProgressModal: {
+    backgroundColor: Theme.colors.background.primary,
+    borderRadius: Theme.borderRadius.large,
+    padding: Theme.spacing.xl,
     width: '100%',
-    height: 100,
-    backgroundColor: Theme.colors.background.secondary,
-    bottom: 0,
-    zIndex: 0,
+    maxWidth: 400,
+  },
+  weeklyProgressHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: Theme.spacing.lg,
+  },
+  weeklyProgressTitle: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  weeklyProgressCloseButton: {
+    padding: Theme.spacing.xs,
+  },
+  weeklyProgressContent: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.xl,
+  },
+  weeklyProgressFlames: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    marginBottom: Theme.spacing.md,
+  },
+  weeklyProgressFlameIcon: {
+    width: 32,
+    height: 32,
+  },
+  weeklyProgressText: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+  },
+  weeklyProgressButton: {
+    backgroundColor: Theme.colors.accent.primary,
+    paddingHorizontal: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.medium,
+    borderBottomWidth: 3,
+    borderColor: Theme.colors.accent.secondary,
+  },
+  weeklyProgressButtonText: {
+    color: Theme.colors.text.primary,
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    textTransform: 'uppercase',
+    textAlign: 'center',
+  },
+  weeklyProgressSecondaryButton: {
+    backgroundColor: Theme.colors.background.tertiary,
+  },
+  weeklyProgressSecondaryButtonText: {
+    color: Theme.colors.text.secondary,
   },
 });

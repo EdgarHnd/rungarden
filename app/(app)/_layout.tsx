@@ -1,4 +1,3 @@
-import RecordingModal from '@/components/modals/RecordingModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useTrackNavigation } from '@/hooks/useTrackNavigation';
@@ -128,11 +127,7 @@ export default function AppLayout() {
               </View>
             ),
             tabBarButton: createTabBarButton(() => {
-              if (profile && !profile.healthKitSyncEnabled && !profile.stravaSyncEnabled) {
-                router.push('/run');
-              } else {
-                setShowRecordingModal(true);
-              }
+              router.push('/run');
             }),
           })}
         />
@@ -155,12 +150,6 @@ export default function AppLayout() {
           })}
         />
       </Tabs>
-
-      {/* Recording Modal */}
-      <RecordingModal
-        visible={showRecordingModal}
-        onClose={() => setShowRecordingModal(false)}
-      />
     </>
   );
 }

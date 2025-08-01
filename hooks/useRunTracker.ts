@@ -239,6 +239,29 @@ export function useRunTracker() {
     }, 1000);
   };
 
+  const startStepTimerForced = () => {
+    clearStepTimer();
+    stepTimerRef.current = setInterval(() => {
+      setCurrentStep((prev) => {
+        if (!prev) return prev;
+        
+        const newElapsed = prev.stepElapsed + 1;
+        
+        // Check if step is complete
+        if (newElapsed >= prev.stepDuration) {
+          // Auto-advance to next step
+          setTimeout(() => advanceToNextStep(), 100);
+          return prev;
+        }
+        
+        return {
+          ...prev,
+          stepElapsed: newElapsed,
+        };
+      });
+    }, 1000);
+  };
+
   // Start idle watcher on mount
   useEffect(() => {
     // Clean up lingering background location updates from previous sessions
@@ -264,8 +287,10 @@ export function useRunTracker() {
     }
     stopIdleWatcher();
 
+    const hasStructuredWorkout = structuredWorkoutSteps && structuredWorkoutSteps.length > 0;
+
     // Initialize workout mode
-    if (structuredWorkoutSteps && structuredWorkoutSteps.length > 0) {
+    if (hasStructuredWorkout) {
       initializeStructuredWorkout(structuredWorkoutSteps);
     } else {
       setIsStructuredWorkout(false);
@@ -290,9 +315,9 @@ export function useRunTracker() {
       setElapsed((sec) => sec + 1);
     }, 1000);
 
-    // Start step timer for structured workouts
-    if (structuredWorkoutSteps && structuredWorkoutSteps.length > 0) {
-      startStepTimer();
+    // Start step timer for structured workouts - use local variable instead of state
+    if (hasStructuredWorkout) {
+      startStepTimerForced();
     }
 
     // Watch location

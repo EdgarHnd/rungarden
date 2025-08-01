@@ -31,11 +31,13 @@ export default function ManagePlanScreen() {
   const [isGenerating, setIsGenerating] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
 
-  // Check if this is a structured plan that only allows preferred days updates
-  const isStructuredPlan = ['5K', '10K', 'just-run-more'].includes(trainingProfile?.goalDistance || '');
+  // All current plans are considered "structured" and do not have a race-like target date.
+  // This can be adjusted if we add true race plans later.
+  const isStructuredPlan = true;
+  const isRacePlan = false; // Example: Set to true for 'marathon', 'half-marathon'
 
   // For structured plans, we need exactly the same number of days as the original plan
-  const requiredDaysCount = isStructuredPlan ? (trainingProfile?.daysPerWeek || 3) : daysPerWeek;
+  const requiredDaysCount = trainingProfile?.daysPerWeek || 3;
   const canSaveChanges = preferredDays.length === requiredDaysCount;
 
   const handleSaveChanges = async () => {
@@ -158,48 +160,8 @@ export default function ManagePlanScreen() {
           </View>
         )}
 
-        {/* Goal Distance - Only show for non-structured plans */}
-        {!isStructuredPlan && (
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Goal Distance</Text>
-            <View style={styles.goalOptions}>
-              {[
-                { value: 'just-run-more', title: 'Just run more', subtitle: 'Build a consistent habit', emoji: '🌱' },
-                { value: '5K', title: 'From 0 to 5K', subtitle: 'Perfect for beginners', emoji: '🏃‍♀️' },
-                { value: '10K', title: 'First 10K', subtitle: 'Ready for a challenge', emoji: '🏃‍♂️' },
-                { value: 'half-marathon', title: 'Half Marathon', subtitle: 'Coming Soon!', emoji: '🏆', disabled: true },
-                { value: 'marathon', title: 'Marathon', subtitle: 'Coming Soon!', emoji: '👑', disabled: true },
-              ].map((option) => (
-                <TouchableOpacity
-                  key={option.value}
-                  style={[
-                    styles.goalOption,
-                    goalDistance === option.value && styles.goalOptionSelected,
-                    (option as any).disabled && styles.goalOptionDisabled,
-                  ]}
-                  onPress={() => {
-                    if ((option as any).disabled) return;
-                    setGoalDistance(option.value as '5K' | '10K' | 'just-run-more' | 'half-marathon' | 'marathon');
-                    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                  }}
-                  disabled={(option as any).disabled}
-                >
-                  <Text style={styles.goalEmoji}>{option.emoji}</Text>
-                  <View style={styles.goalContent}>
-                    <Text style={styles.goalTitle}>{option.title}</Text>
-                    <Text style={styles.goalSubtitle}>{option.subtitle}</Text>
-                  </View>
-                  {goalDistance === option.value && (
-                    <Ionicons name="checkmark-circle" size={20} color={Theme.colors.accent.primary} />
-                  )}
-                </TouchableOpacity>
-              ))}
-            </View>
-          </View>
-        )}
-
-        {/* Target Date - Only show for non-structured plans */}
-        {!isStructuredPlan && (
+        {/* Target Date - Only show for race plans */}
+        {isRacePlan && (
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Target Date</Text>
             <TouchableOpacity

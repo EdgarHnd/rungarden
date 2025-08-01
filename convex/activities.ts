@@ -5,7 +5,10 @@ import { action, mutation, query } from "./_generated/server";
 import { addCoins } from "./utils/coins";
 import {
   calculateLevelFromXP,
-  distanceToXP
+  calculateTotalXPFromActivities,
+  distanceToXP,
+  getPlannedWorkoutXP,
+  getRunXP
 } from "./utils/gamification";
 import { recalcStreak } from "./utils/streak";
 
@@ -181,6 +184,7 @@ export const syncActivitiesFromHealthKit = mutation({
         }
       } else {
         // Create new activity and track distance
+        const xpEarned = getRunXP(); // Fixed 500 XP per run
         const newActivityId = await ctx.db.insert("activities", {
           userId,
           source: "healthkit",
@@ -193,6 +197,7 @@ export const syncActivitiesFromHealthKit = mutation({
           averageHeartRate: activity.averageHeartRate,
           workoutName: activity.workoutName,
           pace,
+          xpEarned,
           isNewActivity: initialSync ? false : true, // Mark as new only for incremental sync
           syncedAt: now,
         });
@@ -358,6 +363,7 @@ export const syncActivitiesFromStravaServer = mutation({
         } else {
           // Create new activity
           const pace = activity.distance > 0 ? (activity.duration / (activity.distance / 1000)) : 0;
+          const xpEarned = getRunXP(); // Fixed 500 XP per run
           
           const newActivityId = await ctx.db.insert("activities", {
             userId,
@@ -371,6 +377,7 @@ export const syncActivitiesFromStravaServer = mutation({
             averageHeartRate: activity.averageHeartRate,
             workoutName: activity.workoutName,
             pace,
+            xpEarned,
             isNewActivity: initialSync ? false : true,
             syncedAt: now,
           });
@@ -488,8 +495,8 @@ export const getProfileStats = query({
     const totalCalories = allActivities.reduce((sum, a) => sum + a.calories, 0);
     const totalWorkouts = allActivities.length;
     
-    // Calculate XP and level from total distance
-    const totalXP = distanceToXP(totalDistance);
+    // Calculate XP and level from activities (new system)
+    const totalXP = calculateTotalXPFromActivities(allActivities);
     const level = calculateLevelFromXP(totalXP);
     const coins = 0; // Don't calculate coins automatically
 
@@ -550,8 +557,8 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
   const totalCalories = allActivities.reduce((sum: number, a: any) => sum + a.calories, 0);
   const totalWorkouts = allActivities.length;
   
-  // Calculate XP and level from total distance
-  const totalXP = distanceToXP(totalDistance);
+  // Calculate XP and level from activities (new system)
+  const totalXP = calculateTotalXPFromActivities(allActivities);
   const level = calculateLevelFromXP(totalXP);
   
   const existingProfile = await ctx.db
@@ -1089,9 +1096,16 @@ async function linkActivityToPlannedWorkout(
     .first();
 
   if (plannedWorkout && plannedWorkout.status === 'scheduled') {
-    // Link the activity to the planned workout
+    // Get the workout template to determine XP
+    const workoutTemplate = await ctx.db.get(plannedWorkout.workoutTemplateId);
+    
+    // Calculate XP for completing this planned workout
+    const plannedWorkoutXP = getPlannedWorkoutXP(workoutTemplate);
+    
+    // Link the activity to the planned workout and update XP
     await ctx.db.patch(activityId, {
       plannedWorkoutId: plannedWorkout._id,
+      xpEarned: plannedWorkoutXP, // Override run XP with planned workout XP
     });
 
     // Mark planned workout as completed
@@ -1105,6 +1119,142 @@ async function linkActivityToPlannedWorkout(
 
   return null;
 }
+
+// Migration function to convert existing users from distance-based XP to activity-based XP
+export const migrateUserToActivityBasedXP = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    console.log(`[migrateUserToActivityBasedXP] Starting migration for user: ${userId}`);
+    
+    // Get all activities for this user that don't have xpEarned set
+    const allActivities = await ctx.db
+      .query("activities")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    const activitiesNeedingMigration = allActivities.filter(activity => !activity.xpEarned);
+    
+    console.log(`[migrateUserToActivityBasedXP] Found ${activitiesNeedingMigration.length} activities needing migration`);
+
+    // Update each activity with appropriate XP
+    for (const activity of activitiesNeedingMigration) {
+      let xpEarned = getRunXP(); // Default to 500 XP for runs
+      
+      // If activity is linked to a planned workout, get workout-specific XP
+      if (activity.plannedWorkoutId) {
+        try {
+          const plannedWorkout = await ctx.db.get(activity.plannedWorkoutId);
+          if (plannedWorkout?.workoutTemplateId) {
+            const workoutTemplate = await ctx.db.get(plannedWorkout.workoutTemplateId);
+            if (workoutTemplate) {
+              xpEarned = getPlannedWorkoutXP(workoutTemplate);
+            }
+          }
+        } catch (error) {
+          console.warn(`[migrateUserToActivityBasedXP] Failed to get planned workout XP for activity ${activity._id}, using default`);
+        }
+      }
+
+      // Update the activity with XP
+      await ctx.db.patch(activity._id, {
+        xpEarned: xpEarned,
+      });
+    }
+
+    // Recalculate user profile totals with new XP system
+    await updateUserProfileTotalsInternal(ctx, userId);
+
+    console.log(`[migrateUserToActivityBasedXP] Migration completed for user: ${userId}`);
+    
+    return {
+      success: true,
+      activitiesMigrated: activitiesNeedingMigration.length,
+      message: `Successfully migrated ${activitiesNeedingMigration.length} activities to activity-based XP system`,
+    };
+  },
+});
+
+// Admin function to migrate all users to activity-based XP (use with caution)
+export const migrateAllUsersToActivityBasedXP = mutation({
+  args: { adminKey: v.string() },
+  handler: async (ctx, args) => {
+    // Simple admin protection - in production, use proper admin auth
+    if (args.adminKey !== "migrate-xp-system-2024") {
+      throw new Error("Unauthorized");
+    }
+
+    console.log(`[migrateAllUsersToActivityBasedXP] Starting global migration`);
+    
+    // Get all users with profiles
+    const allProfiles = await ctx.db.query("userProfiles").collect();
+    
+    let migratedUsers = 0;
+    let totalActivitiesMigrated = 0;
+
+    for (const profile of allProfiles) {
+      try {
+        // Get all activities for this user that don't have xpEarned set
+        const allActivities = await ctx.db
+          .query("activities")
+          .withIndex("by_user", (q) => q.eq("userId", profile.userId))
+          .collect();
+
+        const activitiesNeedingMigration = allActivities.filter(activity => !activity.xpEarned);
+        
+        if (activitiesNeedingMigration.length > 0) {
+          console.log(`[migrateAllUsersToActivityBasedXP] Migrating ${activitiesNeedingMigration.length} activities for user: ${profile.userId}`);
+
+          // Update each activity with appropriate XP
+          for (const activity of activitiesNeedingMigration) {
+            let xpEarned = getRunXP(); // Default to 500 XP for runs
+            
+            // If activity is linked to a planned workout, get workout-specific XP
+            if (activity.plannedWorkoutId) {
+              try {
+                const plannedWorkout = await ctx.db.get(activity.plannedWorkoutId);
+                if (plannedWorkout?.workoutTemplateId) {
+                  const workoutTemplate = await ctx.db.get(plannedWorkout.workoutTemplateId);
+                  if (workoutTemplate) {
+                    xpEarned = getPlannedWorkoutXP(workoutTemplate);
+                  }
+                }
+              } catch (error) {
+                console.warn(`[migrateAllUsersToActivityBasedXP] Failed to get planned workout XP for activity ${activity._id}, using default`);
+              }
+            }
+
+            // Update the activity with XP
+            await ctx.db.patch(activity._id, {
+              xpEarned: xpEarned,
+            });
+          }
+
+          // Recalculate user profile totals with new XP system
+          await updateUserProfileTotalsInternal(ctx, profile.userId);
+          
+          migratedUsers++;
+          totalActivitiesMigrated += activitiesNeedingMigration.length;
+        }
+      } catch (error) {
+        console.error(`[migrateAllUsersToActivityBasedXP] Failed to migrate user ${profile.userId}:`, error);
+      }
+    }
+
+    console.log(`[migrateAllUsersToActivityBasedXP] Global migration completed. Users migrated: ${migratedUsers}, Total activities: ${totalActivitiesMigrated}`);
+    
+    return {
+      success: true,
+      usersMigrated: migratedUsers,
+      totalActivitiesMigrated,
+      message: `Successfully migrated ${migratedUsers} users with ${totalActivitiesMigrated} total activities to activity-based XP system`,
+    };
+  },
+});
 
 // Get activities linked to a planned workout
 export const getActivitiesForPlannedWorkout = query({

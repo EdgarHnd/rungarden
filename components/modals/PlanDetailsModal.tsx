@@ -74,7 +74,6 @@ export default function PlanDetailsModal({ visible, onClose, plan, onStart, isGe
           </View>
 
           <View style={styles.modalSection}>
-            <Text style={styles.modalSectionTitle}>Timeline</Text>
             <View style={styles.modalTimeline}>
               <Text style={styles.modalTimelineText}>
                 Start today and complete your first {plan.value} by{' '}
@@ -169,7 +168,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   modalSection: {
-    marginBottom: 20,
+    marginBottom: 10,
   },
   modalSectionTitle: {
     color: Theme.colors.text.primary,
@@ -181,9 +180,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     backgroundColor: Theme.colors.special.primary.plan,
     borderRadius: 10,
-    marginBottom: 10,
     paddingHorizontal: 30,
-    paddingVertical: 15,
+    paddingVertical: 10,
+    borderBottomWidth: 3,
+    borderColor: Theme.colors.special.secondary.plan,
   },
   modalStartButtonDisabled: {
     opacity: 0.7,
@@ -220,12 +220,12 @@ const styles = StyleSheet.create({
   modalTimelineDate: {
     color: Theme.colors.special.primary.plan,
     fontFamily: Theme.fonts.semibold,
-    fontSize: 18,
+    fontSize: 20,
   },
   modalTimelineText: {
     color: Theme.colors.text.primary,
-    fontFamily: Theme.fonts.medium,
-    fontSize: 16,
+    fontFamily: Theme.fonts.semibold,
+    fontSize: 18,
     textAlign: 'center',
   },
   modalTitle: {

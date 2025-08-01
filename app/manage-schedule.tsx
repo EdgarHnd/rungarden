@@ -82,7 +82,7 @@ export default function ManageScheduleScreen() {
         <TouchableOpacity onPress={() => router.back()} style={styles.backButton}>
           <Ionicons name="arrow-back" size={24} color={Theme.colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.title}>Manage Schedule</Text>
+        <Text style={styles.title}>Basic Schedule</Text>
         <View style={styles.headerSpacer} />
       </View>
 
@@ -93,8 +93,7 @@ export default function ManageScheduleScreen() {
           <Text style={styles.infoText}>
             • Set your weekly running goal{'\n'}
             • Choose your preferred training days{'\n'}
-            • Track your progress automatically{'\n'}
-            • Complete your weekly goal to keep your flame alive
+            • Track your progress automatically
           </Text>
         </View>
         {/* Training Frequency */}

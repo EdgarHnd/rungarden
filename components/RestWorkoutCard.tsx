@@ -39,7 +39,6 @@ export default function RestWorkoutCard({ restActivity, onPress }: RestWorkoutCa
           <Image source={require('@/assets/images/blaze/blaze-sleep-icon.png')} style={styles.imageEmoji} resizeMode='contain' />
           <View style={styles.titleText}>
             <Text style={styles.title}>Rest Day Completed</Text>
-            <Text style={styles.subtitle}>Recovery & restoration</Text>
           </View>
         </View>
         {/* <View style={styles.timeSection}>
@@ -50,29 +49,9 @@ export default function RestWorkoutCard({ restActivity, onPress }: RestWorkoutCa
       {/* Stats Section */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Ionicons name="flash" size={16} color={Theme.colors.special.primary.exp} />
           <Text style={styles.statValue}>+{restActivity.xpGained}</Text>
-          <Text style={styles.statLabel}>XP</Text>
+          <Ionicons name="flash" size={16} color={Theme.colors.special.primary.exp} />
         </View>
-
-        <View style={styles.statDivider} />
-
-        <View style={styles.statItem}>
-          <Image
-            source={require('@/assets/images/icons/coal.png')}
-            style={styles.coinIcon}
-          />
-          <Text style={styles.statValue}>+{restActivity.coinsGained}</Text>
-          <Text style={styles.statLabel}>Embers</Text>
-        </View>
-
-        {/* <View style={styles.statDivider} />
-
-        <View style={styles.statItem}>
-          <Ionicons name="heart" size={16} color={Theme.colors.status.success} />
-          <Text style={styles.statValue}>100%</Text>
-          <Text style={styles.statLabel}>Recovery</Text>
-        </View> */}
       </View>
 
       {/* Motivational Message */}
@@ -95,7 +74,7 @@ export default function RestWorkoutCard({ restActivity, onPress }: RestWorkoutCa
 
 const styles = StyleSheet.create({
   container: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.primary,
     width: '100%',
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.lg,
@@ -105,7 +84,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    marginBottom: Theme.spacing.md,
   },
   titleSection: {
     flexDirection: 'row',
@@ -150,18 +128,18 @@ const styles = StyleSheet.create({
     // backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.medium,
     paddingVertical: Theme.spacing.md,
-    marginBottom: Theme.spacing.md,
   },
   statItem: {
-    alignItems: 'center',
     flex: 1,
+    flexDirection: 'row',
+    justifyContent: 'center',
+    alignItems: 'center',
   },
   statValue: {
-    fontSize: 16,
+    fontSize: 20,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
-    marginTop: 2,
-    marginBottom: 2,
+    marginRight: Theme.spacing.sm,
   },
   statLabel: {
     fontSize: 14,
@@ -184,11 +162,10 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.sm,
   },
   messageText: {
-    fontSize: 16,
+    fontSize: 18,
     fontFamily: Theme.fonts.regular,
     color: Theme.colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 22,
   },
   notesContainer: {
     backgroundColor: Theme.colors.background.primary,

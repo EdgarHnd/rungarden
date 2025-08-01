@@ -58,7 +58,7 @@ export const Theme = {
         heart: '#E60000',       // Darker red
         energy: '#E6C200',       // Darker gold for energy
         streak: '#FFB22B',       // Darker gold for streak
-        plan: '#D4520B',        // Darker gold for streak
+        plan: '#B33F09',        // Darker gold for streak
       }
     },
 

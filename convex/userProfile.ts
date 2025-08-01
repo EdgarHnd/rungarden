@@ -4,7 +4,8 @@ import { mutation, query } from "./_generated/server";
 import { addCoins, spendCoinsInternal } from "./utils/coins";
 import {
     calculateLevelFromXP,
-    distanceToXP
+    distanceToXP,
+    getWorkoutLibraryXP
 } from "./utils/gamification";
  
 export const currentUser = query({
@@ -602,8 +603,8 @@ export const completeRestDay = mutation({
       };
     }
 
-    // Rest day rewards: 100 XP and 10 coins
-    const restXP = 100;
+    // Rest day rewards: XP from workout library and 10 coins
+    const restXP = getWorkoutLibraryXP("R"); // Get rest XP from workout library
     const restCoins = 10;
     
     const currentXP = profile.totalXP || 0;

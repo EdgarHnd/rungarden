@@ -8,13 +8,12 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Animated,
-  Image,
   SafeAreaView,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 interface Activity {
@@ -70,6 +69,17 @@ export default function TrainingDetailScreen() {
   // Add mutation for rest day completion
   const completeRestDay = useMutation(api.userProfile.completeRestDay);
   const [completingRest, setCompletingRest] = useState(false);
+  const [isToday, setIsToday] = useState(false);
+
+  useEffect(() => {
+    if (plannedWorkout?.scheduledDate) {
+      const today = new Date();
+      const todayDateString = `${today.getFullYear()}-${String(
+        today.getMonth() + 1,
+      ).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+      setIsToday(plannedWorkout.scheduledDate === todayDateString);
+    }
+  }, [plannedWorkout]);
 
   // Check if the current planned workout is completed
   const isWorkoutCompleted = plannedWorkout?.status === 'completed' || (linkedActivities?.length ?? 0) > 0;
@@ -98,7 +108,7 @@ export default function TrainingDetailScreen() {
   // Transform planned workout data to match the existing Activity interface
   const activity: Activity | null = plannedWorkout ? {
     type: plannedWorkout.workout?.subType || plannedWorkout.workout?.type || 'run',
-    title: (plannedWorkout.workout?.name?.startsWith('TOKEN_') ? plannedWorkout.workout?.description : plannedWorkout.workout?.name) || 'Training Session',
+    title: plannedWorkout.hydrated?.description || (plannedWorkout.workout?.name?.startsWith('TOKEN_') ? plannedWorkout.workout?.description : plannedWorkout.workout?.name) || 'Training Session',
     description: plannedWorkout.hydrated?.globalDescription || plannedWorkout.workout?.description || '',
     duration: extractDurationFromSteps(plannedWorkout.executableSteps || plannedWorkout.workout?.steps || []),
     distance: extractDistanceFromSteps(plannedWorkout.workout?.steps || []),
@@ -263,37 +273,67 @@ export default function TrainingDetailScreen() {
   };
 
   const getSimpleRewards = (activity: Activity) => {
-    // Reward calculation based on workout type, duration, and distance.
+    // Reward calculation based on new activity-based XP system
     const distanceKm = activity.distance || 0;
     const durationMin = parseInt(activity.duration.replace(' min', ''), 10) || 30;
 
-    const XP_PER_KM = 100;
     const COINS_PER_KM = 10;
-    const XP_PER_MIN_RUN = 5; // Less than distance to incentivize completing goals
     const COINS_PER_MIN_RUN = 1;
-    const XP_PER_MIN_OTHER = 3;
     const COINS_PER_MIN_OTHER = 0.5;
-    const REST_XP = 25;
     const REST_COINS = 10;
 
     let xp = 0;
     let coins = 0;
 
+    // XP is now fixed per workout type (new system)
     if (activity.type === 'rest') {
-      xp = REST_XP;
+      xp = 100; // Fixed XP for rest days (from workout library R token)
       coins = REST_COINS;
-    } else if (distanceKm > 0) {
-      // Prioritize distance for rewards if available
-      xp = Math.max(10, Math.floor(distanceKm * XP_PER_KM));
-      coins = Math.max(1, Math.floor(distanceKm * COINS_PER_KM));
     } else {
-      // Fallback to time-based rewards
-      if (activity.type === 'run' || activity.type === 'long' || activity.type === 'easy' || activity.type === 'tempo') {
-        xp = Math.max(10, Math.floor(durationMin * XP_PER_MIN_RUN));
-        coins = Math.max(1, Math.floor(durationMin * COINS_PER_MIN_RUN));
-      } else { // Cross-train, strength, etc.
-        xp = Math.max(10, Math.floor(durationMin * XP_PER_MIN_OTHER));
-        coins = Math.max(1, Math.floor(durationMin * COINS_PER_MIN_OTHER));
+      // All runs get base 500 XP, planned workouts get additional bonus XP
+      const baseRunXP = 500;
+      if (plannedWorkout?.workout) {
+        // This is a planned workout - get base + bonus XP from workout template or token
+        let workoutBonusXP = plannedWorkout.workout.xp || 0;
+
+        // If XP is not set in workout template, try to get it from token
+        if (workoutBonusXP === 0 && plannedWorkout.token) {
+          // Extract the alphabetic base of the token (e.g., "WR" from "WR1" or "WR/5A")
+          let tokenBase = plannedWorkout.token.toString();
+          if (tokenBase.includes('/')) {
+            tokenBase = tokenBase.split('/')[0]; // Take part before "/"
+          }
+          tokenBase = tokenBase.replace(/[^A-Za-z]/g, ''); // Remove digits and non-letters
+
+          const tokenXPMap: Record<string, number> = {
+            'WR': 300, // Walk/Run
+            'E': 300,  // Easy
+            'L': 600,  // Long
+            'T': 450,  // Tempo
+            'F': 450,  // Fartlek
+            'X': 250,  // Cross-train
+            'U': 200,  // Recovery
+            'R': 100,  // Rest
+          };
+          workoutBonusXP = tokenXPMap[tokenBase] || 0;
+        }
+
+        xp = baseRunXP + workoutBonusXP;
+      } else {
+        // Regular run not linked to planned workout
+        xp = baseRunXP; // Base XP for runs
+      }
+
+      // Calculate coins based on distance
+      if (distanceKm > 0) {
+        coins = Math.max(1, Math.floor(distanceKm * COINS_PER_KM));
+      } else {
+        // Fallback to time-based coins
+        if (activity.type === 'run' || activity.type === 'long' || activity.type === 'easy' || activity.type === 'tempo') {
+          coins = Math.max(1, Math.floor(durationMin * COINS_PER_MIN_RUN));
+        } else {
+          coins = Math.max(1, Math.floor(durationMin * COINS_PER_MIN_OTHER));
+        }
       }
     }
 
@@ -660,18 +700,17 @@ export default function TrainingDetailScreen() {
           </View>
         ) : (
           <View style={styles.rewardsSection}>
-            <Text style={styles.sectionTitle}>Expected Rewards</Text>
+            <Text style={styles.sectionTitle}>Rewards</Text>
             <View style={styles.rewardsGrid}>
               <View style={styles.rewardCard}>
-                <Ionicons name="flash-outline" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
                 <Text style={styles.rewardExpValue}>+{rewards.xp}</Text>
-                <Text style={styles.rewardLabel}>XP</Text>
+                <Ionicons name="flash" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
               </View>
-              <View style={styles.rewardCard}>
+              {/* <View style={styles.rewardCard}>
                 <Image source={require('@/assets/images/icons/coal.png')} style={styles.rewardImage} />
                 <Text style={styles.rewardLeavesValue}>+{rewards.coins}</Text>
                 <Text style={styles.rewardLabel}>Embers</Text>
-              </View>
+              </View> */}
             </View>
           </View>
         )}
@@ -681,8 +720,12 @@ export default function TrainingDetailScreen() {
       {!isWorkoutCompleted && (
         <View style={styles.actionSection}>
           <TouchableOpacity
-            style={styles.startButton}
+            style={[styles.startButton, (!isToday || isWorkoutCompleted) && styles.disabledButton]}
             onPress={() => {
+              if (!isToday) {
+                Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
+                return;
+              }
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
               if (activity.type === 'rest') {
                 // Handle rest day completion
@@ -700,12 +743,14 @@ export default function TrainingDetailScreen() {
               }
             }}
             activeOpacity={0.8}
-            disabled={completingRest}
+            disabled={completingRest || !isToday}
           >
             <Text style={styles.startButtonText}>
-              {activity.type === 'rest'
-                ? (completingRest ? '😴 COMPLETING...' : '😴 TAKE REST')
-                : 'START WORKOUT'
+              {!isToday
+                ? 'NOT SCHEDULED FOR TODAY'
+                : activity.type === 'rest'
+                  ? (completingRest ? '😴 COMPLETING...' : '😴 TAKE REST')
+                  : 'START WORKOUT'
               }
             </Text>
           </TouchableOpacity>
@@ -821,15 +866,16 @@ const styles = StyleSheet.create({
   },
   rewardsSection: {
     paddingHorizontal: Theme.spacing.xl,
-    marginBottom: 100,
   },
   rewardsGrid: {
     flexDirection: 'row',
     justifyContent: 'space-between',
   },
   rewardCard: {
-    flex: 1,
+    flexDirection: 'row',
     alignItems: 'center',
+    justifyContent: 'center',
+    flex: 1,
   },
   rewardEmoji: {
     marginTop: Theme.spacing.xs,
@@ -842,7 +888,7 @@ const styles = StyleSheet.create({
     marginTop: Theme.spacing.xs,
   },
   rewardExpValue: {
-    fontSize: 20,
+    fontSize: 24,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.special.primary.exp,
     marginBottom: Theme.spacing.xs,
@@ -911,18 +957,22 @@ const styles = StyleSheet.create({
     backgroundColor: 'transparent',
   },
   startButton: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
     borderRadius: Theme.borderRadius.large,
     paddingVertical: Theme.spacing.lg,
     alignItems: 'center',
     borderBottomWidth: 4,
-    borderBottomColor: Theme.colors.accent.secondary,
+    borderBottomColor: Theme.colors.special.secondary.exp,
   },
   startButtonText: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.background.primary,
     letterSpacing: 1,
+  },
+  disabledButton: {
+    backgroundColor: Theme.colors.background.tertiary,
+    borderBottomColor: Theme.colors.background.secondary,
   },
   loading: {
     fontSize: 18,

@@ -58,26 +58,21 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
-  gpsText: {
-    alignSelf: 'center',
-    marginTop: Theme.spacing.sm,
-    color: Theme.colors.text.secondary,
-    fontFamily: Theme.fonts.medium,
-  },
+
   startButton: {
     backgroundColor: Theme.colors.accent.primary,
-    borderBottomWidth: 4,
-    borderBottomColor: Theme.colors.accent.secondary,
-    paddingVertical: Theme.spacing.lg,
-    borderRadius: Theme.borderRadius.large,
+    borderWidth: 5,
+    borderColor: Theme.colors.accent.secondary,
+    borderRadius: Theme.borderRadius.full,
     alignItems: 'center',
-    flex: 1,
-    marginHorizontal: Theme.spacing.md,
+    width: 120,
+    height: 120,
+    justifyContent: 'center',
   },
   startButtonText: {
     fontSize: 22,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.background.primary,
+    color: Theme.colors.text.primary,
   },
   header: {
     flexDirection: 'row',
@@ -288,6 +283,17 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     marginLeft: Theme.spacing.xs,
   },
+  gpsText: {
+    color: Theme.colors.text.secondary,
+    fontFamily: Theme.fonts.medium,
+    fontSize: 14,
+  },
+  gpsContainer: {
+    flexDirection: 'row',
+    alignItems: 'flex-end',
+    justifyContent: 'center',
+    gap: 10,
+  },
 });
 
 export default function RunRecordingScreen() {
@@ -433,12 +439,44 @@ export default function RunRecordingScreen() {
     reset();
   };
 
-  const renderGpsStatus = () => {
-    if (accuracy == null) return 'GPS: —';
-    if (accuracy <= 10) return `GPS: Excellent (${Math.round(accuracy)} m)`;
-    if (accuracy <= 25) return `GPS: Good (${Math.round(accuracy)} m)`;
-    if (accuracy <= 50) return `GPS: Fair (${Math.round(accuracy)} m)`;
-    return `GPS: Weak (${Math.round(accuracy)} m)`;
+  const renderGpsSignalBars = () => {
+    const getSignalStrength = () => {
+      if (accuracy == null) return 0;
+      if (accuracy <= 10) return 4; // Excellent
+      if (accuracy <= 25) return 3; // Good
+      if (accuracy <= 50) return 2; // Fair
+      return 1; // Weak
+    };
+
+    const getSignalColor = () => {
+      if (accuracy == null) return '#64748B'; // Grey
+      if (accuracy <= 10) return '#10B981'; // Green
+      if (accuracy <= 25) return '#84CC16'; // Light green
+      if (accuracy <= 50) return '#F59E0B'; // Orange
+      return '#EF4444'; // Red
+    };
+
+    const strength = getSignalStrength();
+    const color = getSignalColor();
+
+    return (
+      <View style={styles.gpsContainer}>
+        <Text style={styles.gpsText}>GPS</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'flex-end', gap: 2, marginBottom: 4 }}>
+          {[1, 2, 3, 4].map((bar) => (
+            <View
+              key={bar}
+              style={{
+                width: 4,
+                height: 4 + (bar * 3),
+                backgroundColor: bar <= strength ? color : '#64748B20',
+                borderRadius: 1,
+              }}
+            />
+          ))}
+        </View>
+      </View>
+    );
   };
 
   // Get step progress percentage
@@ -543,7 +581,7 @@ export default function RunRecordingScreen() {
     );
   };
 
-  const canStart = accuracy != null && accuracy <= 25;
+  const canStart = accuracy != null;
 
   return (
     <>
@@ -566,7 +604,7 @@ export default function RunRecordingScreen() {
           >
             <FontAwesome5 name="times" size={20} color={Theme.colors.text.primary} />
           </Pressable>
-          <Text style={styles.gpsText}>{renderGpsStatus()}</Text>
+          {renderGpsSignalBars()}
         </View>
 
         <View style={styles.content}>
@@ -603,7 +641,7 @@ export default function RunRecordingScreen() {
           {!isGuidedWorkout && (
             <TouchableOpacity style={styles.workoutBar}>
               <FontAwesome5 name="plus" size={14} color={Theme.colors.text.primary} style={{ marginRight: 8 }} />
-              <Text style={styles.workoutBarText}>Add Target / Workout</Text>
+              <Text style={styles.workoutBarText}>Follow a Workout</Text>
             </TouchableOpacity>
           )}
         </View>

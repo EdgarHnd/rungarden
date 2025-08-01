@@ -1,7 +1,6 @@
 import PlanDetailsModal from '@/components/modals/PlanDetailsModal';
 import ActivePlanView from '@/components/path/ActivePlanView';
-import PlanSelectionView from '@/components/path/PlanSelectionView';
-import SkippedView from '@/components/path/SkippedView';
+import PlanBrowserView from '@/components/path/PlanBrowserView';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useMutation, useQuery } from 'convex/react';
@@ -13,6 +12,7 @@ import { Alert, Animated, Dimensions, ImageSourcePropType, SafeAreaView, StyleSh
 interface PlanOption {
   value: string;
   title: string;
+  level: string;
   subtitle: string;
   description: string;
   image?: ImageSourcePropType;
@@ -41,61 +41,62 @@ export default function PathScreen() {
   // Mutations for plan generation
   const updateTrainingProfile = useMutation(api.trainingProfile.updateTrainingProfile);
   const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
-  const updateProfile = useMutation(api.userProfile.updateProfile);
   const [isGenerating, setIsGenerating] = useState(false);
+  const formatDate = (date: Date) => {
+    return date.toLocaleDateString('en-US', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+    });
+  };
 
   // Plan options for slideshow
   const planOptions: PlanOption[] = [
     {
       value: '5K',
       title: 'Couch to 5K',
-      subtitle: 'Perfect for beginners',
-      description: 'In the 1st week the goal is to get you started with running and test your current level',
+      level: 'Beginner',
+      subtitle: 'From 0 to 5K in 8 weeks',
+      description: 'Inspired by the famous Couch to 5K program, this plan is perfect for complete beginners. Start with walk-run intervals and build up to running 5K continuously.',
       image: require('@/assets/images/blaze/blazespark.png'),
       weeks: 8,
       totalRuns: 24,
-      targetDate: '01/08/2025',
-    },
-    {
-      value: 'get fit',
-      title: 'Get Fit',
-      subtitle: 'Run to get in shape',
-      description: 'In the 1st week the goal is to get you started with running and test your current level',
-      image: require('@/assets/images/blaze/blazemelt.png'),
-      weeks: 8,
-      totalRuns: 24,
-      targetDate: '01/08/2025',
+      targetDate: formatDate(new Date(new Date().setDate(new Date().getDate() + 8 * 7))),
     },
     {
       value: '10K',
       title: 'First 10K',
-      subtitle: 'Ready for a challenge',
+      level: 'Intermediate',
+      subtitle: 'Coming soon!',
       image: require('@/assets/images/blaze/blazefriends.png'),
-      description: 'Build your endurance and achieve your first 10K milestone with structured training',
-      weeks: 12,
-      totalRuns: 36,
-      targetDate: '15/09/2025',
+      description: 'Build your endurance and achieve your first 10K milestone with structured training.',
+      weeks: 10,
+      totalRuns: 40,
+      targetDate: formatDate(new Date(new Date().setDate(new Date().getDate() + 10 * 7))),
+      disabled: true,
     },
     {
       value: 'half-marathon',
       title: 'Half Marathon',
       image: require('@/assets/images/blaze/blazerace.png'),
+      level: 'Expert',
       subtitle: 'Coming Soon!',
-      description: 'Train for the ultimate endurance challenge with our comprehensive half marathon program',
+      description: 'Train for the ultimate endurance challenge with our comprehensive half marathon program.',
       weeks: 16,
       totalRuns: 48,
-      targetDate: '01/12/2025',
+      targetDate: formatDate(new Date(new Date().setDate(new Date().getDate() + 16 * 7))),
       disabled: true,
     },
     {
       value: 'marathon',
       title: 'Marathon',
       image: require('@/assets/images/blaze/blazerace.png'),
+      level: 'Expert',
       subtitle: 'Coming Soon!',
-      description: 'Train for the ultimate endurance challenge with our comprehensive marathon program',
+      description: 'Train for the ultimate endurance challenge with our comprehensive marathon program.',
       weeks: 24,
       totalRuns: 72,
-      targetDate: '01/01/2026',
+      targetDate: new Date(new Date().setDate(new Date().getDate() + 24 * 7)).toISOString(),
       disabled: true,
     },
   ];
@@ -130,14 +131,6 @@ export default function PathScreen() {
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setShowPlanModal(false);
-
-      if (userProfile?.hasSkippedTrainingPlan) {
-        Alert.alert(
-          "Plan Created!",
-          "Your training plan has been generated successfully.",
-          [{ text: "OK" }]
-        );
-      }
     } catch (error) {
       console.error('Failed to generate plan:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -161,35 +154,18 @@ export default function PathScreen() {
   }
 
   if (activePlan) {
-    return <ActivePlanView activePlan={activePlan} completedMap={completedMap} />;
+    return <ActivePlanView activePlan={activePlan} completedMap={completedMap} userId={userProfile?.userId || ''} />;
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      {userProfile?.hasSkippedTrainingPlan ? (
-        <SkippedView
-          simpleSchedule={simpleSchedule}
-          onBackToPlans={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            updateProfile({ hasSkippedTrainingPlan: false });
-          }}
-          planOptions={planOptions}
-          onSelectPlan={handleShowPlanDetails}
-          setSelectedGoalIndex={setSelectedGoalIndex}
-          scrollX={scrollX}
-        />
-      ) : (
-        <PlanSelectionView
-          planOptions={planOptions}
-          onSelectPlan={handleShowPlanDetails}
-          onSkip={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            updateProfile({ hasSkippedTrainingPlan: true });
-          }}
-          setSelectedGoalIndex={setSelectedGoalIndex}
-          scrollX={scrollX}
-        />
-      )}
+      <PlanBrowserView
+        simpleSchedule={simpleSchedule}
+        planOptions={planOptions}
+        onSelectPlan={handleShowPlanDetails}
+        setSelectedGoalIndex={setSelectedGoalIndex}
+        scrollX={scrollX}
+      />
 
       {/* Plan Details Modal */}
       <PlanDetailsModal

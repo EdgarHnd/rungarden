@@ -140,7 +140,7 @@ export default function DayCard({
     analytics.track({ name: 'simple_run_pressed' });
     if (!isToday && !isDatabasePlannedWorkout(plannedWorkout)) {
       router.push({
-        pathname: '/manage-schedule',
+        pathname: '/path',
       });
     } else {
       analytics.track({ name: 'recording_modal_viewed_from_day_card' });
@@ -190,7 +190,7 @@ export default function DayCard({
       ))}
 
       {/* Completed Rest Activity Card */}
-      {restActivity && (
+      {restActivity && !plannedWorkout && (
         <RestWorkoutCard
           restActivity={restActivity}
           onPress={() => { }}
@@ -198,7 +198,7 @@ export default function DayCard({
       )}
 
       {/* Planned Workout (including rest days and simple schedule workouts) */}
-      {plannedWorkout && !hasLinkedActivities && activities.length === 0 && !restActivity && (
+      {plannedWorkout && !hasLinkedActivities && activities.length === 0 && (
         <SuggestedActivityCard
           plannedWorkout={plannedWorkout}
           onPress={(() => {
@@ -242,7 +242,7 @@ const styles = StyleSheet.create({
     paddingTop: 10,
     marginBottom: 100,
     minHeight: 400,
-    backgroundColor: Theme.colors.background.primary,
+    backgroundColor: Theme.colors.background.tertiary,
   },
   emptyState: {
     flex: 1,

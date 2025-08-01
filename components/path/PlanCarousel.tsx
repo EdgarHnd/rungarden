@@ -13,20 +13,13 @@ export default function PlanCarousel({
   onSelectPlan,
   setSelectedGoalIndex,
   scrollX,
-  isSkippedView = false
 }: {
   planOptions: any[],
   onSelectPlan: (plan: any) => void,
   setSelectedGoalIndex: (index: number) => void,
   scrollX: any,
-  isSkippedView?: boolean
 }) {
   const scrollViewRef = useRef<ScrollView>(null);
-  const cardStyle = isSkippedView ? styles.skippedPlanCard : styles.planCard;
-  const imageStyle = isSkippedView ? styles.skippedPlanCardImageStyle : styles.planCardImageStyle;
-  const overlayStyle = isSkippedView ? styles.skippedPlanCardOverlay : styles.planCardOverlay;
-  const titleStyle = isSkippedView ? styles.skippedPlanCardTitle : styles.planCardTitle;
-  const subtitleStyle = isSkippedView ? styles.skippedPlanCardSubtitle : styles.planCardButtonSubtitle;
 
   return (
     <Animated.ScrollView
@@ -77,12 +70,13 @@ export default function PlanCarousel({
             >
               <ImageBackground
                 source={option.image}
-                style={[cardStyle, { width: CARD_WIDTH, marginHorizontal: SPACING / 2 }]}
-                imageStyle={imageStyle}
+                style={[styles.planCard, { width: CARD_WIDTH, marginHorizontal: SPACING / 2 }]}
+                imageStyle={styles.planCardImageStyle}
               >
-                <View style={[overlayStyle, { backgroundColor: option.disabled ? 'rgba(0,0,0,0.6)' : 'rgba(0,0,0,0.3)' }]}>
-                  <Text style={titleStyle}>{option.title}</Text>
-                  <Text style={subtitleStyle}>{option.subtitle}</Text>
+                <View style={[styles.planCardOverlay, { backgroundColor: option.disabled ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.3)' }]}>
+                  <Text style={[styles.planCardLevel, { backgroundColor: option.disabled ? 'rgba(0,0,0,0.7)' : 'rgba(0,0,0,0.3)' }]}>{option.level}</Text>
+                  <Text style={styles.planCardTitle}>{option.title}</Text>
+                  <Text style={styles.planCardButtonSubtitle}>{option.subtitle}</Text>
                 </View>
               </ImageBackground>
             </TouchableOpacity>
@@ -123,32 +117,17 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     fontSize: 20,
   },
-  skippedPlanCard: {
-    borderRadius: 10,
-    borderWidth: 0,
-    justifyContent: 'flex-end',
-    height: 200,
-    overflow: 'hidden',
-    padding: 16,
-  },
-  skippedPlanCardImageStyle: {
-    borderRadius: 10,
-  },
-  skippedPlanCardOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    alignItems: 'flex-start',
-    justifyContent: 'flex-end',
-    paddingHorizontal: 16,
-    paddingVertical: 16,
-  },
-  skippedPlanCardTitle: {
-    color: Theme.colors.text.primary,
-    fontFamily: Theme.fonts.bold,
-    fontSize: 24,
-  },
-  skippedPlanCardSubtitle: {
+  planCardLevel: {
+    position: 'absolute',
+    top: 10,
+    right: 10,
     color: Theme.colors.text.primary,
     fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    backgroundColor: Theme.colors.background.secondary + '80',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 10,
   },
   slideshowContainer: {
     alignItems: 'center',

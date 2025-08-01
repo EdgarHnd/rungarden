@@ -34,6 +34,7 @@ import type * as utils_challenges from "../utils/challenges.js";
 import type * as utils_coins from "../utils/coins.js";
 import type * as utils_gamification from "../utils/gamification.js";
 import type * as utils_streak from "../utils/streak.js";
+import type * as weekRewards from "../weekRewards.js";
 import type * as workoutLibrary from "../workoutLibrary.js";
 
 /**
@@ -66,6 +67,7 @@ declare const fullApi: ApiFromModules<{
   "utils/coins": typeof utils_coins;
   "utils/gamification": typeof utils_gamification;
   "utils/streak": typeof utils_streak;
+  weekRewards: typeof weekRewards;
   workoutLibrary: typeof workoutLibrary;
 }>;
 export declare const api: FilterApi<

@@ -123,6 +123,7 @@ const schema = defineSchema({
       v.literal("long"), v.literal("recovery"), v.literal("race")
     )),
     description: v.optional(v.string()),
+    xp: v.optional(v.number()),              // XP awarded for completing this workout
 
     steps: v.array(v.object({
       order: v.number(),
@@ -214,6 +215,7 @@ const schema = defineSchema({
     pace: v.optional(v.number()),        // min/km numeric
     plannedWorkoutId: v.optional(v.id("plannedWorkouts")),  // 🔗
     type: v.optional(v.literal("rest")),                    // inserted by app
+    xpEarned: v.optional(v.number()),                       // XP earned from this activity
 
     // Enhanced running data for achievements and gamification
     totalElevationGain: v.optional(v.number()),      // meters gained
@@ -337,6 +339,32 @@ const schema = defineSchema({
     .index("by_from", ["fromUserId"])
     .index("by_to", ["toUserId"])
     .index("by_users", ["fromUserId", "toUserId"]),
+
+  /* ────────────────────────────── week rewards */
+  coachCards: defineTable({
+    title: v.string(),
+    content: v.string(),
+    category: v.union(
+      v.literal("technique"),
+      v.literal("nutrition"),
+      v.literal("mindset"),
+      v.literal("recovery"),
+      v.literal("motivation")
+    ),
+    iconEmoji: v.string(),
+    orderIndex: v.number(),
+    createdAt: v.string(),
+  }),
+
+  weekRewards: defineTable({
+    userId: v.id("users"),
+    planId: v.id("trainingPlans"),
+    weekNumber: v.number(),
+    cardId: v.id("coachCards"),
+    claimedAt: v.string(),
+  })
+    .index("by_user_plan", ["userId", "planId"])
+    .index("by_user_week", ["userId", "planId", "weekNumber"]),
 });
 
 export default schema;

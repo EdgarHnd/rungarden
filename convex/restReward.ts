@@ -1,9 +1,9 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation } from "./_generated/server";
+import { getWorkoutLibraryXP } from "./utils/gamification";
 
 const COINS_REST = 5;
-const XP_REST = 10;
 
 export const rewardRest = mutation({
   args: { dateISO: v.string() },
@@ -38,11 +38,13 @@ export const rewardRest = mutation({
       throw new Error("User profile not found");
     }
 
+    const xpEarned = getWorkoutLibraryXP("R"); // Rest day XP from workout library
+
     await ctx.db.patch(profile._id, {
       coins: (profile.coins ?? 0) + COINS_REST,
-      totalXP: (profile.totalXP ?? 0) + XP_REST
+      totalXP: (profile.totalXP ?? 0) + xpEarned
     });
 
-    return { success: true, coinsEarned: COINS_REST, xpEarned: XP_REST };
+    return { success: true, coinsEarned: COINS_REST, xpEarned };
   }
 }); 

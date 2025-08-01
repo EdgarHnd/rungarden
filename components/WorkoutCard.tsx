@@ -123,7 +123,7 @@ export default function WorkoutCard({
 
 const styles = StyleSheet.create({
   workoutCard: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: Theme.colors.background.primary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     marginVertical: Theme.spacing.sm,

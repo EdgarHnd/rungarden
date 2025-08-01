@@ -3,6 +3,7 @@ import LoadingScreen from '@/components/LoadingScreen';
 import AchievementCelebrationModal from '@/components/modals/AchievementCelebrationModal';
 import AchievementProgressModal from '@/components/modals/AchievementProgressModal';
 import StreakDisplay from '@/components/modals/StreakDisplay';
+import WeekRewardModal from '@/components/modals/WeekRewardModal';
 import XPInfoModal from '@/components/modals/XPInfoModal';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
@@ -28,6 +29,13 @@ export default function ProfileScreen() {
   const activities = useQuery(api.activities.getUserActivitiesForYear, {
     year: new Date().getFullYear(),
   });
+  const currentPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
+  const weekRewards = useQuery(api.weekRewards.getWeekRewardsWithCards,
+    currentPlan && currentUser ? {
+      userId: currentUser._id,
+      planId: currentPlan._id
+    } : 'skip'
+  );
   // Get latest completed challenges for profile display
   // TODO: Re-enable when achievements API is implemented
   // const latestChallenges = useQuery(api.achievements.getLatestCompletedChallenges, {
@@ -47,6 +55,11 @@ export default function ProfileScreen() {
   const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
   const [showProgressModal, setShowProgressModal] = useState(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState(false);
+
+  // Coach card modal states
+  const [showCoachCardModal, setShowCoachCardModal] = useState(false);
+  const [selectedCoachCard, setSelectedCoachCard] = useState<any>(null);
+  const [selectedWeekNumber, setSelectedWeekNumber] = useState<number>(0);
 
   const isLoading = profile === undefined || profileStats === undefined;
 
@@ -91,6 +104,26 @@ export default function ProfileScreen() {
     setSelectedChallenge(null);
   };
 
+  const handleCoachCardPress = (weekReward: any) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setSelectedCoachCard(weekReward.card);
+    setSelectedWeekNumber(weekReward.weekNumber);
+    setShowCoachCardModal(true);
+    analytics.track({
+      name: 'coach_card_viewed_from_profile',
+      properties: {
+        week_number: weekReward.weekNumber,
+        card_id: weekReward.card?._id
+      }
+    });
+  };
+
+  const handleCloseCoachCardModal = () => {
+    setShowCoachCardModal(false);
+    setSelectedCoachCard(null);
+    setSelectedWeekNumber(0);
+  };
+
   if (isLoading || !profileStats) {
     return <LoadingScreen />;
   }
@@ -119,7 +152,6 @@ export default function ProfileScreen() {
 
         {/* Overview Section */}
         <View style={styles.overviewSection}>
-          <Text style={styles.sectionTitle}>Overview</Text>
 
           {/* Main Stats - Duolingo Style 2x2 Grid */}
           <View style={styles.duolingoStatsContainer}>
@@ -165,17 +197,14 @@ export default function ProfileScreen() {
               </View>
 
               <View style={styles.duolingoStatCard}>
-                <Text style={styles.duolingoStatIcon}>🍦</Text>
+                <Text style={styles.duolingoStatIcon}>🍕</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{profileStats.totalCalories}</Text>
-                  <Text style={styles.duolingoStatLabel}>Calories</Text>
+                  <Text style={styles.duolingoStatNumber}>{Math.round(profileStats.totalCalories / 1000)}</Text>
+                  <Text style={styles.duolingoStatLabel}>{Math.round(profileStats.totalCalories / 1000) > 1 ? 'Pizzas' : 'Pizza'}</Text>
                 </View>
               </View>
             </View>
           </View>
-        </View>
-        <View style={styles.activityGridContainer}>
-          <ActivityGrid activities={activities || []} />
         </View>
 
         {/* Level Section */}
@@ -216,6 +245,42 @@ export default function ProfileScreen() {
           </View>
         )}
 
+        {/* Coach Cards Collection */}
+        {weekRewards && weekRewards.length > 0 && (
+          <View style={styles.coachCardsSection}>
+            <View style={styles.coachCardsHeader}>
+              <Text style={styles.sectionTitle}>Coach Cards</Text>
+              <Text style={styles.coachCardsCount}>{weekRewards.length} earned</Text>
+            </View>
+            <View style={styles.coachCardsGrid}>
+              {weekRewards.map((weekReward) => (
+                <TouchableOpacity
+                  key={`${weekReward.weekNumber}-${weekReward.cardId}`}
+                  style={styles.coachCardItem}
+                  onPress={() => handleCoachCardPress(weekReward)}
+                  activeOpacity={0.7}
+                >
+                  <View style={styles.coachCardIconContainer}>
+                    <Text style={styles.coachCardEmoji}>{weekReward.card?.iconEmoji || '✨'}</Text>
+                  </View>
+                  <View style={styles.coachCardInfo}>
+                    <Text style={styles.coachCardTitle} numberOfLines={2}>
+                      {weekReward.card?.title || 'Coaching Tip'}
+                    </Text>
+                    <Text style={styles.coachCardWeek}>Week {weekReward.weekNumber}</Text>
+                  </View>
+                </TouchableOpacity>
+              ))}
+            </View>
+          </View>
+        )}
+
+        {/* Activity Grid */}
+        <View style={styles.activityGridContainer}>
+          <Text style={styles.sectionTitle}>Recent Activity</Text>
+          <ActivityGrid activities={activities || []} />
+        </View>
+
         {/* Level Info Modal */}
         {showLevelModal && (
           <XPInfoModal
@@ -242,6 +307,17 @@ export default function ProfileScreen() {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               setShowStreakModal(false);
             }}
+          />
+        )}
+
+        {/* Coach Card Modal */}
+        {showCoachCardModal && selectedCoachCard && (
+          <WeekRewardModal
+            visible={showCoachCardModal}
+            weekNumber={selectedWeekNumber}
+            card={selectedCoachCard}
+            startFlipped={true}
+            onClose={handleCloseCoachCardModal}
           />
         )}
 
@@ -352,7 +428,6 @@ const styles = StyleSheet.create({
     zIndex: 10,
   },
   profileInfoSection: {
-    marginBottom: 24,
   },
   userName: {
     fontSize: 24,
@@ -490,7 +565,6 @@ const styles = StyleSheet.create({
   },
   // Level Section Styles
   levelSection: {
-    marginBottom: 32,
   },
   currentLevelCard: {
     borderRadius: 16,
@@ -524,7 +598,7 @@ const styles = StyleSheet.create({
   progressBar: {
     width: '100%',
     height: 8,
-    backgroundColor: Theme.colors.background.primary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: 4,
     marginBottom: 8,
   },
@@ -539,6 +613,62 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
   },
   activityGridContainer: {
-    marginBottom: 24,
+  },
+  // Coach Cards Section Styles
+  coachCardsSection: {
+    marginBottom: 20,
+  },
+  coachCardsHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  coachCardsCount: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  coachCardsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  coachCardItem: {
+    width: '48%',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: 12,
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    borderWidth: 2,
+    borderColor: Theme.colors.background.tertiary,
+  },
+  coachCardIconContainer: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: Theme.colors.background.tertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 12,
+  },
+  coachCardEmoji: {
+    fontSize: 20,
+  },
+  coachCardInfo: {
+    flex: 1,
+  },
+  coachCardTitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    marginBottom: 4,
+    lineHeight: 18,
+  },
+  coachCardWeek: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
   },
 }); 

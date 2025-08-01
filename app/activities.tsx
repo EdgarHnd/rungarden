@@ -100,7 +100,7 @@ export default function ProgressScreen() {
 
   const getGoalDisplayName = (goal: string): string => {
     const names: Record<string, string> = {
-      '5K': 'From 0 to 5K',
+      '5K': '0 to 5K',
       '10K': 'First 10K',
       'just-run-more': 'Get Fit'
     };

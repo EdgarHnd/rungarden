@@ -28,7 +28,7 @@ export interface GeneratedActivity {
   status: 'scheduled' | 'completed' | 'skipped' | 'missed';
   distance: number;
   workoutId: any;
-  workout: { type: string; steps?: any[] };
+  workout: { type: string; steps?: any[]; description?: string };
   isDefault?: boolean;
   isSimpleScheduleRun?: boolean;
   isSimpleScheduleRest?: boolean;

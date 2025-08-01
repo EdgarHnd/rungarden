@@ -1,5 +1,6 @@
 import StatsBadges from '@/components/StatsBadges';
 import StreakModalComponent from '@/components/modals/StreakModalComponent';
+import XpDisplayComponent from '@/components/modals/XpDisplayComponent';
 import Theme from '@/constants/theme';
 import { Doc } from '@/convex/_generated/dataModel';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
@@ -63,7 +64,7 @@ export default function RunCelebrationModal({
   streakInfo,
   isInitialSync
 }: RunCelebrationModalProps) {
-  const [currentStep, setCurrentStep] = useState<'stats' | 'xp' | 'streak' | 'coins'>('stats');
+  const [currentStep, setCurrentStep] = useState<'stats' | 'xp' | 'streak'>('stats');
   const [selectedFeeling, setSelectedFeeling] = useState<FeelingType | null>(null);
   const analytics = useAnalytics();
 
@@ -71,11 +72,9 @@ export default function RunCelebrationModal({
   const stepScale = useSharedValue(0);
   const stepOpacity = useSharedValue(0);
   const xpCounterValue = useSharedValue(0);
-  const coinCounterValue = useSharedValue(0);
+
   const progressValue = useSharedValue(0);
   const streakScale = useSharedValue(0);
-  const rewardIconScale = useSharedValue(0);
-  const rewardIconRotation = useSharedValue(0);
 
   // Reanimated values for feeling buttons
   const feelingScales: Record<FeelingType, Reanimated.SharedValue<number>> = {
@@ -89,7 +88,6 @@ export default function RunCelebrationModal({
 
   // Live counter states
   const [animatedXPValue, setAnimatedXPValue] = useState(0);
-  const [animatedCoinValue, setAnimatedCoinValue] = useState(0);
   const [animatedProgress, setAnimatedProgress] = useState(0);
 
   // Fast counter animations with useAnimatedReaction (safer syntax)
@@ -101,13 +99,7 @@ export default function RunCelebrationModal({
     []
   );
 
-  useAnimatedReaction(
-    () => coinCounterValue.value,
-    (value) => {
-      runOnJS(setAnimatedCoinValue)(Math.floor(value));
-    },
-    []
-  );
+
 
   useAnimatedReaction(
     () => progressValue.value,
@@ -165,13 +157,7 @@ export default function RunCelebrationModal({
     };
   });
 
-  const rewardIconAnimatedStyle = useAnimatedStyle(() => {
-    return {
-      transform: [
-        { scale: rewardIconScale.value }
-      ]
-    };
-  });
+
 
   useEffect(() => {
     if (visible) {
@@ -179,11 +165,8 @@ export default function RunCelebrationModal({
       stepScale.value = 0;
       stepOpacity.value = 0;
       xpCounterValue.value = 0;
-      coinCounterValue.value = 0;
       progressValue.value = 0;
       streakScale.value = 0;
-      rewardIconScale.value = 0;
-      rewardIconRotation.value = 0;
 
       analytics.track({
         name: 'run_celebration_viewed',
@@ -199,7 +182,6 @@ export default function RunCelebrationModal({
       });
 
       setAnimatedXPValue(0);
-      setAnimatedCoinValue(0);
       setAnimatedProgress(0);
 
       // Initial entrance animation
@@ -267,9 +249,6 @@ export default function RunCelebrationModal({
       animateProgressBar();
     } else if (currentStep === 'streak') {
       animateStreakDisplay();
-    } else if (currentStep === 'coins') {
-      animateCoinCounter();
-      animateRewardIcon();
     }
   };
 
@@ -300,7 +279,24 @@ export default function RunCelebrationModal({
   };
 
   const animateProgressBar = () => {
-    progressValue.value = withTiming(60, {
+    // Calculate actual progress based on level progression
+    const oldLevel = rewards.oldLevel || 1;
+    const newLevel = rewards.newLevel || oldLevel;
+    const leveledUp = newLevel > oldLevel;
+
+    // If leveled up, show 100% (completed current level)
+    // If not leveled up, show partial progress based on distance gained
+    let progressTarget = 60; // fallback
+    if (leveledUp) {
+      progressTarget = 100;
+    } else {
+      // Calculate progress based on distance/XP gained for this run
+      const xpGained = LevelingService.distanceToXP(rewards.distanceGained);
+      // Show proportional progress - more distance = more progress shown
+      progressTarget = Math.min(85, 25 + (xpGained / 20));
+    }
+
+    progressValue.value = withTiming(progressTarget, {
       duration: 1000,
     });
   };
@@ -324,39 +320,7 @@ export default function RunCelebrationModal({
     }
   };
 
-  const animateCoinCounter = () => {
-    const targetCoins = rewards.coinsGained;
 
-    // Medium haptic for coin start
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-    // Fast animated counter
-    coinCounterValue.value = withTiming(targetCoins, {
-      duration: 1200,
-    });
-
-    // Success haptic when animation finishes
-    setTimeout(() => {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-    }, 1200);
-
-    // Coin collection haptics
-    const coinHapticInterval = setInterval(() => {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    }, 100);
-
-    setTimeout(() => {
-      clearInterval(coinHapticInterval);
-    }, 1200);
-  };
-
-  const animateRewardIcon = () => {
-    // Icon entrance with bounce - just zoom in effect
-    rewardIconScale.value = withSpring(1, {
-      damping: 15,
-      stiffness: 100,
-    });
-  };
 
   const handleFeelingSelect = (feeling: FeelingType) => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -399,13 +363,13 @@ export default function RunCelebrationModal({
     } else if (currentStep === 'xp') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       if (isInitialSync) {
-        handleClose(); // Skip streak and coins for initial sync
+        handleClose(); // Skip streak for initial sync
       } else {
         setCurrentStep('streak');
       }
     } else if (currentStep === 'streak') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setCurrentStep('coins');
+      handleClose();
     }
   };
 
@@ -590,19 +554,15 @@ export default function RunCelebrationModal({
         </View>
 
         <View style={styles.contentSection}>
-          <View style={styles.centerContent}>
-            <Reanimated.View style={[styles.xpBadge, xpBadgeAnimatedStyle]}>
-              <Text style={styles.xpValue}>+{animatedXPValue}xp</Text>
-            </Reanimated.View>
-
-            <View style={styles.progressSection}>
-              <Text style={styles.progressLabel}>lvl {rewards.oldLevel || 1}</Text>
-              <View style={styles.progressBar}>
-                <Reanimated.View style={[styles.progressFill, progressAnimatedStyle]} />
-              </View>
-              <Text style={styles.progressLabel}>lvl {(rewards.oldLevel || 1) + 1}</Text>
-            </View>
-          </View>
+          <XpDisplayComponent
+            animatedXPValue={animatedXPValue}
+            animatedProgress={animatedProgress}
+            currentLevel={rewards.oldLevel || 1}
+            nextLevel={(rewards.oldLevel || 1) + 1}
+            showProgressBar={true}
+            badgeAnimatedStyle={xpBadgeAnimatedStyle}
+            progressAnimatedStyle={progressAnimatedStyle}
+          />
         </View>
       </View>
 
@@ -632,32 +592,7 @@ export default function RunCelebrationModal({
     </Reanimated.View>
   );
 
-  const renderCoinsStep = () => (
-    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
-      <View style={styles.centeredGroup}>
-        <View style={styles.headerSection}>
-          <Text style={styles.rewardAmount}>+{animatedCoinValue}</Text>
-        </View>
-        <View style={styles.contentSection}>
-          <View style={styles.centerContent}>
-            <Reanimated.Image
-              source={require('@/assets/images/icons/coal.png')}
-              style={[styles.rewardIcon, rewardIconAnimatedStyle]}
-            />
-            <Text style={styles.rewardMessage}>You earned {animatedCoinValue} embers</Text>
-            <Text style={styles.rewardSubtitle}>Start spending them when the shop is live!</Text>
-          </View>
-        </View>
-      </View>
-      <TouchableOpacity
-        style={[styles.actionButton, { backgroundColor: Theme.colors.special.primary.coin, borderBottomColor: Theme.colors.special.secondary.coin }]}
-        onPress={handleClose}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.actionButtonText}>Continue</Text>
-      </TouchableOpacity>
-    </Reanimated.View>
-  );
+
 
   const renderCurrentStep = () => {
     switch (currentStep) {
@@ -667,8 +602,6 @@ export default function RunCelebrationModal({
         return renderXpStep();
       case 'streak':
         return renderStreakStep();
-      case 'coins':
-        return renderCoinsStep();
       default:
         return renderStatsStep();
     }
@@ -737,9 +670,6 @@ const styles = StyleSheet.create({
   // Content Section
   contentSection: {
   },
-  centerContent: {
-    alignItems: 'center',
-  },
   sectionTitle: {
     fontSize: 18,
     fontFamily: Theme.fonts.semibold,
@@ -785,52 +715,7 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.semibold,
   },
 
-  // XP Section
-  xpBadge: {
-    paddingHorizontal: Theme.spacing.xxxl,
-    paddingVertical: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
-    backgroundColor: Theme.colors.special.primary.exp + '20',
-    borderRadius: Theme.borderRadius.large,
-    borderWidth: 2,
-    borderColor: Theme.colors.special.primary.exp + '40',
-  },
-  xpValue: {
-    fontSize: 48,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.special.primary.exp,
-    textAlign: 'center',
-    textShadowColor: Theme.colors.special.primary.exp + '30',
-    textShadowOffset: { width: 0, height: 2 },
-    textShadowRadius: 4,
-  },
 
-  // Progress Section
-  progressSection: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    width: '100%',
-    paddingHorizontal: Theme.spacing.lg,
-  },
-  progressLabel: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-    marginHorizontal: Theme.spacing.md,
-  },
-  progressBar: {
-    flex: 1,
-    height: 12,
-    borderRadius: 6,
-    backgroundColor: Theme.colors.background.secondary,
-    borderWidth: 1,
-    borderColor: Theme.colors.border.primary,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 6,
-    backgroundColor: Theme.colors.special.primary.exp,
-  },
 
   // Streak Section
   streakDisplay: {

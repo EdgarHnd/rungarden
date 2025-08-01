@@ -1,7 +1,7 @@
+import XpDisplayComponent from '@/components/modals/XpDisplayComponent';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
-import { Ionicons } from '@expo/vector-icons';
 import { useMutation } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
@@ -45,11 +45,12 @@ export default function RestCelebrationModal({
   const stepOpacity = useSharedValue(0);
   const rewardScale = useSharedValue(0);
   const xpCounterValue = useSharedValue(0);
-  const coinsCounterValue = useSharedValue(0);
+  const progressValue = useSharedValue(0);
+
 
   // Live counter state
   const [animatedXPValue, setAnimatedXPValue] = useState(0);
-  const [animatedCoinsValue, setAnimatedCoinsValue] = useState(0);
+  const [animatedProgress, setAnimatedProgress] = useState(0);
 
   // XP counter animation
   useAnimatedReaction(
@@ -60,14 +61,16 @@ export default function RestCelebrationModal({
     []
   );
 
-  // Coins counter animation
+  // Progress counter animation
   useAnimatedReaction(
-    () => coinsCounterValue.value,
+    () => progressValue.value,
     (value) => {
-      runOnJS(setAnimatedCoinsValue)(Math.floor(value));
+      runOnJS(setAnimatedProgress)(value);
     },
     []
   );
+
+
 
   // Animated styles
   const stepAnimatedStyle = useAnimatedStyle(() => {
@@ -89,6 +92,16 @@ export default function RestCelebrationModal({
     };
   });
 
+  const progressAnimatedStyle = useAnimatedStyle(() => {
+    return {
+      width: `${interpolate(
+        progressValue.value,
+        [0, 100],
+        [0, 100]
+      )}%` as const
+    };
+  });
+
   useEffect(() => {
     if (visible) {
       analytics.track({ name: 'rest_celebration_viewed' });
@@ -101,13 +114,15 @@ export default function RestCelebrationModal({
       stepOpacity.value = 0;
       rewardScale.value = 0;
       xpCounterValue.value = 0;
-      coinsCounterValue.value = 0;
+      progressValue.value = 0;
       setAnimatedXPValue(0);
-      setAnimatedCoinsValue(0);
+      setAnimatedProgress(0);
 
-      // Success haptic
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      // Initial entrance animation
       animateStepEntrance();
+
+      // Success haptic for modal opening
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
     }
   }, [visible]);
 
@@ -121,24 +136,74 @@ export default function RestCelebrationModal({
   }, [visible, currentStep]);
 
   const animateStepEntrance = () => {
+    // Reset step animations
     stepScale.value = 0;
     stepOpacity.value = 0;
 
-    stepScale.value = withSpring(1, { damping: 15, stiffness: 100 });
-    stepOpacity.value = withTiming(1, { duration: 300 });
+    // Entrance animation with bounce
+    stepScale.value = withSpring(1, {
+      damping: 15,
+      stiffness: 100,
+    });
+    stepOpacity.value = withTiming(1, {
+      duration: 300,
+    });
 
+    // Step-specific animations
     if (currentStep === 'rewards') {
       setTimeout(() => {
-        rewardScale.value = withSpring(1, { damping: 12, stiffness: 100 });
-        // Animate XP counter
-        xpCounterValue.value = withTiming(100, { duration: 1500 });
-        // Animate coins counter with slight delay for staggered effect
-        setTimeout(() => {
-          coinsCounterValue.value = withTiming(10, { duration: 1500 });
-        }, 200);
+        animateRewardDisplay();
+        animateXPCounter();
+        animateProgressBar();
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       }, 300);
     }
+  };
+
+  const animateRewardDisplay = () => {
+    rewardScale.value = withSpring(1, {
+      damping: 15,
+      stiffness: 100,
+    });
+  };
+
+  const animateXPCounter = () => {
+    const targetXP = completionResult?.rewards?.xpGained || 100;
+
+    // Heavy haptic for XP start
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+
+    // Fast animated counter
+    xpCounterValue.value = withTiming(targetXP, {
+      duration: 1500,
+    });
+
+    // Success haptic when animation finishes
+    setTimeout(() => {
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    }, 1500);
+  };
+
+  const animateProgressBar = () => {
+    // Calculate actual progress based on level progression
+    const oldLevel = completionResult?.rewards?.oldLevel || 1;
+    const newLevel = completionResult?.rewards?.newLevel || oldLevel;
+    const leveledUp = newLevel > oldLevel;
+
+    // If leveled up, show 100% (completed current level)
+    // If not leveled up, calculate actual progress within current level
+    let progressTarget = 60; // fallback
+    if (leveledUp) {
+      progressTarget = 100;
+    } else {
+      // Calculate progress based on rest XP gained
+      const restXP = completionResult?.rewards?.xpGained || 100;
+      progressTarget = Math.min(80, 20 + (restXP / 10)); // Proportional progress
+    }
+
+    progressValue.value = withTiming(progressTarget, {
+      duration: 1000,
+    });
   };
 
   const handleContinue = async () => {
@@ -205,16 +270,38 @@ export default function RestCelebrationModal({
     }
   };
 
+  const cleanupAfterClose = () => {
+    onClose();
+    // local state resets will happen in useEffect after modal closes
+  };
+
+  // Reset local state once the modal is actually closed
+  useEffect(() => {
+    if (!visible) {
+      setCurrentStep('info');
+      setIsCompleting(false);
+      setCompletionResult(null);
+      setHasAttemptedCompletion(false);
+    }
+  }, [visible]);
+
   const handleClose = () => {
     analytics.track({ name: 'rest_celebration_closed', properties: { closed_at_step: currentStep } });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
-    stepScale.value = withTiming(0, { duration: 200 });
-    stepOpacity.value = withTiming(0, { duration: 200 });
+    // Exit animation
+    stepScale.value = withTiming(0, {
+      duration: 200,
+    });
 
-    setTimeout(() => {
-      onClose();
-    }, 200);
+    // Animate opacity and trigger cleanup once the animation has finished
+    stepOpacity.value = withTiming(0, {
+      duration: 200,
+    }, (finished) => {
+      if (finished) {
+        runOnJS(cleanupAfterClose)();
+      }
+    });
   };
 
   const renderInfoStep = () => (
@@ -258,7 +345,7 @@ export default function RestCelebrationModal({
         activeOpacity={0.8}
       >
         <Text style={[styles.actionButtonText, (isCompleting || hasAttemptedCompletion) && styles.actionButtonTextDisabled]}>
-          {isCompleting ? 'COMPLETING REST...' : hasAttemptedCompletion ? 'CONTINUE' : '🧘‍♂️ COMPLETE REST DAY'}
+          {isCompleting ? 'COMPLETING REST...' : hasAttemptedCompletion ? 'CONTINUE' : 'COMPLETE REST DAY'}
         </Text>
       </TouchableOpacity>
     </Reanimated.View>
@@ -272,21 +359,15 @@ export default function RestCelebrationModal({
         </View>
 
         <View style={styles.contentSection}>
-          <Reanimated.View style={[styles.rewardsGrid, rewardAnimatedStyle]}>
-            <View style={styles.rewardCard}>
-              <Ionicons name="flash" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
-              <Text style={[styles.rewardValue, styles.rewardExpValue]}>+{animatedXPValue}</Text>
-              <Text style={styles.rewardLabel}>XP</Text>
-            </View>
-            <View style={styles.rewardCard}>
-              <Reanimated.Image
-                source={require('@/assets/images/icons/coal.png')}
-                style={styles.leafIcon}
-              />
-              <Text style={[styles.rewardValue, styles.rewardLeavesValue]}>+{animatedCoinsValue}</Text>
-              <Text style={styles.rewardLabel}>Embers</Text>
-            </View>
-          </Reanimated.View>
+          <XpDisplayComponent
+            animatedXPValue={animatedXPValue}
+            animatedProgress={animatedProgress}
+            currentLevel={completionResult?.rewards?.oldLevel || 1}
+            nextLevel={(completionResult?.rewards?.oldLevel || 1) + 1}
+            showProgressBar={true}
+            badgeAnimatedStyle={rewardAnimatedStyle}
+            progressAnimatedStyle={progressAnimatedStyle}
+          />
 
           <Text style={styles.rewardsMessage}>
             Taking care of your body earns rewards too!
@@ -295,7 +376,7 @@ export default function RestCelebrationModal({
       </View>
 
       <TouchableOpacity
-        style={[styles.actionButton, { backgroundColor: Theme.colors.special.primary.coin, borderBottomColor: Theme.colors.special.secondary.coin }]}
+        style={[styles.actionButton, { backgroundColor: Theme.colors.special.primary.exp, borderBottomColor: Theme.colors.special.secondary.exp }]}
         onPress={handleClose}
         activeOpacity={0.8}
       >
@@ -321,7 +402,7 @@ export default function RestCelebrationModal({
     <Modal
       visible={visible}
       transparent={true}
-      animationType="none"
+      animationType="slide"
       onRequestClose={handleClose}
     >
       <View style={styles.overlay}>
@@ -438,44 +519,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     textAlign: 'center',
   },
-  rewardsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-around',
-    marginBottom: Theme.spacing.xl,
-  },
-  rewardCard: {
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.xl,
-    paddingHorizontal: Theme.spacing.xxl,
-    minWidth: 120,
-  },
-  rewardEmoji: {
-    fontSize: 40,
-    marginBottom: Theme.spacing.md,
-  },
-  leafIcon: {
-    width: 40,
-    height: 40,
-    marginBottom: Theme.spacing.md,
-  },
-  rewardValue: {
-    fontSize: 28,
-    fontFamily: Theme.fonts.bold,
-    marginBottom: Theme.spacing.xs,
-  },
-  rewardExpValue: {
-    color: Theme.colors.special.primary.exp,
-  },
-  rewardLeavesValue: {
-    color: Theme.colors.special.primary.coin,
-  },
-  rewardLabel: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.tertiary,
-  },
+
   rewardsMessage: {
     fontSize: 16,
     fontFamily: Theme.fonts.regular,

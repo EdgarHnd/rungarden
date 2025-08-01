@@ -121,7 +121,7 @@ export default function XPInfoModal({ visible, onClose, levelInfo, metricSystem 
 
             <View style={styles.formulaContainer}>
               <Text style={styles.formula}>
-                {isMetric ? '1 kilometer = 100 XP' : '1 mile = 161 XP'}
+                Each training session earns you XP!
               </Text>
             </View>
           </View>
@@ -180,7 +180,7 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.medium,
     padding: 20,
     marginBottom: 10,
-    borderWidth: 2,
+    borderWidth: 4,
     borderColor: Theme.colors.background.tertiary,
   },
   levelHeader: {
@@ -208,7 +208,7 @@ const styles = StyleSheet.create({
   progressBar: {
     width: '100%',
     height: 6,
-    backgroundColor: Theme.colors.background.primary,
+    backgroundColor: Theme.colors.background.tertiary,
     borderRadius: Theme.borderRadius.xs,
     marginBottom: Theme.spacing.xs,
   },
