@@ -26,6 +26,7 @@ export default function SettingsScreen() {
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
   const updateMetricSystem = useMutation(api.userProfile.updateMetricSystem);
+  const updateProfile = useMutation(api.userProfile.updateProfile);
   const updateTrainingProfile = useMutation(api.trainingProfile.updateTrainingProfile);
   const pushNotificationSettings = useQuery(api.userProfile.getPushNotificationSettings);
 
@@ -666,10 +667,10 @@ export default function SettingsScreen() {
     );
   };
 
-  const handleMetricSystemToggle = async (useMetric: boolean) => {
+  const handleMetricSystemSelect = async (system: "metric" | "imperial") => {
     try {
-      analytics.track({ name: 'metric_system_toggled', properties: { metric_enabled: useMetric } });
-      await updateMetricSystem({ metricSystem: useMetric ? "metric" : "imperial" });
+      analytics.track({ name: 'metric_system_toggled', properties: { metric_enabled: system === "metric" } });
+      await updateMetricSystem({ metricSystem: system });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
       console.error('Error updating metric system:', error);
@@ -678,15 +679,15 @@ export default function SettingsScreen() {
     }
   };
 
-  const handleWorkoutStyleToggle = async (preferTime: boolean) => {
+  const handleFirstDayOfWeekSelect = async (startDay: 0 | 1) => {
     try {
-      analytics.track({ name: 'workout_style_toggled', properties: { prefer_time: preferTime } });
-      await updateTrainingProfile({ preferTimeOverDistance: preferTime });
+      analytics.track({ name: 'first_day_of_week_toggled', properties: { start_with_monday: startDay === 1 } });
+      await updateProfile({ weekStartDay: startDay });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error) {
-      console.error('Error updating workout style:', error);
+      console.error('Error updating first day of week:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert('Error', 'Failed to update workout style preference');
+      Alert.alert('Error', 'Failed to update first day of week preference');
     }
   };
 
@@ -816,55 +817,104 @@ export default function SettingsScreen() {
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         {/* Preferences Section */}
         <View style={styles.sectionGroup}>
-          {/* Metric System Toggle */}
+          <Text style={styles.sectionTitle}>Preferences</Text>
+          <Text style={styles.sectionDescription}>
+            Customize your app settings for units and calendar display.
+          </Text>
+
+          {/* Metric System Selection */}
           <View style={styles.section}>
             <View style={styles.sectionContent}>
               <View style={styles.syncOptionContent}>
                 <View style={styles.syncOptionHeader}>
                   <FontAwesome5 name="pencil-ruler" size={20} color={Theme.colors.text.primary} />
-                  <Text style={styles.syncOptionTitle}>Use Metric System</Text>
+                  <Text style={styles.syncOptionTitle}>Distance Units</Text>
                 </View>
-                <Text style={styles.syncOptionDescription}>
-                  {(profile?.metricSystem ?? "metric") === "metric"
-                    ? "Display distances in kilometers"
-                    : "Display distances in miles"
-                  }
-                </Text>
+                <View style={styles.buttonPairWrapper}>
+                  <View style={styles.buttonPairContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.selectionButton,
+                        (profile?.metricSystem ?? "metric") === "metric" && styles.selectionButtonSelected
+                      ]}
+                      onPress={() => handleMetricSystemSelect("metric")}
+                      disabled={isLoading}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[
+                        styles.selectionButtonText,
+                        (profile?.metricSystem ?? "metric") === "metric" && styles.selectionButtonTextSelected
+                      ]}>
+                        Metric
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.selectionButton,
+                        (profile?.metricSystem ?? "metric") === "imperial" && styles.selectionButtonSelected
+                      ]}
+                      onPress={() => handleMetricSystemSelect("imperial")}
+                      disabled={isLoading}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[
+                        styles.selectionButtonText,
+                        (profile?.metricSystem ?? "metric") === "imperial" && styles.selectionButtonTextSelected
+                      ]}>
+                        Imperial
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
-              <Switch
-                value={(profile?.metricSystem ?? "metric") === "metric"}
-                onValueChange={handleMetricSystemToggle}
-                trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.status.success }}
-                thumbColor={Theme.colors.text.primary}
-                ios_backgroundColor={Theme.colors.background.tertiary}
-                disabled={isLoading}
-              />
             </View>
           </View>
 
-          {/* Workout Style Toggle */}
+          {/* First Day of Week Selection */}
           <View style={styles.section}>
             <View style={styles.sectionContent}>
               <View style={styles.syncOptionContent}>
                 <View style={styles.syncOptionHeader}>
-                  <FontAwesome5 name="clock" size={20} color={Theme.colors.text.primary} />
-                  <Text style={styles.syncOptionTitle}>Workout Style (Distance vs Duration)</Text>
+                  <FontAwesome5 name="calendar-week" size={20} color={Theme.colors.text.primary} />
+                  <Text style={styles.syncOptionTitle}>First Day of Week</Text>
                 </View>
-                <Text style={styles.syncOptionDescription}>
-                  {(trainingProfile?.preferTimeOverDistance ?? true)
-                    ? "Time-based workouts (e.g., 20 min easy run)"
-                    : "Distance-based workouts (e.g., 3km easy run)"
-                  }
-                </Text>
+                <View style={styles.buttonPairWrapper}>
+                  <View style={styles.buttonPairContainer}>
+                    <TouchableOpacity
+                      style={[
+                        styles.selectionButton,
+                        (profile?.weekStartDay ?? 1) === 1 && styles.selectionButtonSelected
+                      ]}
+                      onPress={() => handleFirstDayOfWeekSelect(1)}
+                      disabled={isLoading}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[
+                        styles.selectionButtonText,
+                        (profile?.weekStartDay ?? 1) === 1 && styles.selectionButtonTextSelected
+                      ]}>
+                        Monday
+                      </Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={[
+                        styles.selectionButton,
+                        (profile?.weekStartDay ?? 1) === 0 && styles.selectionButtonSelected
+                      ]}
+                      onPress={() => handleFirstDayOfWeekSelect(0)}
+                      disabled={isLoading}
+                      activeOpacity={0.7}
+                    >
+                      <Text style={[
+                        styles.selectionButtonText,
+                        (profile?.weekStartDay ?? 1) === 0 && styles.selectionButtonTextSelected
+                      ]}>
+                        Sunday
+                      </Text>
+                    </TouchableOpacity>
+                  </View>
+                </View>
               </View>
-              <Switch
-                value={trainingProfile?.preferTimeOverDistance ?? true}
-                onValueChange={handleWorkoutStyleToggle}
-                trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.status.success }}
-                thumbColor={Theme.colors.text.primary}
-                ios_backgroundColor={Theme.colors.background.tertiary}
-                disabled={isLoading}
-              />
             </View>
           </View>
 
@@ -1548,5 +1598,42 @@ const styles = StyleSheet.create({
   iconImage: {
     width: 20,
     height: 20,
+  },
+  buttonPairWrapper: {
+    marginTop: Theme.spacing.md,
+    alignItems: 'flex-end',
+  },
+  buttonPairLabel: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    marginBottom: Theme.spacing.xs,
+    textAlign: 'center',
+  },
+  buttonPairContainer: {
+    flexDirection: 'row',
+    borderRadius: Theme.borderRadius.medium,
+    overflow: 'hidden',
+    backgroundColor: Theme.colors.background.tertiary,
+  },
+  selectionButton: {
+    flex: 1,
+    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.md,
+    backgroundColor: 'transparent',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  selectionButtonSelected: {
+    backgroundColor: Theme.colors.special.primary.level,
+  },
+  selectionButtonText: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  selectionButtonTextSelected: {
+    color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.semibold,
   },
 }); 

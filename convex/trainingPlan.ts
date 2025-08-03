@@ -553,6 +553,162 @@ export const generateTrainingPlan = mutation({
   },
 });
 
+// Update training schedule while preserving existing workouts
+export const updateTrainingSchedule = mutation({
+  args: {
+    preferredDays: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get active training plan
+    const activePlan = await ctx.db
+      .query("trainingPlans")
+      .withIndex("by_user_active", (q: any) => q.eq("userId", userId).eq("isActive", true))
+      .first();
+
+    if (!activePlan) {
+      throw new Error("No active training plan found");
+    }
+
+    // Get training profile
+    const profile = await ctx.db
+      .query("trainingProfiles")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .first();
+
+    if (!profile) {
+      throw new Error("Training profile not found");
+    }
+
+    // Get user's week start preference
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .first();
+
+    const weekStartDay = userProfile?.weekStartDay ?? 1; // 0=Sun,1=Mon
+
+    // Create day mapping based on user's week start preference
+    let dayNameToIndex: Record<string, number>;
+    if (weekStartDay === 1) { // Monday start
+      dayNameToIndex = {
+        'Mon': 0, 'Tue': 1, 'Wed': 2, 'Thu': 3, 'Fri': 4, 'Sat': 5, 'Sun': 6
+      };
+    } else { // Sunday start
+      dayNameToIndex = {
+        'Sun': 0, 'Mon': 1, 'Tue': 2, 'Wed': 3, 'Thu': 4, 'Fri': 5, 'Sat': 6
+      };
+    }
+
+    const preferredDayIndices = args.preferredDays.map(day => dayNameToIndex[day]).sort((a, b) => a - b);
+
+    // Today's date
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const todayStr = today.toISOString().split("T")[0];
+
+    // Get all future planned workouts (scheduled for today or later)
+    const futureWorkouts = await ctx.db
+      .query("plannedWorkouts")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .filter((q: any) => q.gte(q.field("scheduledDate"), todayStr))
+      .collect();
+
+    // Group workouts by week and workout type to maintain training structure
+    const workoutsByWeek = new Map<number, any[]>();
+    
+    // Update the plan structure and reschedule future workouts
+    const updatedPlan = { ...activePlan };
+    
+    for (let weekIdx = 0; weekIdx < updatedPlan.plan.length; weekIdx++) {
+      const week = updatedPlan.plan[weekIdx];
+      
+      // Get non-rest workouts for this week to reschedule
+      const weekWorkouts = week.days.filter(day => day.workoutTemplateId);
+      
+      if (weekWorkouts.length === 0) continue;
+
+      // Check if this week has any future workouts
+      const hasCurrentOrFutureWorkouts = weekWorkouts.some(day => day.date >= todayStr);
+      
+      if (!hasCurrentOrFutureWorkouts) continue;
+
+      // Calculate week start date
+      const firstDayOfWeek = new Date(week.days[0].date);
+      const weekStartDate = new Date(firstDayOfWeek);
+      
+      // Find week start based on user preference
+      const firstDayIndex = firstDayOfWeek.getDay();
+      const daysToSubtract = weekStartDay === 1 
+        ? (firstDayIndex === 0 ? 6 : firstDayIndex - 1) 
+        : firstDayIndex;
+      weekStartDate.setDate(firstDayOfWeek.getDate() - daysToSubtract);
+
+      // Reschedule workouts to preferred days
+      let workoutIndex = 0;
+      for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
+        const currentDay = week.days[dayIdx];
+        const currentDate = new Date(weekStartDate);
+        currentDate.setDate(weekStartDate.getDate() + dayIdx);
+        const currentDateStr = currentDate.toISOString().split("T")[0];
+
+        // Skip dates in the past
+        if (currentDateStr < todayStr) {
+          continue;
+        }
+
+        // Check if this is a preferred day and we have workouts to schedule
+        const isPreferredDay = preferredDayIndices.includes(dayIdx);
+        
+        if (isPreferredDay && workoutIndex < weekWorkouts.length) {
+          const workoutToSchedule = weekWorkouts[workoutIndex];
+          
+          // Find the corresponding planned workout
+          const plannedWorkout = futureWorkouts.find(pw => 
+            pw.workoutTemplateId === workoutToSchedule.workoutTemplateId &&
+            pw.scheduledDate === workoutToSchedule.date
+          );
+
+          if (plannedWorkout) {
+            // Update the planned workout's scheduled date
+            await ctx.db.patch(plannedWorkout._id, {
+              scheduledDate: currentDateStr,
+            });
+          }
+
+          // Update the plan structure
+          updatedPlan.plan[weekIdx].days[dayIdx] = {
+            ...workoutToSchedule,
+            date: currentDateStr,
+          };
+
+          workoutIndex++;
+        } else {
+          // This is a rest day
+          updatedPlan.plan[weekIdx].days[dayIdx] = {
+            date: currentDateStr,
+            workoutTemplateId: undefined,
+            description: "R",
+            type: "rest",
+          };
+        }
+      }
+    }
+
+    // Update the training plan with new structure
+    await ctx.db.patch(activePlan._id, {
+      plan: updatedPlan.plan,
+      updatedAt: new Date().toISOString(),
+    });
+
+    return { message: "Training schedule updated successfully. Past workouts preserved." };
+  },
+});
+
 // Get user's active training plan
 export const getActiveTrainingPlan = query({
   args: {},

@@ -713,7 +713,8 @@ export default function ActivePlanView({ activePlan, completedMap, userId }: { a
                     subtitle: 'Finish all workouts to unlock your reward',
                     buttonText: 'CLOSE',
                     buttonAction: 'close' as const,
-                    buttonStyle: styles.chestBubbleBtnClose
+                    buttonStyle: styles.chestBubbleBtnClose,
+                    buttonTxtStyle: styles.chestBubbleBtnCloseTxt
                   };
                 case 'unlocked':
                   return {
@@ -721,7 +722,8 @@ export default function ActivePlanView({ activePlan, completedMap, userId }: { a
                     subtitle: 'Tap to claim your reward',
                     buttonText: 'CLAIM',
                     buttonAction: 'claim' as const,
-                    buttonStyle: styles.chestBubbleBtnClaim
+                    buttonStyle: styles.chestBubbleBtnClaim,
+                    buttonTxtStyle: styles.chestBubbleBtnTxt
                   };
                 case 'claimed':
                   return {
@@ -729,7 +731,8 @@ export default function ActivePlanView({ activePlan, completedMap, userId }: { a
                     subtitle: 'You\'ve already claimed this reward',
                     buttonText: 'VIEW',
                     buttonAction: 'view' as const,
-                    buttonStyle: styles.chestBubbleBtnView
+                    buttonStyle: styles.chestBubbleBtnView,
+                    buttonTxtStyle: styles.chestBubbleBtnTxt
                   };
                 default:
                   return {
@@ -737,7 +740,8 @@ export default function ActivePlanView({ activePlan, completedMap, userId }: { a
                     subtitle: '',
                     buttonText: 'CLOSE',
                     buttonAction: 'close' as const,
-                    buttonStyle: styles.chestBubbleBtnClose
+                    buttonStyle: styles.chestBubbleBtnClose,
+                    buttonTxtStyle: styles.chestBubbleBtnCloseTxt
                   };
               }
             };
@@ -775,7 +779,7 @@ export default function ActivePlanView({ activePlan, completedMap, userId }: { a
                     style={[styles.chestBubbleBtn, content.buttonStyle]}
                     onPress={() => handleChestBubbleAction(content.buttonAction)}
                   >
-                    <Text style={styles.chestBubbleBtnTxt}>{content.buttonText}</Text>
+                    <Text style={content.buttonTxtStyle}>{content.buttonText}</Text>
                   </TouchableOpacity>
                 </View>
               </>
@@ -961,7 +965,7 @@ const styles = StyleSheet.create({
   },
   chestBubbleBtnClose: {
     backgroundColor: Theme.colors.background.secondary,
-    borderColor: Theme.colors.background.primary,
+    borderBottomWidth: 0,
   },
   chestBubbleBtnClaim: {
     backgroundColor: Theme.colors.special.primary.plan,
@@ -969,10 +973,15 @@ const styles = StyleSheet.create({
   },
   chestBubbleBtnView: {
     backgroundColor: Theme.colors.background.secondary,
-    borderColor: Theme.colors.background.primary,
+    borderBottomWidth: 0,
   },
   chestBubbleBtnTxt: {
     color: Theme.colors.text.primary,
+    fontFamily: Theme.fonts.bold,
+    fontSize: 18,
+  },
+  chestBubbleBtnCloseTxt: {
+    color: Theme.colors.text.tertiary,
     fontFamily: Theme.fonts.bold,
     fontSize: 18,
   },
@@ -981,7 +990,7 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   fab: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
     width: 60,
     height: 60,
     borderRadius: 30,

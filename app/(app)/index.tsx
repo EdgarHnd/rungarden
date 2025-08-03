@@ -21,7 +21,8 @@ import { useConvex, useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useFocusEffect, useRouter } from 'expo-router';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, Easing, Image, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Alert, Dimensions, Easing, Image, Modal, Animated as RNAnimated, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+
 import Rive, { RiveRef } from "rive-react-native";
 
 // Constants for scrolling background
@@ -78,21 +79,20 @@ export default function HomeScreen() {
   const resetTrainingPlan = useMutation(api.trainingPlan.resetTrainingPlan);
   // const processAchievements = useMutation(api.achievements.processAchievementsForActivity);
 
-  // Proper state management for week navigation
+  // Simplified state management - back to basics
   const [currentWeekIndex, setCurrentWeekIndex] = useState(1); // 0=last week, 1=this week, 2=next week
   const [currentDayIndex, setCurrentDayIndex] = useState(0);
-  const scrollX = useRef(new Animated.Value(0)).current;
+  const [selectedDayPosition, setSelectedDayPosition] = useState(2); // Position in week view (0-4)
+
+  const scrollX = useRef(new RNAnimated.Value(0)).current;
   const [currentAnimationType, setCurrentAnimationType] = useState<'running' | 'idle'>('idle');
   const [showPuff, setShowPuff] = useState(false);
   const [isBgAnimationRunning, setIsBgAnimationRunning] = useState(false);
-  const bgAnimationRef = useRef<Animated.CompositeAnimation | null>(null);
+  const bgAnimationRef = useRef<RNAnimated.CompositeAnimation | null>(null);
   const isTransitioningRef = useRef(false);
-  const scaleAnim = useRef(new Animated.Value(1)).current;
+  const scaleAnim = useRef(new RNAnimated.Value(1)).current;
   const [riveUrl, setRiveUrl] = useState<string | null>(null);
   const [riveRef, setRiveRef] = useState<RiveRef | null>(null);
-
-  // Add debounce ref to prevent cascading updates
-  const updateTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Add Rive refs for controlling the animations
   const runningRiveRef = useRef<RiveRef>(null);
@@ -134,8 +134,7 @@ export default function HomeScreen() {
   // Weekly Progress modal state
   const [showWeeklyProgressModal, setShowWeeklyProgressModal] = useState(false);
 
-  // Selected day position in week view (0-4)
-  const [selectedDayPosition, setSelectedDayPosition] = useState(2); // Default to center position
+
 
   // Refresh streak on first app load of the day
   const [streakRefreshed, setStreakRefreshed] = useState(false);
@@ -171,8 +170,8 @@ export default function HomeScreen() {
   const startBgAnimation = () => {
     if (isBgAnimationRunning) return;
     scrollX.setValue(0);
-    const bgAnimation = Animated.loop(
-      Animated.timing(scrollX, {
+    const bgAnimation = RNAnimated.loop(
+      RNAnimated.timing(scrollX, {
         toValue: -SCROLLING_BG_LOOP_WIDTH,
         duration: SCROLLING_BG_ANIMATION_DURATION,
         easing: Easing.linear,
@@ -507,14 +506,7 @@ export default function HomeScreen() {
     }
   }, [profile]);
 
-  // Set initial day index to today
-  useEffect(() => {
-    if (activities && plannedWorkouts) {
-      const { todayIndex } = generateWeekData();
-      setCurrentDayIndex(todayIndex);
-      setCurrentWeekIndex(Math.floor(todayIndex / 7)); // Set current week based on today
-    }
-  }, [activities, plannedWorkouts, weekStartDay]);
+
 
   // Create profile if it doesn't exist
   useEffect(() => {
@@ -752,12 +744,8 @@ export default function HomeScreen() {
 
   const { weeks, allDays } = weekData;
 
-  // Use useCallback for stable handler references
+  // Simplified day selection with smooth transitions
   const handleDaySelect = useCallback((dayIndex: number) => {
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
-
     analytics.track({
       name: 'day_selected',
       properties: {
@@ -767,22 +755,17 @@ export default function HomeScreen() {
     });
     Haptics.selectionAsync();
 
-    // Batch the state updates to prevent cascading re-renders
-    updateTimeoutRef.current = setTimeout(() => {
-      setCurrentDayIndex(dayIndex);
+    // Simple state updates
+    setCurrentDayIndex(dayIndex);
 
-      // Update current week index based on selected day
-      const weekIndex = Math.floor(dayIndex / 7);
-      if (weekIndex !== currentWeekIndex) {
-        setCurrentWeekIndex(weekIndex);
-      }
-    }, 0);
-  }, [currentWeekIndex]);
+    // Update current week index based on selected day
+    const weekIndex = Math.floor(dayIndex / 7);
+    if (weekIndex !== currentWeekIndex) {
+      setCurrentWeekIndex(weekIndex);
+    }
+  }, [currentWeekIndex, allDays]);
 
   const handleWeekChange = useCallback((weekIndex: number) => {
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
     analytics.track({
       name: 'week_changed',
       properties: {
@@ -792,94 +775,89 @@ export default function HomeScreen() {
 
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
-    // Batch the state updates to prevent cascading re-renders
-    updateTimeoutRef.current = setTimeout(() => {
-      setCurrentWeekIndex(weekIndex);
+    // Simple state updates
+    setCurrentWeekIndex(weekIndex);
 
-      // Auto-select today if it's in the selected week, otherwise select first day
-      const today = new Date();
-      const todayIndex = allDays.findIndex(day =>
-        new Date(day.date).toDateString() === today.toDateString()
-      );
+    // Auto-select today if it's in the selected week, otherwise select first day
+    const today = new Date();
+    const todayIndex = allDays.findIndex(day =>
+      new Date(day.date).toDateString() === today.toDateString()
+    );
 
-      const weekStartIndex = weekIndex * 7;
-      const weekEndIndex = weekStartIndex + 6;
+    const weekStartIndex = weekIndex * 7;
+    const weekEndIndex = weekStartIndex + 6;
 
-      if (todayIndex >= weekStartIndex && todayIndex <= weekEndIndex) {
-        setCurrentDayIndex(todayIndex);
-      } else {
-        setCurrentDayIndex(weekStartIndex);
-      }
-    }, 0);
+    let targetDayIndex;
+    if (todayIndex >= weekStartIndex && todayIndex <= weekEndIndex) {
+      targetDayIndex = todayIndex;
+    } else {
+      targetDayIndex = weekStartIndex;
+    }
+
+    setCurrentDayIndex(targetDayIndex);
   }, [allDays]);
 
-  // Debounced effect for animation type and background animation changes
+  // Simplified character animation updates
   useEffect(() => {
     if (allDays.length === 0 || isTransitioningRef.current) return;
 
-    // Clear any existing timeout
-    if (updateTimeoutRef.current) {
-      clearTimeout(updateTimeoutRef.current);
-    }
+    const selectedDayData = allDays[currentDayIndex];
+    if (selectedDayData) {
+      const workoutType = getActivityType(selectedDayData.plannedWorkout);
+      const newAnimationType: 'running' | 'idle' = workoutType === 'rest' ? 'idle' : 'running';
 
-    // Debounce the animation changes to prevent flickering
-    updateTimeoutRef.current = setTimeout(() => {
-      const selectedDayData = allDays[currentDayIndex];
-      if (selectedDayData) {
-        const workoutType = getActivityType(selectedDayData.plannedWorkout);
-        const newAnimationType: 'running' | 'idle' = workoutType === 'rest' ? 'idle' : 'running';
-
-        if (newAnimationType === 'running') {
-          startBgAnimation();
-        } else {
-          stopBgAnimation();
-        }
-
-        if (currentAnimationType !== newAnimationType) {
-          isTransitioningRef.current = true;
-          setShowPuff(true);
-          // Scale down animation with smooth easing
-          Animated.timing(scaleAnim, {
-            toValue: 0,
-            duration: 150,
-            easing: Easing.out(Easing.cubic),
-            useNativeDriver: true,
-          }).start(() => {
-            // Change animation type at scale 0
-            setCurrentAnimationType(newAnimationType);
-
-            // Scale back up with bouncy easing
-            Animated.sequence([
-              Animated.timing(scaleAnim, {
-                toValue: 1,
-                duration: 80,
-                easing: Easing.out(Easing.back(1.2)),
-                useNativeDriver: true,
-              }),
-              Animated.timing(scaleAnim, {
-                toValue: 1,
-                duration: 100,
-                easing: Easing.out(Easing.quad),
-                useNativeDriver: true,
-              })
-            ]).start(() => {
-              setShowPuff(false);
-              isTransitioningRef.current = false;
-            });
-          });
-        }
+      // Update background animation
+      if (newAnimationType === 'running') {
+        startBgAnimation();
+      } else {
+        stopBgAnimation();
       }
-    }, 100); // 100ms debounce to prevent rapid changes
+
+      // Update character animation type if needed
+      if (currentAnimationType !== newAnimationType) {
+        isTransitioningRef.current = true;
+        setShowPuff(true);
+        // Scale down animation with smooth easing
+        RNAnimated.timing(scaleAnim, {
+          toValue: 0,
+          duration: 150,
+          easing: Easing.out(Easing.cubic),
+          useNativeDriver: true,
+        }).start(() => {
+          // Change animation type at scale 0
+          setCurrentAnimationType(newAnimationType);
+
+          // Scale back up with bouncy easing
+          RNAnimated.sequence([
+            RNAnimated.timing(scaleAnim, {
+              toValue: 1,
+              duration: 80,
+              easing: Easing.out(Easing.back(1.2)),
+              useNativeDriver: true,
+            }),
+            RNAnimated.timing(scaleAnim, {
+              toValue: 1,
+              duration: 100,
+              easing: Easing.out(Easing.quad),
+              useNativeDriver: true,
+            })
+          ]).start(() => {
+            setShowPuff(false);
+            isTransitioningRef.current = false;
+          });
+        });
+      }
+    }
   }, [allDays, currentDayIndex, currentAnimationType]);
 
-  // Cleanup timeout on unmount
+  // Initialize day index to today
   useEffect(() => {
-    return () => {
-      if (updateTimeoutRef.current) {
-        clearTimeout(updateTimeoutRef.current);
-      }
-    };
-  }, []);
+    if (activities && plannedWorkouts) {
+      const { todayIndex } = generateWeekData();
+      setCurrentDayIndex(todayIndex);
+      setCurrentWeekIndex(Math.floor(todayIndex / 7));
+    }
+  }, [activities, plannedWorkouts, weekStartDay]);
 
   // Helper function to calculate week-specific run progress
   const getWeekProgress = (weekIndex: number) => {
@@ -1536,7 +1514,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'space-between',
     paddingHorizontal: Theme.spacing.xxxl,
-    marginBottom: 30
+    marginBottom: 20
   },
   flamesContainer: {
     flexDirection: 'row',

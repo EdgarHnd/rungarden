@@ -50,22 +50,6 @@ const getWorkoutTypeColor = (type: string): string => {
   return colorMap[type] || colorMap['run'];
 };
 
-const getWorkoutIcon = (type: string): any => {
-  const iconMap: Record<string, any> = {
-    'easy': 'footsteps-outline',
-    'tempo': 'flame-outline',
-    'interval': 'flash-outline',
-    'long': 'map-outline',
-    'recovery': 'leaf-outline',
-    'cross-train': 'bicycle-outline',
-    'strength': 'barbell-outline',
-    'rest': 'moon-outline',
-    'race': 'trophy-outline',
-    'run': 'footsteps-outline'
-  };
-  return iconMap[type] || 'footsteps-outline';
-};
-
 const getWorkoutDisplayName = (type: string): string => {
   const displayNames: Record<string, string> = {
     'easy': 'Easy Run',

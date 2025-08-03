@@ -1,5 +1,4 @@
 import Theme from '@/constants/theme';
-import { Ionicons } from '@expo/vector-icons';
 import React from 'react';
 import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -49,8 +48,7 @@ export default function RestWorkoutCard({ restActivity, onPress }: RestWorkoutCa
       {/* Stats Section */}
       <View style={styles.statsContainer}>
         <View style={styles.statItem}>
-          <Text style={styles.statValue}>+{restActivity.xpGained}</Text>
-          <Ionicons name="flash" size={16} color={Theme.colors.special.primary.exp} />
+          <Text style={styles.statValue}>+{restActivity.xpGained} XP</Text>
         </View>
       </View>
 

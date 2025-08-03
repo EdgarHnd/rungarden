@@ -468,6 +468,23 @@ export function useRunTracker() {
     advanceToNextStep();
   }, [isStructuredWorkout, currentStep]);
 
+  // Manual step back for structured workouts (user can go back)
+  const skipToPreviousStep = useCallback(() => {
+    if (!isStructuredWorkout || !currentStep || currentStep.stepIndex === 0) return;
+
+    const prevIndex = currentStep.stepIndex - 1;
+    const prevStep = workoutSteps[prevIndex];
+    
+    setCurrentStep({
+      step: prevStep,
+      stepIndex: prevIndex,
+      totalSteps: workoutSteps.length,
+      stepElapsed: 0, // Reset timer for previous step
+      stepDuration: prevStep.duration ? parseDurationToSeconds(prevStep.duration) : 300,
+      isComplete: false,
+    });
+  }, [isStructuredWorkout, currentStep, workoutSteps]);
+
   // Cleanup on unmount
   useEffect(() => {
     return () => {
@@ -516,5 +533,6 @@ export function useRunTracker() {
     stop,
     reset,
     skipToNextStep, // new function for structured workouts
+    skipToPreviousStep, // new function for structured workouts
   } as const;
 } 

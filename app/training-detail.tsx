@@ -109,7 +109,7 @@ export default function TrainingDetailScreen() {
   const activity: Activity | null = plannedWorkout ? {
     type: plannedWorkout.workout?.subType || plannedWorkout.workout?.type || 'run',
     title: plannedWorkout.hydrated?.description || (plannedWorkout.workout?.name?.startsWith('TOKEN_') ? plannedWorkout.workout?.description : plannedWorkout.workout?.name) || 'Training Session',
-    description: plannedWorkout.hydrated?.globalDescription || plannedWorkout.workout?.description || '',
+    description: plannedWorkout.hydrated?.displaySteps[1].notes || '',
     duration: extractDurationFromSteps(plannedWorkout.executableSteps || plannedWorkout.workout?.steps || []),
     distance: extractDistanceFromSteps(plannedWorkout.workout?.steps || []),
     emoji: getWorkoutEmoji(plannedWorkout.workout?.subType || plannedWorkout.workout?.type || 'run'),
@@ -498,7 +498,6 @@ export default function TrainingDetailScreen() {
       <View style={styles.workoutBreakdownSection}>
         <View style={styles.descriptionHeader}>
           <View style={styles.descriptionHeaderLeft}>
-            <Ionicons name="list-outline" size={24} color={Theme.colors.text.primary} />
             <Text style={styles.descriptionHeaderText}>Workout Session</Text>
           </View>
         </View>
@@ -625,7 +624,7 @@ export default function TrainingDetailScreen() {
         <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
           {isWorkoutCompleted && (
             <View style={styles.completedBanner}>
-              <Text style={styles.completedBannerText}>✅ WORKOUT COMPLETED</Text>
+              <Text style={styles.completedBannerText}>WORKOUT COMPLETED</Text>
             </View>
           )}
           <View style={styles.workoutTypeContainer}>
@@ -668,7 +667,7 @@ export default function TrainingDetailScreen() {
         {/* Expected Rewards */}
         {isWorkoutCompleted ? (
           <View style={styles.completedActivitiesSection}>
-            <Text style={styles.sectionTitle}>🎉 Completed Activities</Text>
+            <Text style={styles.sectionTitle}>Linked Activity</Text>
             {linkedActivities?.map((completedActivity, index) => (
               <View key={index} style={styles.completedActivityCard}>
                 <View style={styles.activityInfo}>
@@ -703,8 +702,7 @@ export default function TrainingDetailScreen() {
             <Text style={styles.sectionTitle}>Rewards</Text>
             <View style={styles.rewardsGrid}>
               <View style={styles.rewardCard}>
-                <Text style={styles.rewardExpValue}>+{rewards.xp}</Text>
-                <Ionicons name="flash" size={24} style={styles.rewardEmoji} color={Theme.colors.special.primary.exp} />
+                <Text style={styles.rewardExpValue}>+{rewards.xp} XP</Text>
               </View>
               {/* <View style={styles.rewardCard}>
                 <Image source={require('@/assets/images/icons/coal.png')} style={styles.rewardImage} />
@@ -981,10 +979,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginTop: 100,
   },
-
   workoutBreakdownSection: {
     paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
+    marginBottom: Theme.spacing.xl,
   },
   descriptionHeader: {
     flexDirection: 'row',
@@ -1122,8 +1119,6 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
     alignItems: 'center',
-    borderLeftWidth: 4,
-    borderLeftColor: Theme.colors.status.success,
   },
   activityInfo: {
     flex: 1,
@@ -1140,7 +1135,7 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
   },
   viewActivityButton: {
-    backgroundColor: Theme.colors.accent.primary,
+    backgroundColor: Theme.colors.special.primary.exp,
     borderRadius: Theme.borderRadius.medium,
     paddingHorizontal: Theme.spacing.md,
     paddingVertical: Theme.spacing.sm,

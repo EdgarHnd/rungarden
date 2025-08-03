@@ -3,7 +3,12 @@ import { getActivityType } from '@/constants/types';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { LinearGradient } from 'expo-linear-gradient';
 import React from 'react';
-import { Animated, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring
+} from 'react-native-reanimated';
 
 interface DayData {
   date: string;
@@ -19,6 +24,19 @@ interface WeekViewHorizontalProps {
   onDaySelect: (dayIndex: number) => void;
   onSelectedPositionChange?: (position: number) => void; // New prop to track position
 }
+
+// Animation spring configs for consistent feel
+const SPRING_CONFIG = {
+  damping: 15,
+  stiffness: 150,
+  mass: 1,
+};
+
+const PRESS_SPRING_CONFIG = {
+  damping: 20,
+  stiffness: 300,
+  mass: 0.8,
+};
 
 export default function WeekViewHorizontal({
   dayData,
@@ -60,6 +78,14 @@ export default function WeekViewHorizontal({
   }
 
   const displayDays = dayData.slice(startIndex, endIndex);
+
+  // Update selected position when currentDayIndex changes
+  React.useEffect(() => {
+    const positionInView = currentDayIndex - startIndex;
+    if (positionInView >= 0 && positionInView < displayDays.length && onSelectedPositionChange) {
+      onSelectedPositionChange(positionInView);
+    }
+  }, [currentDayIndex, startIndex, displayDays.length, onSelectedPositionChange]);
 
   const getDayLabel = (dateString: string): string => {
     const date = new Date(dateString);
@@ -114,41 +140,32 @@ export default function WeekViewHorizontal({
     isDayToday: boolean;
     positionIndex: number;
   }) => {
-    const scaleAnim = React.useRef(new Animated.Value(1)).current;
+    const pressScale = useSharedValue(1);
+
+    const animatedStyle = useAnimatedStyle(() => {
+      return {
+        transform: [{ scale: pressScale.value }],
+      };
+    });
 
     const handlePressIn = () => {
-      Animated.spring(scaleAnim, {
-        toValue: 0.95,
-        useNativeDriver: true,
-      }).start();
+      pressScale.value = withSpring(0.95, PRESS_SPRING_CONFIG);
     };
 
     const handlePressOut = () => {
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        useNativeDriver: true,
-      }).start();
+      pressScale.value = withSpring(1, PRESS_SPRING_CONFIG);
     };
-
-    // Notify parent of selected position when this card is selected
-    React.useEffect(() => {
-      if (isSelected && onSelectedPositionChange) {
-        onSelectedPositionChange(positionIndex);
-      }
-    }, [isSelected, positionIndex]);
 
     if (isSelected) {
       return (
-        <Animated.View style={[{ transform: [{ scale: scaleAnim }] }]}>
+        <Animated.View style={animatedStyle}>
           <TouchableOpacity
             onPress={() => onDaySelect(globalIndex)}
             onPressIn={handlePressIn}
             onPressOut={handlePressOut}
             activeOpacity={1}
           >
-            <View
-              style={[styles.dayCard, styles.selectedDayCard]}
-            >
+            <View style={[styles.dayCard, styles.selectedDayCard]}>
               <View style={styles.dateContainer}>
                 <Text style={[styles.dayLabel, styles.selectedDayLabel]}>
                   {getDayLabel(day.date)}
@@ -167,17 +184,20 @@ export default function WeekViewHorizontal({
     }
 
     return (
-      <Animated.View style={[{ transform: [{ scale: scaleAnim }] }]}>
+      <Animated.View style={animatedStyle}>
         <TouchableOpacity
           onPress={() => onDaySelect(globalIndex)}
           onPressIn={handlePressIn}
           onPressOut={handlePressOut}
           activeOpacity={1}
         >
-          <LinearGradient colors={[Theme.colors.background.tertiary, Theme.colors.background.primary]} style={[
-            styles.dayCard,
-            isDayToday && styles.todayDayCard,
-          ]}>
+          <LinearGradient
+            colors={[Theme.colors.background.tertiary, Theme.colors.background.primary]}
+            style={[
+              styles.dayCard,
+              isDayToday && styles.todayDayCard,
+            ]}
+          >
             <View style={styles.dateContainer}>
               <Text style={[
                 styles.dayLabel,
@@ -248,7 +268,7 @@ const styles = StyleSheet.create({
   },
   selectedDayCard: {
     width: 80,
-    height: 150,
+    height: 130,
     borderRadius: 40,
     backgroundColor: Theme.colors.background.tertiary,
     borderColor: 'transparent',

@@ -34,8 +34,8 @@ export const WORKOUT_LIBRARY: Record<string, WorkoutSkeleton> = {
     type: "run",
     description: "Walk/Run",
     globalDescription: "Build your running endurance gradually with structured walk-run intervals. This proven approach helps beginners develop cardiovascular fitness while reducing injury risk.",
-    warmup: { label: "Warmup", duration: "5 min", effort: "easy" },
-    cooldown: { label: "Cool-down", duration: "5 min", effort: "easy" },
+    warmup: { label: "Warmup Walk", duration: "5 min", effort: "easy" },
+    cooldown: { label: "Cool-down Walk", duration: "5 min", effort: "easy" },
     xp: 300,
     variants: {
       "1": { pattern: "60s run / 90s walk", repeats: 8, summary: "Repeat 8 times: 60 sec run, 90 sec walk" },

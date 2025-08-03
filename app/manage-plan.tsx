@@ -20,6 +20,7 @@ export default function ManagePlanScreen() {
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const updateTrainingProfile = useMutation(api.trainingProfile.updateTrainingProfile);
   const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
+  const updateTrainingSchedule = useMutation(api.trainingPlan.updateTrainingSchedule);
   const deleteTrainingPlan = useMutation(api.trainingPlan.deleteTrainingPlan);
 
   const [goalDistance, setGoalDistance] = useState(trainingProfile?.goalDistance || '5K');
@@ -60,9 +61,11 @@ export default function ManagePlanScreen() {
           preferredDays,
         });
 
-        // Generate new AI training plan with updated schedule
+        // Update the training schedule while preserving existing workouts
         setIsGenerating(true);
-        await generateTrainingPlan();
+        await updateTrainingSchedule({
+          preferredDays,
+        });
       } else {
         // For flexible plans, update all settings
         await updateTrainingProfile({
