@@ -2,10 +2,11 @@ import StatsBadges from '@/components/StatsBadges';
 import StreakModalComponent from '@/components/modals/StreakModalComponent';
 import XpDisplayComponent from '@/components/modals/XpDisplayComponent';
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
 import { Doc } from '@/convex/_generated/dataModel';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
 import LevelingService from '@/services/LevelingService';
-import RunFeelingService, { FeelingType } from '@/services/RunFeelingService';
+import { useMutation } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
 import { Image, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
@@ -40,6 +41,8 @@ interface RunCelebrationModalProps {
   isInitialSync?: boolean;
 }
 
+export type FeelingType = 'amazing' | 'good' | 'okay' | 'tough' | 'struggled' | 'dead';
+
 interface Feeling {
   type: FeelingType;
   emoji: string;
@@ -67,6 +70,7 @@ export default function RunCelebrationModal({
   const [currentStep, setCurrentStep] = useState<'stats' | 'xp' | 'streak'>('stats');
   const [selectedFeeling, setSelectedFeeling] = useState<FeelingType | null>(null);
   const analytics = useAnalytics();
+  const recordFeeling = useMutation(api.activities.recordActivityFeeling);
 
   // Reanimated values for all animations
   const stepScale = useSharedValue(0);
@@ -346,7 +350,7 @@ export default function RunCelebrationModal({
     }
   };
 
-  const handleContinue = () => {
+  const handleContinue = async () => {
     analytics.track({
       name: 'run_celebration_continue_clicked',
       properties: {
@@ -356,7 +360,14 @@ export default function RunCelebrationModal({
     });
     if (currentStep === 'stats') {
       if (selectedFeeling && runData) {
-        RunFeelingService.recordFeeling(runData._id, selectedFeeling);
+        try {
+          await recordFeeling({
+            activityId: runData._id,
+            feeling: selectedFeeling,
+          });
+        } catch (error) {
+          console.error('Failed to record feeling:', error);
+        }
       }
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       setCurrentStep('xp');

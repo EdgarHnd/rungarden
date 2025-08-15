@@ -626,8 +626,6 @@ const styles = StyleSheet.create({
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
-    borderLeftWidth: 4,
-    borderLeftColor: Theme.colors.accent.primary,
   },
   plannedWorkoutHeader: {
     flexDirection: 'row',

@@ -122,6 +122,8 @@ const styles = StyleSheet.create({
     alignSelf: 'center',
     width: '90%',
     justifyContent: 'center',
+    borderWidth: 2,
+    borderColor: Theme.colors.special.primary.exp,
   },
   workoutBarText: {
     color: Theme.colors.text.primary,
@@ -443,6 +445,11 @@ export default function RunRecordingScreen() {
     plannedWorkoutId ? { plannedWorkoutId: plannedWorkoutId } : "skip"
   );
 
+  // Fetch today's workout for the "Follow a workout" feature
+  const todaysWorkout = useQuery(api.trainingPlan.getTodaysWorkout);
+  // Check if user has an active plan (to show "See Plan" when no specific workout today)
+  const activePlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
+
   // Enhanced useRunTracker with structured workout support
   const {
     isRunning,
@@ -471,6 +478,43 @@ export default function RunRecordingScreen() {
   const [lastTimeAnnouncement, setLastTimeAnnouncement] = useState<number | null>(null);
   const [speechEnabled, setSpeechEnabled] = useState(true);
 
+  // Follow workout state
+  const [isLoadingWorkout, setIsLoadingWorkout] = useState(false);
+
+  // State for showing today's workout
+  const [showTodaysWorkout, setShowTodaysWorkout] = useState(false);
+
+  // Handle follow today's workout
+  const handleFollowWorkout = async () => {
+    if (isRunning || isLoadingWorkout) return;
+
+    try {
+      setIsLoadingWorkout(true);
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+
+      // If no workout planned, redirect to path screen to create one
+      if (!todaysWorkout) {
+        router.push('/(app)/path');
+        return;
+      }
+
+      // Show today's workout preview on the same screen
+      setShowTodaysWorkout(true);
+
+      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+
+    } catch (error) {
+      console.error('Failed to load workout:', error);
+      Alert.alert(
+        "Error",
+        "Failed to load today's workout. Please try again.",
+        [{ text: "OK" }]
+      );
+    } finally {
+      setIsLoadingWorkout(false);
+    }
+  };
+
   // Speech announcement functions
   const announceStep = (step: WorkoutStep, stepNumber: number, totalSteps: number) => {
     if (isPaused || !speechEnabled) return; // Don't announce if paused or disabled
@@ -484,7 +528,7 @@ export default function RunRecordingScreen() {
     if (stepNumber === 1) {
       announcement = `Starting workout. ${step.label} for ${formattedDuration}.`;
     } else {
-      announcement = `Step ${stepNumber}. ${step.label} for ${formattedDuration}.`;
+      announcement = `${step.label} for ${formattedDuration}.`;
     }
 
     if (step.notes) {
@@ -560,9 +604,13 @@ export default function RunRecordingScreen() {
   };
 
   // Determine workout mode
-  const isGuidedWorkout = plannedWorkout && plannedWorkout.workout?.steps?.length > 0;
+  const isGuidedWorkout = (plannedWorkout && plannedWorkout.workout?.steps?.length > 0) ||
+    (showTodaysWorkout && todaysWorkout && todaysWorkout.workout?.steps?.length > 0);
+
   const workoutTitle = isGuidedWorkout
-    ? (plannedWorkout.workout.description || 'Guided Workout')
+    ? showTodaysWorkout
+      ? (todaysWorkout?.workout?.description || "Today's Workout")
+      : (plannedWorkout?.workout?.description || 'Guided Workout')
     : 'Free Run';
 
   // Disable swipe back / interactive pop
@@ -682,6 +730,10 @@ export default function RunRecordingScreen() {
         console.error("Failed to parse executable steps:", e);
         await start(); // fallback to free run
       }
+    } else if (showTodaysWorkout && todaysWorkout) {
+      // Use today's workout steps
+      const workoutSteps = convertToWorkoutSteps(todaysWorkout.executableSteps || todaysWorkout.workout?.steps || []);
+      await start(workoutSteps);
     } else if (isGuidedWorkout && plannedWorkout?.workout?.steps) {
       const workoutSteps = convertToWorkoutSteps(plannedWorkout.workout.steps);
       await start(workoutSteps);
@@ -1103,6 +1155,13 @@ export default function RunRecordingScreen() {
         <View style={styles.header}>
           <Pressable
             onPress={() => {
+              // If showing today's workout but not running, just go back to free run
+              if (showTodaysWorkout && !isRunning) {
+                setShowTodaysWorkout(false);
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                return;
+              }
+
               analytics.track({
                 name: 'workout_exit_attempted',
                 properties: {
@@ -1207,11 +1266,32 @@ export default function RunRecordingScreen() {
                 </View>
               </View>
 
-              {/* Add Target / Workout (only show for free runs) */}
-              {!isGuidedWorkout && (
-                <TouchableOpacity style={styles.workoutBar}>
-                  <FontAwesome5 name="plus" size={14} color={Theme.colors.text.primary} style={{ marginRight: 8 }} />
-                  <Text style={styles.workoutBarText}>Follow a Workout</Text>
+              {/* Add Target / Workout (only show for free runs and not showing today's workout) */}
+              {!isGuidedWorkout && !showTodaysWorkout && (
+                <TouchableOpacity
+                  style={[
+                    styles.workoutBar,
+                    isLoadingWorkout && { opacity: 0.6 }
+                  ]}
+                  onPress={handleFollowWorkout}
+                  disabled={isLoadingWorkout}
+                >
+                  <FontAwesome5
+                    name={todaysWorkout || activePlan ? "play" : "plus"}
+                    size={14}
+                    color={Theme.colors.text.primary}
+                    style={{ marginRight: 8 }}
+                  />
+                  <Text style={styles.workoutBarText}>
+                    {isLoadingWorkout
+                      ? 'Loading...'
+                      : todaysWorkout
+                        ? "Follow Today's Workout"
+                        : activePlan
+                          ? 'See Plan'
+                          : 'Start Training Plan'
+                    }
+                  </Text>
                 </TouchableOpacity>
               )}
             </>
@@ -1222,12 +1302,19 @@ export default function RunRecordingScreen() {
         {!isRunning ? (
           <View style={styles.readyContainer}>
             <Text style={styles.readyTitle}>
-              {isGuidedWorkout ? 'Ready for your workout' : 'Get ready to start'}
+              {showTodaysWorkout
+                ? "Ready for today's workout"
+                : isGuidedWorkout
+                  ? 'Ready for your workout'
+                  : 'Get ready to start'
+              }
             </Text>
             <Text style={styles.readySubtitle}>
-              {isGuidedWorkout
-                ? 'Follow the step-by-step guidance'
-                : 'Make sure to warm up before starting'
+              {showTodaysWorkout
+                ? 'Follow your planned workout with step-by-step guidance'
+                : isGuidedWorkout
+                  ? 'Follow the step-by-step guidance'
+                  : 'Make sure to warm up before starting'
               }
             </Text>
           </View>

@@ -6,8 +6,12 @@ import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
+// @ts-ignore - typed module available after expo install
+import DateTimePicker from '@react-native-community/datetimepicker';
 import {
+  Alert,
   Animated,
+  Platform,
   SafeAreaView,
   ScrollView,
   StyleSheet,
@@ -43,6 +47,14 @@ export default function TrainingDetailScreen() {
   const params = useLocalSearchParams();
   const [scaleAnim] = useState(new Animated.Value(0));
 
+  // Reschedule related state
+  const [showDatePicker, setShowDatePicker] = useState(false);
+  const [datePickerValue, setDatePickerValue] = useState<Date | undefined>(undefined);
+  const [showPopover, setShowPopover] = useState(false);
+
+  const rescheduleWorkout = useMutation(api.trainingPlan.reschedulePlannedWorkout);
+
+
   // Get the scheduleWorkoutId from params
   const scheduleWorkoutId = params.scheduleWorkoutId as Id<"plannedWorkouts"> | undefined;
 
@@ -70,6 +82,77 @@ export default function TrainingDetailScreen() {
   const completeRestDay = useMutation(api.userProfile.completeRestDay);
   const [completingRest, setCompletingRest] = useState(false);
   const [isToday, setIsToday] = useState(false);
+
+  // Handle date picked
+  const handleDatePicked = (pickedDate: Date) => {
+    setShowDatePicker(false);
+    if (!pickedDate || !scheduleWorkoutId) return;
+
+    const dateStr = pickedDate.toISOString().split('T')[0];
+    const formattedDate = pickedDate.toLocaleDateString('en-US', {
+      weekday: 'long',
+      month: 'long',
+      day: 'numeric'
+    });
+
+    Alert.alert(
+      'Reschedule Workout',
+      `Move this workout to ${formattedDate}?`,
+      [
+        {
+          text: 'Cancel',
+          style: 'cancel',
+          onPress: () => Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light)
+        },
+        {
+          text: 'Reschedule',
+          style: 'default',
+          onPress: async () => {
+            try {
+              await rescheduleWorkout({ plannedWorkoutId: scheduleWorkoutId as any, newDate: dateStr });
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+              Alert.alert('Success', 'Workout rescheduled successfully!');
+            } catch (error: any) {
+              console.error('Failed to reschedule workout', error);
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+
+              // Extract the actual error message from Convex error
+              let errorMessage = 'Unable to reschedule workout. Please try again.';
+              if (error?.message) {
+                if (error.message.includes('Another workout is already scheduled')) {
+                  errorMessage = 'Another workout is already scheduled for that date. Please choose a different date.';
+                } else if (error.message.includes('Cannot reschedule to a past date')) {
+                  errorMessage = 'Cannot reschedule to a past date. Please choose a future date.';
+                } else if (error.message.includes('Cannot reschedule a completed workout')) {
+                  errorMessage = 'This workout has already been completed and cannot be rescheduled.';
+                } else {
+                  // Extract message after the last colon if it's a Convex error
+                  const parts = error.message.split(':');
+                  errorMessage = parts[parts.length - 1].trim() || errorMessage;
+                }
+              }
+
+              setTimeout(() => {
+                Alert.alert(
+                  'Reschedule Failed',
+                  errorMessage,
+                  [{ text: 'OK', onPress: () => console.log('Error alert dismissed') }]
+                );
+              }, 100);
+            }
+          }
+        }
+      ]
+    );
+  };
+
+  // Close popover when tapping outside
+  useEffect(() => {
+    if (showPopover) {
+      const timer = setTimeout(() => setShowPopover(false), 5000); // auto-close after 5s
+      return () => clearTimeout(timer);
+    }
+  }, [showPopover]);
 
   useEffect(() => {
     if (plannedWorkout?.scheduledDate) {
@@ -609,14 +692,36 @@ export default function TrainingDetailScreen() {
           <Ionicons name="arrow-back" size={24} color="#fff" />
         </TouchableOpacity>
         <View style={styles.headerInfo}>
-          <Text style={styles.headerDate}>
-            {activity?.date ?
-              formatWorkoutDate(activity.date) :
-              formatWorkoutDate()
-            }
-          </Text>
+          <View style={styles.headerDateContainer}>
+            <Text style={styles.headerDate}>
+              {activity?.date ?
+                formatWorkoutDate(activity.date) :
+                formatWorkoutDate()
+              }
+            </Text>
+          </View>
         </View>
-        <View style={styles.placeholder} />
+        <View style={styles.menuContainer}>
+          <TouchableOpacity onPress={() => setShowPopover(!showPopover)} style={styles.moreButton}>
+            <Ionicons name="ellipsis-vertical" size={24} color="#fff" />
+          </TouchableOpacity>
+
+          {showPopover && (
+            <View style={styles.popover}>
+              <TouchableOpacity
+                style={styles.popoverItem}
+                onPress={() => {
+                  setShowPopover(false);
+                  setDatePickerValue(plannedWorkout?.scheduledDate ? new Date(plannedWorkout.scheduledDate) : new Date());
+                  setShowDatePicker(true);
+                }}
+              >
+                <Ionicons name="calendar-outline" size={20} color={Theme.colors.text.primary} />
+                <Text style={styles.popoverText}>Reschedule</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </View>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
@@ -754,6 +859,56 @@ export default function TrainingDetailScreen() {
           </TouchableOpacity>
         </View>
       )}
+      {showDatePicker && (
+        <View style={styles.datePickerOverlay}>
+          <TouchableOpacity
+            style={styles.overlayBackground}
+            onPress={() => setShowDatePicker(false)}
+            activeOpacity={1}
+          />
+          <View style={styles.datePickerContainer}>
+            <DateTimePicker
+              value={datePickerValue || new Date()}
+              mode="date"
+              display={Platform.OS === 'ios' ? 'spinner' : 'default'}
+              minimumDate={new Date()}
+              onChange={(event: any, selectedDate?: Date) => {
+                if (Platform.OS === 'android') {
+                  setShowDatePicker(false);
+                  if (event.type === 'set' && selectedDate) {
+                    handleDatePicked(selectedDate);
+                  }
+                } else {
+                  // iOS - keep picker open, update value
+                  if (selectedDate) {
+                    setDatePickerValue(selectedDate);
+                  }
+                }
+              }}
+              style={styles.datePicker}
+              themeVariant="dark"
+            />
+            {Platform.OS === 'ios' && (
+              <View style={styles.datePickerActions}>
+                <TouchableOpacity
+                  onPress={() => setShowDatePicker(false)}
+                  style={styles.datePickerButton}
+                >
+                  <Text style={styles.datePickerButtonText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  onPress={() => {
+                    if (datePickerValue) handleDatePicked(datePickerValue);
+                  }}
+                  style={[styles.datePickerButton, styles.confirmButton]}
+                >
+                  <Text style={[styles.datePickerButtonText, styles.confirmButtonText]}>Select</Text>
+                </TouchableOpacity>
+              </View>
+            )}
+          </View>
+        </View>
+      )}
     </SafeAreaView>
   );
 }
@@ -782,6 +937,108 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
   },
+  menuContainer: {
+    position: 'relative',
+    zIndex: 10,
+  },
+  moreButton: {
+    padding: Theme.spacing.sm,
+  },
+  popover: {
+    position: 'absolute',
+    top: '100%',
+    right: 0,
+    marginTop: Theme.spacing.sm,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.large,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 8,
+    elevation: 8,
+    minWidth: 140,
+  },
+  popoverItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.md,
+    gap: Theme.spacing.md,
+  },
+  popoverText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.primary,
+  },
+  headerDateContainer: {
+    backgroundColor: 'rgba(0, 0, 0, 0.3)',
+    borderRadius: Theme.borderRadius.medium,
+    paddingHorizontal: Theme.spacing.md,
+    paddingVertical: Theme.spacing.sm,
+  },
+  datePickerOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  overlayBackground: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+  },
+  datePickerContainer: {
+    backgroundColor: Theme.colors.background.primary,
+    borderRadius: Theme.borderRadius.large,
+    marginHorizontal: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.lg,
+    maxWidth: 350,
+    width: '90%',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 12,
+  },
+  datePicker: {
+    backgroundColor: 'transparent',
+  },
+  datePickerActions: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingHorizontal: Theme.spacing.xl,
+    paddingTop: Theme.spacing.lg,
+    borderTopWidth: 1,
+    borderTopColor: Theme.colors.background.secondary,
+    marginTop: Theme.spacing.lg,
+  },
+  datePickerButton: {
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.md,
+    borderRadius: Theme.borderRadius.medium,
+    minWidth: 80,
+    alignItems: 'center',
+  },
+  datePickerButtonText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+  },
+  confirmButton: {
+    backgroundColor: Theme.colors.special.primary.exp,
+  },
+  confirmButtonText: {
+    color: Theme.colors.background.primary,
+    fontFamily: Theme.fonts.bold,
+  },
+
   placeholder: {
     width: 32,
   },

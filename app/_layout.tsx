@@ -9,6 +9,7 @@ import React, { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { AnalyticsProviderComponent } from '../provider/AnalyticsProvider';
 import { MixpanelProvider } from '../provider/MixpanelProvider';
+import { RevenueCatProvider } from '../provider/RevenueCatProvider';
 import OnboardingScreen from './onboarding';
 
 // Keep the splash screen visible while we fetch resources
@@ -116,24 +117,26 @@ export default function RootLayout() {
 
   return (
     <AnalyticsProviderComponent provider={mixpanelProvider}>
-      <ConvexAuthProvider
-        client={convex}
-        storage={
-          Platform.OS === "android" || Platform.OS === "ios"
-            ? secureStorage
-            : undefined
-        }
-      >
-        <AuthLoading>
-          <LoadingScreen />
-        </AuthLoading>
-        <Unauthenticated>
-          <OnboardingScreen />
-        </Unauthenticated>
-        <Authenticated>
-          <AuthenticatedApp />
-        </Authenticated>
-      </ConvexAuthProvider>
+      <RevenueCatProvider>
+        <ConvexAuthProvider
+          client={convex}
+          storage={
+            Platform.OS === "android" || Platform.OS === "ios"
+              ? secureStorage
+              : undefined
+          }
+        >
+          <AuthLoading>
+            <LoadingScreen />
+          </AuthLoading>
+          <Unauthenticated>
+            <OnboardingScreen />
+          </Unauthenticated>
+          <Authenticated>
+            <AuthenticatedApp />
+          </Authenticated>
+        </ConvexAuthProvider>
+      </RevenueCatProvider>
     </AnalyticsProviderComponent>
   );
 }

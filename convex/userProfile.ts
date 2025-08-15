@@ -3,9 +3,9 @@ import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 import { addCoins, spendCoinsInternal } from "./utils/coins";
 import {
-    calculateLevelFromXP,
-    distanceToXP,
-    getWorkoutLibraryXP
+  calculateLevelFromXP,
+  distanceToXP,
+  getWorkoutLibraryXP
 } from "./utils/gamification";
  
 export const currentUser = query({
@@ -538,7 +538,7 @@ export const isRestDayCompleted = query({
   },
 });
 
-// Complete rest day and update streak
+// Complete rest day (no streak change)
 export const completeRestDay = mutation({
   args: { 
     date: v.string(), // Date in YYYY-MM-DD format
@@ -608,65 +608,13 @@ export const completeRestDay = mutation({
     const restCoins = 10;
     
     const currentXP = profile.totalXP || 0;
-    const currentCoins = profile.coins || 0;
     const currentStreak = profile.currentStreak || 0;
     const longestStreak = profile.longestStreak || 0;
-    const lastStreakWeek = profile.lastStreakWeek;
 
-    // Calculate new totals
+    // Calculate new totals (XP/Level only – coins added via ledger helper below)
     const newTotalXP = currentXP + restXP;
-    const newCoins = currentCoins + restCoins;
     const newLevel = calculateLevelFromXP(newTotalXP);
     const oldLevel = profile.level || 1;
-
-    // Update streak for rest day completion
-    let newCurrentStreak = currentStreak;
-    let streakIncreased = false;
-
-    if (!lastStreakWeek || currentStreak === 0) {
-      // First ever day completed (rest day can start a streak)
-      newCurrentStreak = 1;
-      streakIncreased = true;
-    } else {
-      const lastStreakDateTime = new Date(lastStreakWeek).getTime();
-      const restDateTime = new Date(args.date).getTime();
-      const daysBetween = Math.floor((restDateTime - lastStreakDateTime) / (1000 * 60 * 60 * 24));
-
-      if (daysBetween <= 3) { // Allow some flexibility
-        newCurrentStreak = currentStreak + 1;
-        streakIncreased = true;
-      } else {
-        // Gap is too large, reset streak to 1 (this rest day still counts)
-        newCurrentStreak = 1;
-        streakIncreased = false;
-      }
-    }
-
-    const newLongestStreak = Math.max(newCurrentStreak, longestStreak);
-
-    // Check for milestone rewards
-    let newStreakFreezes = profile.streakFreezeAvailable || 0;
-    let milestoneMessage: string | undefined;
-
-    const milestones = [7, 14, 30, 60, 100, 365];
-    for (const milestone of milestones) {
-      if (newCurrentStreak >= milestone && currentStreak < milestone) {
-        // Award streak freezes at certain milestones
-        if (milestone === 7) {
-          newStreakFreezes += 1;
-          milestoneMessage = "7 day streak! Earned 1 streak freeze! 🧊";
-        } else if (milestone === 30) {
-          newStreakFreezes += 2;
-          milestoneMessage = "30 day streak! Earned 2 streak freezes! 🧊🧊";
-        } else if (milestone === 100) {
-          newStreakFreezes += 3;
-          milestoneMessage = "100 day streak! Earned 3 streak freezes! 🧊🧊🧊";
-        } else {
-          milestoneMessage = `${milestone} day streak milestone! Amazing! 🏆`;
-        }
-        break;
-      }
-    }
 
     // Create rest activity entry
     const restActivityId = await ctx.db.insert("restActivities", {
@@ -681,14 +629,10 @@ export const completeRestDay = mutation({
     // Award coins via centralized helper (ensures ledger + atomic balance)
     await addCoins(ctx, userId, restCoins, "rest-day", restActivityId);
 
-    // Update profile with new values
+    // Update profile with new values (do NOT modify streak fields)
     await ctx.db.patch(profile._id, {
       totalXP: newTotalXP,
       level: newLevel,
-      currentStreak: newCurrentStreak,
-      longestStreak: newLongestStreak,
-      lastStreakWeek: args.date,
-      streakFreezeAvailable: newStreakFreezes,
       updatedAt: new Date().toISOString(),
     });
 
@@ -703,11 +647,11 @@ export const completeRestDay = mutation({
         newLevel,
       },
       streak: {
-        currentStreak: newCurrentStreak,
-        longestStreak: newLongestStreak,
-        streakIncreased,
-        milestoneMessage,
-        streakFreezesEarned: newStreakFreezes - (profile.streakFreezeAvailable || 0)
+        currentStreak: currentStreak,
+        longestStreak: longestStreak,
+        streakIncreased: false,
+        milestoneMessage: undefined,
+        streakFreezesEarned: 0
       }
     };
   },

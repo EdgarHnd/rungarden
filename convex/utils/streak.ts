@@ -40,6 +40,8 @@ function countRunDaysInWeek(activities: any[], weekStartDate: string): number {
   const runDays = new Set<string>();
   
   activities.forEach(activity => {
+    // Ignore rest activities when counting toward weekly streak
+    if (activity.type === 'rest') return;
     const activityDate = activity.startDate.split('T')[0];
     if (activityDate >= weekStartISO && activityDate <= weekEndISO) {
       runDays.add(activityDate);

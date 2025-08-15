@@ -15,7 +15,7 @@ import { useConvexAuth, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import React, { useState } from 'react';
-import { Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 export default function ProfileScreen() {
   const { signOut } = useAuthActions();
@@ -50,6 +50,7 @@ export default function ProfileScreen() {
   // State for modals
   const [showStreakModal, setShowStreakModal] = useState(false);
   const [showLevelModal, setShowLevelModal] = useState(false);
+  const [showCaloriesModal, setShowCaloriesModal] = useState(false);
 
   // Achievement modal states
   const [selectedChallenge, setSelectedChallenge] = useState<any>(null);
@@ -156,7 +157,14 @@ export default function ProfileScreen() {
           {/* Main Stats - Duolingo Style 2x2 Grid */}
           <View style={styles.duolingoStatsContainer}>
             <View style={styles.duolingoStatsRow}>
-              <View style={styles.duolingoStatCard}>
+              <TouchableOpacity
+                style={styles.duolingoStatCard}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/activities');
+                }}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.duolingoStatIcon}>🛣️</Text>
                 <View style={styles.duolingoStatText}>
                   <Text style={styles.duolingoStatNumber}>
@@ -169,7 +177,7 @@ export default function ProfileScreen() {
                     Total {(profile?.metricSystem ?? "metric") === "metric" ? "Km" : "Mi"}
                   </Text>
                 </View>
-              </View>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.duolingoStatCard}
@@ -188,21 +196,35 @@ export default function ProfileScreen() {
             </View>
 
             <View style={styles.duolingoStatsRow}>
-              <View style={styles.duolingoStatCard}>
+              <TouchableOpacity
+                style={styles.duolingoStatCard}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/activities');
+                }}
+                activeOpacity={0.7}
+              >
                 <Text style={styles.duolingoStatIcon}>🏃‍♂️</Text>
                 <View style={styles.duolingoStatText}>
                   <Text style={styles.duolingoStatNumber}>{profileStats.totalWorkouts}</Text>
                   <Text style={styles.duolingoStatLabel}>Runs</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
 
-              <View style={styles.duolingoStatCard}>
-                <Text style={styles.duolingoStatIcon}>🍕</Text>
+              <TouchableOpacity
+                style={styles.duolingoStatCard}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  setShowCaloriesModal(true);
+                }}
+                activeOpacity={0.7}
+              >
+                <Text style={styles.duolingoStatIcon}>🍦</Text>
                 <View style={styles.duolingoStatText}>
-                  <Text style={styles.duolingoStatNumber}>{Math.round(profileStats.totalCalories / 1000)}</Text>
-                  <Text style={styles.duolingoStatLabel}>{Math.round(profileStats.totalCalories / 1000) > 1 ? 'Pizzas' : 'Pizza'}</Text>
+                  <Text style={styles.duolingoStatNumber}>{Math.round((profileStats?.totalCalories || 0) / 285)}</Text>
+                  <Text style={styles.duolingoStatLabel}>Ice Cream</Text>
                 </View>
-              </View>
+              </TouchableOpacity>
             </View>
           </View>
         </View>
@@ -252,26 +274,24 @@ export default function ProfileScreen() {
               <Text style={styles.sectionTitle}>Coach Cards</Text>
               <Text style={styles.coachCardsCount}>{weekRewards.length} earned</Text>
             </View>
-            <View style={styles.coachCardsGrid}>
+            <ScrollView
+              horizontal
+              showsHorizontalScrollIndicator={false}
+              contentContainerStyle={styles.coachCardsRow}
+            >
               {weekRewards.map((weekReward) => (
                 <TouchableOpacity
                   key={`${weekReward.weekNumber}-${weekReward.cardId}`}
-                  style={styles.coachCardItem}
+                  style={[styles.coachCardItem, styles.coachCardBack]}
                   onPress={() => handleCoachCardPress(weekReward)}
-                  activeOpacity={0.7}
+                  activeOpacity={0.8}
                 >
-                  <View style={styles.coachCardIconContainer}>
-                    <Text style={styles.coachCardEmoji}>{weekReward.card?.iconEmoji || '✨'}</Text>
-                  </View>
-                  <View style={styles.coachCardInfo}>
-                    <Text style={styles.coachCardTitle} numberOfLines={2}>
-                      {weekReward.card?.title || 'Coaching Tip'}
-                    </Text>
-                    <Text style={styles.coachCardWeek}>Week {weekReward.weekNumber}</Text>
-                  </View>
+                  <Text style={styles.coachCardBackTitle} numberOfLines={3}>
+                    {weekReward.card?.title || 'Coaching Tip'}
+                  </Text>
                 </TouchableOpacity>
               ))}
-            </View>
+            </ScrollView>
           </View>
         )}
 
@@ -308,6 +328,52 @@ export default function ProfileScreen() {
               setShowStreakModal(false);
             }}
           />
+        )}
+
+        {/* Calories Modal */}
+        {showCaloriesModal && (
+          <Modal
+            visible={showCaloriesModal}
+            transparent={true}
+            animationType="fade"
+            onRequestClose={() => setShowCaloriesModal(false)}
+          >
+            <TouchableOpacity
+              style={styles.modalOverlay}
+              activeOpacity={1}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                setShowCaloriesModal(false);
+              }}
+            >
+              <View style={styles.modalContainer}>
+                <View style={styles.modalHeader}>
+                  <Text style={styles.modalTitle}>Calories Burned</Text>
+                  <TouchableOpacity
+                    onPress={() => {
+                      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                      setShowCaloriesModal(false);
+                    }}
+                    style={styles.closeButton}
+                  >
+                    <FontAwesome5 name="times" size={24} color={Theme.colors.text.secondary} />
+                  </TouchableOpacity>
+                </View>
+                <View style={styles.caloriesContent}>
+                  <Text style={styles.caloriesIcon}>🍦</Text>
+                  <Text style={styles.caloriesNumber}>
+                    {profileStats?.totalCalories?.toLocaleString() || '0'} calories
+                  </Text>
+                  <Text style={styles.caloriesEquivalent}>
+                    = {Math.round((profileStats?.totalCalories || 0) / 285)} ice cream servings
+                  </Text>
+                  <Text style={styles.caloriesNote}>
+                    Based on ~285 calories per ice cream serving
+                  </Text>
+                </View>
+              </View>
+            </TouchableOpacity>
+          </Modal>
         )}
 
         {/* Coach Card Modal */}
@@ -629,20 +695,38 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
   },
+  coachCardsRow: {
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+  },
   coachCardsGrid: {
     flexDirection: 'row',
-    flexWrap: 'wrap',
-    gap: 12,
   },
   coachCardItem: {
-    width: '48%',
+    width: 120,
+    aspectRatio: 2 / 3,
     backgroundColor: Theme.colors.background.secondary,
-    borderRadius: 12,
+    borderRadius: 16,
     padding: 16,
-    flexDirection: 'row',
-    alignItems: 'center',
     borderWidth: 2,
     borderColor: Theme.colors.background.tertiary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 20,
+  },
+  coachCardBack: {
+    backgroundColor: Theme.colors.background.primary,
+    shadowColor: Theme.colors.special.primary.exp,
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 6,
+  },
+  coachCardBackTitle: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.secondary,
+    textAlign: 'center',
+    lineHeight: 20,
   },
   coachCardIconContainer: {
     width: 40,
@@ -655,6 +739,10 @@ const styles = StyleSheet.create({
   },
   coachCardEmoji: {
     fontSize: 20,
+  },
+  coachCardImage: {
+    width: 28,
+    height: 28,
   },
   coachCardInfo: {
     flex: 1,
@@ -670,5 +758,60 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.tertiary,
+  },
+  // Modal styles
+  modalOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    justifyContent: 'center',
+    alignItems: 'center',
+    padding: Theme.spacing.xl,
+  },
+  modalContainer: {
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.xl,
+    padding: Theme.spacing.xl,
+    width: '100%',
+    maxWidth: 320,
+  },
+  modalHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  closeButton: {
+    padding: 8,
+  },
+  caloriesContent: {
+    alignItems: 'center',
+    paddingVertical: Theme.spacing.lg,
+  },
+  caloriesIcon: {
+    fontSize: 48,
+    marginBottom: Theme.spacing.lg,
+  },
+  caloriesNumber: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    marginBottom: Theme.spacing.md,
+  },
+  caloriesEquivalent: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.accent.primary,
+    marginBottom: Theme.spacing.sm,
+  },
+  caloriesNote: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    textAlign: 'center',
   },
 }); 

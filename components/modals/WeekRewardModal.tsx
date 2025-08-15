@@ -3,7 +3,7 @@ import { Doc } from '@/convex/_generated/dataModel';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
-import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Image, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import {
   interpolate,
   default as Reanimated,
@@ -228,7 +228,15 @@ export default function WeekRewardModal({
                   <Reanimated.View style={[styles.card, styles.cardBack, cardBackAnimatedStyle]}>
                     <View style={styles.cardContent}>
                       <View style={styles.cardIconContainer}>
-                        <Text style={styles.cardEmoji}>{card?.iconEmoji || '✨'}</Text>
+                        {((card as any)?.iconImageUrl) ? (
+                          <Image
+                            source={{ uri: (card as any).iconImageUrl }}
+                            style={styles.cardImage}
+                            resizeMode="cover"
+                          />
+                        ) : (
+                          <Text style={styles.cardEmoji}>{card?.iconEmoji || '✨'}</Text>
+                        )}
                         <View style={styles.cardCategory}>
                           <Text style={styles.cardCategoryText}>{card?.category?.toUpperCase() || 'TIP'}</Text>
                         </View>
@@ -406,9 +414,14 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     marginBottom: Theme.spacing.lg,
+    overflow: 'hidden',
   },
   cardEmoji: {
     fontSize: 50,
+  },
+  cardImage: {
+    width: '100%',
+    height: '100%',
   },
   cardTitle: {
     fontSize: 24,

@@ -183,7 +183,10 @@ export default function ActivePlanView({ activePlan, completedMap, userId }: { a
   const todayDateString = today.toISOString().split('T')[0]; // YYYY-MM-DD format
 
   activePlan.plan.forEach((week: any, weekIndex: number) => {
-    const workoutDays = week.days.filter((d: any) => d.type !== 'rest');
+    // Ensure workouts are processed in chronological order even if data arrays are out of sync
+    const workoutDays = week.days
+      .filter((d: any) => d.type !== 'rest')
+      .sort((a: any, b: any) => a.date.localeCompare(b.date));
     workoutDays.forEach((day: any, dayIndex: number) => {
       const pw = completedMap?.find((p: any) => p.scheduledDate === day.date);
       const workoutDate = new Date(day.date);

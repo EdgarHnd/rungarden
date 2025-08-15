@@ -6,6 +6,17 @@ import { WORKOUT_LIBRARY } from "./workoutLibrary";
 
 /* ────────────────────────────── token-based plan helpers */
 
+// Always work with UTC date-only strings (YYYY-MM-DD) to avoid timezone drift
+function toDateStrUTC(d: Date): string {
+  return d.toISOString().split("T")[0];
+}
+
+function addDaysUTC(dateStr: string, days: number): string {
+  const d = new Date(`${dateStr}T00:00:00.000Z`);
+  d.setUTCDate(d.getUTCDate() + days);
+  return toDateStrUTC(d);
+}
+
 // Split a token like "E4" → { base: "E", param: "4" }
 function splitToken(token: string) {
   // Handle variant tokens with an explicit slash first (e.g. "WR/5A")
@@ -291,18 +302,20 @@ async function generateTokenBasedPlan(
   const preferredDayIndices = preferredDays.map((day: string) => dayNameToIndex[day as keyof typeof dayNameToIndex]);
 
   // Find the next occurrence of the closest preferred day (never in the past)
-  const today = new Date();
-  const todayDayOfWeek = today.getDay(); // 0 = Sunday, 6 = Saturday
+  const now = new Date();
+  const todayStr = toDateStrUTC(now); // UTC date string for today
+  const todayUTC = new Date(`${todayStr}T00:00:00.000Z`);
+  const todayDayOfWeekUTC = todayUTC.getUTCDay(); // 0 = Sunday, 6 = Saturday in UTC
   
   // Convert today's day to our week start system
   let todayIndex;
   if (weekStartDay === 1) { // Monday start
-    todayIndex = todayDayOfWeek === 0 ? 6 : todayDayOfWeek - 1;
+    todayIndex = todayDayOfWeekUTC === 0 ? 6 : todayDayOfWeekUTC - 1;
   } else { // Sunday start
-    todayIndex = todayDayOfWeek;
+    todayIndex = todayDayOfWeekUTC;
   }
 
-  console.log(`DEBUG: weekStartDay=${weekStartDay}, preferredDays=${JSON.stringify(preferredDays)}, preferredDayIndices=${JSON.stringify(preferredDayIndices)}, todayDayOfWeek=${todayDayOfWeek}, todayIndex=${todayIndex}`);
+  console.log(`DEBUG: weekStartDay=${weekStartDay}, preferredDays=${JSON.stringify(preferredDays)}, preferredDayIndices=${JSON.stringify(preferredDayIndices)}, todayDayOfWeekUTC=${todayDayOfWeekUTC}, todayIndex=${todayIndex}`);
 
   // Find the closest preferred day that's today or later
   let closestPreferredDayIndex = 0; // Default to start of week (Monday for Monday start, Sunday for Sunday start)
@@ -330,15 +343,13 @@ async function generateTokenBasedPlan(
   console.log(`DEBUG: closestPreferredDayIndex=${closestPreferredDayIndex}, daysUntilFirstWorkout=${daysUntilFirstWorkout}`);
 
   // Calculate the actual start date for the training plan (never in the past)
-  const planStartDate = new Date(today);
-  planStartDate.setDate(today.getDate() + daysUntilFirstWorkout);
-  planStartDate.setHours(0, 0, 0, 0);
+  const planStartDateStr = addDaysUTC(todayStr, daysUntilFirstWorkout);
 
   const planWeeks: any[] = [];
   const pendingPlanned: any[] = [];
 
-  // Keep track of the current date as we build the plan
-  let currentPlanDate = new Date(planStartDate);
+  // Compute the first week's start (based on user's week start preference)
+  const firstWeekStartDateStr = addDaysUTC(planStartDateStr, -closestPreferredDayIndex);
 
   for (let wIdx = 0; wIdx < template.weeks.length; wIdx++) {
     const weekTokens = template.weeks[wIdx];
@@ -389,40 +400,19 @@ async function generateTokenBasedPlan(
       }
     }
 
-    // Calculate the start date for this week
-    let weekStartDate: Date;
-    if (wIdx === 0) {
-      // For the first week, we already calculated planStartDate to be the date of the first workout
-      // Now we need to find the start of that week based on user's week start preference
-      weekStartDate = new Date(planStartDate);
-      weekStartDate.setDate(planStartDate.getDate() - closestPreferredDayIndex);
-      
-      // Store the first week start for subsequent weeks
-      currentPlanDate = new Date(weekStartDate);
-    } else {
-      // For subsequent weeks, add 7 days per week from the first week start
-      weekStartDate = new Date(currentPlanDate);
-      weekStartDate.setDate(currentPlanDate.getDate() + (wIdx * 7));
-    }
+    // Calculate the start date for this week (UTC, date-only)
+    const weekStartDateStr = addDaysUTC(firstWeekStartDateStr, wIdx * 7);
 
     // Now schedule each day of this week
     for (let dIdx = 0; dIdx < 7; dIdx++) {
       const token = weekSchedule[dIdx];
       const { base, param } = splitToken(token);
 
-      const skeletonId = await getOrCreateSkeletonTemplate(ctx, base);
-
       // Calculate the exact date for this day
-      const scheduleDate = new Date(weekStartDate);
-      scheduleDate.setDate(weekStartDate.getDate() + dIdx);
-      const dateStr = scheduleDate.toISOString().split("T")[0];
+      const dateStr = addDaysUTC(weekStartDateStr, dIdx);
 
       // Final safety check: never schedule workouts in the past
-      const todayStr = today.toISOString().split("T")[0];
-      if (dateStr < todayStr) {
-        console.warn(`Skipping workout scheduled for past date: ${dateStr}`);
-        continue;
-      }
+      const isPastDate = dateStr < todayStr;
 
       const hydrated = hydrateData(base, param, units);
       
@@ -435,7 +425,9 @@ async function generateTokenBasedPlan(
       }
 
       // For rest days (R) we include in plan structure but DON'T create a DB plannedWorkout entry
-      if (base !== "R") {
+      let skeletonId: any = undefined;
+      if (base !== "R" && !isPastDate) {
+        skeletonId = await getOrCreateSkeletonTemplate(ctx, base);
         pendingPlanned.push({
           dateStr,
           skeletonId,
@@ -447,9 +439,9 @@ async function generateTokenBasedPlan(
       const sk = WORKOUT_LIBRARY[base];
       dayEntries.push({
         date: dateStr,
-        workoutTemplateId: base === "R" ? undefined : skeletonId,
-        description: token,
-        type: sk?.subType || sk?.type || base.toLowerCase(),
+        workoutTemplateId: base === "R" || isPastDate ? undefined : skeletonId,
+        description: isPastDate ? "R" : token,
+        type: isPastDate ? "rest" : (sk?.subType || sk?.type || base.toLowerCase()),
       });
     }
 
@@ -494,8 +486,9 @@ async function generateTokenBasedPlan(
 
 // Helper function to get week start based on user preference
 function getWeekStart(date: Date, weekStartDay: number) {
-  const d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
-  const day = d.getDay(); // 0 = Sunday, 1 = Monday, etc.
+  // Normalize input to UTC midnight
+  const dUtc = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate()));
+  const day = dUtc.getUTCDay(); // 0 = Sunday, 1 = Monday, etc.
 
   let diff;
   if (weekStartDay === 1) { // Monday start
@@ -504,10 +497,8 @@ function getWeekStart(date: Date, weekStartDay: number) {
     diff = day;
   }
 
-  const weekStart = new Date(d);
-  weekStart.setDate(d.getDate() - diff);
-  weekStart.setHours(0, 0, 0, 0);
-  return weekStart;
+  dUtc.setUTCDate(dUtc.getUTCDate() - diff);
+  return dUtc;
 }
 
 // Calculate weeks between start and goal date
@@ -606,10 +597,8 @@ export const updateTrainingSchedule = mutation({
 
     const preferredDayIndices = args.preferredDays.map(day => dayNameToIndex[day]).sort((a, b) => a - b);
 
-    // Today's date
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    const todayStr = today.toISOString().split("T")[0];
+    // Today's date (UTC)
+    const todayStr = toDateStrUTC(new Date());
 
     // Get all future planned workouts (scheduled for today or later)
     const futureWorkouts = await ctx.db
@@ -637,24 +626,20 @@ export const updateTrainingSchedule = mutation({
       
       if (!hasCurrentOrFutureWorkouts) continue;
 
-      // Calculate week start date
-      const firstDayOfWeek = new Date(week.days[0].date);
-      const weekStartDate = new Date(firstDayOfWeek);
-      
-      // Find week start based on user preference
-      const firstDayIndex = firstDayOfWeek.getDay();
+      // Calculate week start date (UTC) based on stored date strings
+      const firstDayStr = week.days[0].date; // already YYYY-MM-DD
+      const firstDay = new Date(`${firstDayStr}T00:00:00.000Z`);
+      const firstDayIndex = firstDay.getUTCDay();
       const daysToSubtract = weekStartDay === 1 
         ? (firstDayIndex === 0 ? 6 : firstDayIndex - 1) 
         : firstDayIndex;
-      weekStartDate.setDate(firstDayOfWeek.getDate() - daysToSubtract);
+      const weekStartDateStr = addDaysUTC(firstDayStr, -daysToSubtract);
 
       // Reschedule workouts to preferred days
       let workoutIndex = 0;
       for (let dayIdx = 0; dayIdx < 7; dayIdx++) {
         const currentDay = week.days[dayIdx];
-        const currentDate = new Date(weekStartDate);
-        currentDate.setDate(weekStartDate.getDate() + dayIdx);
-        const currentDateStr = currentDate.toISOString().split("T")[0];
+        const currentDateStr = addDaysUTC(weekStartDateStr, dayIdx);
 
         // Skip dates in the past
         if (currentDateStr < todayStr) {
@@ -997,9 +982,10 @@ export const simulateTrainingProgress = mutation({
 
     // Calculate how far back to move the plan (add extra days to ensure we have full completed weeks)
     const daysToBackdate = (weeksToComplete * 7) + 1; // Extra buffer
-    const newStartDate = new Date(now);
-    newStartDate.setDate(now.getDate() - daysToBackdate);
-    const newWeekStart = getWeekStart(newStartDate, weekStartDay);
+    const todayStr = toDateStrUTC(now);
+    const backdatedStartStr = addDaysUTC(todayStr, -daysToBackdate);
+    const newWeekStart = getWeekStart(new Date(`${backdatedStartStr}T00:00:00.000Z`), weekStartDay);
+    const newWeekStartStr = toDateStrUTC(newWeekStart);
 
     // Get all planned workouts for this user
     const plannedWorkouts = await ctx.db
@@ -1019,10 +1005,8 @@ export const simulateTrainingProgress = mutation({
         // Capture the original scheduled date BEFORE we update it
         const originalDate = day.date;
 
-        // Calculate new date for this day (shift back in time)
-        const newDate = new Date(newWeekStart);
-        newDate.setDate(newWeekStart.getDate() + (weekIdx * 7) + dayIdx);
-        const newDateStr = newDate.toISOString().split("T")[0];
+        // Calculate new date for this day (shift back in time) using UTC helpers
+        const newDateStr = addDaysUTC(newWeekStartStr, (weekIdx * 7) + dayIdx);
         
         // Update the plan structure with the new date
         updatedPlan.plan[weekIdx].days[dayIdx].date = newDateStr;
@@ -1046,7 +1030,7 @@ export const simulateTrainingProgress = mutation({
             // Mark planned workout as completed
             await ctx.db.patch(plannedWorkout._id, {
               status: "completed",
-              completedAt: newDate.toISOString(),
+              completedAt: `${newDateStr}T08:00:00.000Z`,
             });
           }
         }
@@ -1061,9 +1045,121 @@ export const simulateTrainingProgress = mutation({
 
     return {
       message: `Successfully simulated ${weeksToComplete} weeks of training progress`,
-      newStartDate: newWeekStart.toISOString().split("T")[0],
+      newStartDate: newWeekStartStr,
       completedWorkouts: weeksToComplete * 3, // Approximate for most plans
     };
+  },
+});
+
+// ────────────────────────────── RESCHEDULE PLANNED WORKOUT
+export const reschedulePlannedWorkout = mutation({
+  args: {
+    plannedWorkoutId: v.id("plannedWorkouts"),
+    newDate: v.string(), // YYYY-MM-DD
+  },
+  handler: async (ctx, { plannedWorkoutId, newDate }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    // Basic validation of date format (YYYY-MM-DD)
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(newDate)) {
+      throw new Error("Invalid date format – expected YYYY-MM-DD");
+    }
+
+    // Parse newDate to ensure it's not in the far past (allow today forward)
+    const todayStr = new Date().toISOString().split("T")[0];
+    if (newDate < todayStr) {
+      throw new Error("Cannot reschedule to a past date");
+    }
+
+    // Fetch planned workout
+    const plannedWorkout = await ctx.db.get(plannedWorkoutId);
+    if (!plannedWorkout) throw new Error("Planned workout not found");
+
+    if (plannedWorkout.userId !== userId) {
+      throw new Error("Permission denied");
+    }
+
+    if (plannedWorkout.status === "completed") {
+      throw new Error("Cannot reschedule a completed workout");
+    }
+
+    const oldDate = plannedWorkout.scheduledDate;
+    if (oldDate === newDate) {
+      return { message: "Workout already scheduled for that date" };
+    }
+
+    // Ensure there is no other workout already scheduled on newDate
+    const clash = await ctx.db
+      .query("plannedWorkouts")
+      .withIndex("by_user_date", (q: any) => q.eq("userId", userId).eq("scheduledDate", newDate))
+      .first();
+    if (clash) {
+      throw new Error("Another workout is already scheduled for that date");
+    }
+
+    // 1) Update plannedWorkouts entry
+    await ctx.db.patch(plannedWorkoutId, {
+      scheduledDate: newDate,
+    });
+
+    // 2) Patch training plan structure so ActivePlanView reflects change
+    const activePlan = await ctx.db
+      .query("trainingPlans")
+      .withIndex("by_user_active", (q) => q.eq("userId", userId).eq("isActive", true))
+      .first();
+
+    if (activePlan) {
+      const updatedPlan = { ...activePlan } as any;
+            // --- Remove day from its old week & capture it
+      let removedDay: any = null;
+      for (let w = 0; w < updatedPlan.plan.length; w++) {
+        const idx = updatedPlan.plan[w].days.findIndex((d: any) => d.date === oldDate && d.workoutTemplateId === plannedWorkout.workoutTemplateId);
+        if (idx !== -1) {
+          removedDay = { ...updatedPlan.plan[w].days[idx], date: newDate }; // update date while capturing
+          updatedPlan.plan[w].days.splice(idx, 1);
+          break;
+        }
+      }
+
+      if (!removedDay) {
+        // fallback: couldn't locate, nothing else to patch
+        await ctx.db.patch(activePlan._id, { plan: updatedPlan.plan, updatedAt: new Date().toISOString() });
+      } else {
+        // Find or create week to place new date
+        let targetWeekIdx = updatedPlan.plan.findIndex((w: any) => {
+          const minDate = w.days.length ? w.days[0].date : null;
+          const maxDate = w.days.length ? w.days[w.days.length - 1].date : null;
+          return minDate && maxDate && newDate >= minDate && newDate <= maxDate;
+        });
+
+        if (targetWeekIdx === -1) {
+          // Determine if before first or after last
+          if (newDate < updatedPlan.plan[0].days[0].date) {
+            targetWeekIdx = 0;
+          } else {
+            targetWeekIdx = updatedPlan.plan.length - 1;
+          }
+        }
+
+        // Insert the day
+        updatedPlan.plan[targetWeekIdx].days.push(removedDay);
+        // Sort the week by date
+        updatedPlan.plan[targetWeekIdx].days.sort((a: any, b: any) => a.date.localeCompare(b.date));
+
+        // Finally, ensure weeks themselves are sorted by their first date
+        updatedPlan.plan.sort((a: any, b: any) => a.days[0].date.localeCompare(b.days[0].date));
+
+        await ctx.db.patch(activePlan._id, {
+          plan: updatedPlan.plan,
+          updatedAt: new Date().toISOString(),
+        });
+      }
+    }
+
+    // TODO: re-schedule push notifications here if you have such logic
+
+    return { message: "Workout rescheduled", oldDate, newDate };
   },
 });
 

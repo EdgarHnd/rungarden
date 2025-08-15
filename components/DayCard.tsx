@@ -143,9 +143,9 @@ export default function DayCard({
         pathname: '/path',
       });
     } else {
-      analytics.track({ name: 'recording_modal_viewed_from_day_card' });
-      // Show the recording modal
-      setShowRecordingModal(true);
+      router.push({
+        pathname: '/run',
+      });
     }
   };
 
@@ -167,7 +167,7 @@ export default function DayCard({
           {hasLinkedActivities && index === 0 && (
             <View style={styles.linkageIndicator}>
               <Text style={styles.linkageText}>
-                Completed: {getWorkoutDisplayName(workoutType)}
+                Today's Workout Completed
               </Text>
             </View>
           )}
@@ -261,8 +261,6 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.sm,
     borderRadius: Theme.spacing.sm,
     marginBottom: Theme.spacing.sm,
-    borderLeftWidth: 3,
-    borderLeftColor: Theme.colors.accent.primary,
   },
   linkageText: {
     fontSize: 12,

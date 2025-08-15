@@ -4,11 +4,11 @@ import { api } from "./_generated/api";
 import { action, mutation, query } from "./_generated/server";
 import { addCoins } from "./utils/coins";
 import {
-  calculateLevelFromXP,
-  calculateTotalXPFromActivities,
-  distanceToXP,
-  getPlannedWorkoutXP,
-  getRunXP
+    calculateLevelFromXP,
+    calculateTotalXPFromActivities,
+    distanceToXP,
+    getPlannedWorkoutXP,
+    getRunXP
 } from "./utils/gamification";
 import { recalcStreak } from "./utils/streak";
 
@@ -1443,3 +1443,34 @@ export const getActivityById = query({
     return activity;
   },
 }); 
+
+// Record user's post-run feeling on an activity
+export const recordActivityFeeling = mutation({
+  args: {
+    activityId: v.id("activities"),
+    feeling: v.union(
+      v.literal("amazing"),
+      v.literal("good"),
+      v.literal("okay"),
+      v.literal("tough"),
+      v.literal("struggled"),
+      v.literal("dead")
+    ),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) throw new Error("Not authenticated");
+
+    const activity = await ctx.db.get(args.activityId);
+    if (!activity || activity.userId !== userId) {
+      throw new Error("Activity not found or unauthorized");
+    }
+
+    await ctx.db.patch(args.activityId, {
+      feeling: args.feeling,
+      feelingRecordedAt: new Date().toISOString(),
+    });
+
+    return { success: true };
+  },
+});

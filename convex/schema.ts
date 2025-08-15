@@ -235,6 +235,17 @@ const schema = defineSchema({
     maxSpeed: v.optional(v.number()),                // peak speed
     averageSpeed: v.optional(v.number()),            // average speed
 
+    // User feedback on how the activity felt
+    feeling: v.optional(v.union(
+      v.literal("amazing"),
+      v.literal("good"),
+      v.literal("okay"),
+      v.literal("tough"),
+      v.literal("struggled"),
+      v.literal("dead")
+    )),
+    feelingRecordedAt: v.optional(v.string()),
+
     isNewActivity: v.optional(v.boolean()),
     syncedAt: v.string()
   })
@@ -352,6 +363,7 @@ const schema = defineSchema({
       v.literal("motivation")
     ),
     iconEmoji: v.string(),
+    iconImageUrl: v.optional(v.string()),
     orderIndex: v.number(),
     createdAt: v.string(),
   }),

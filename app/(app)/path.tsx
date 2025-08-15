@@ -3,11 +3,13 @@ import ActivePlanView from '@/components/path/ActivePlanView';
 import PlanBrowserView from '@/components/path/PlanBrowserView';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useRevenueCat } from '@/provider/RevenueCatProvider';
 import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
 import { Alert, Animated, Dimensions, ImageSourcePropType, SafeAreaView, StyleSheet, Text, View } from 'react-native';
+import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
 
 interface PlanOption {
   value: string;
@@ -32,6 +34,7 @@ export default function PathScreen() {
   const simpleSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
   const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const userProfile = useQuery(api.userProfile.getOrCreateProfile);
+  const { user: revenueCatUser } = useRevenueCat();
 
   const [selectedGoalIndex, setSelectedGoalIndex] = useState(0);
   const [showPlanModal, setShowPlanModal] = useState(false);
@@ -116,6 +119,47 @@ export default function PathScreen() {
       setIsGenerating(true);
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
+      // Check if this is a premium plan (disabled plans are premium-only)
+      const isPremiumPlan = true;
+
+      // If it's a premium plan and user doesn't have premium access, show paywall
+      if (isPremiumPlan && !revenueCatUser.pro) {
+        try {
+          const result = await RevenueCatUI.presentPaywall();
+
+          switch (result) {
+            case PAYWALL_RESULT.PURCHASED:
+            case PAYWALL_RESULT.RESTORED:
+              // User successfully subscribed, continue with plan creation
+              console.log('User subscribed, proceeding with premium plan');
+              break;
+            case PAYWALL_RESULT.CANCELLED:
+            case PAYWALL_RESULT.ERROR:
+            case PAYWALL_RESULT.NOT_PRESENTED:
+            default:
+              // User cancelled or error occurred, don't proceed
+              setIsGenerating(false);
+              return;
+          }
+        } catch (error: any) {
+          console.log('Paywall interaction:', error);
+
+          // Check if this is a user cancellation (common with RevenueCat)
+          if (error?.userCancelled || error?.code === 'userCancelled' ||
+            error?.message?.includes('cancelled') || error?.message?.includes('canceled')) {
+            console.log('User cancelled subscription');
+            setIsGenerating(false);
+            return;
+          }
+
+          // For actual errors, show error message
+          console.error('Paywall error:', error);
+          Alert.alert('Error', 'Something went wrong with the subscription. Please try again.');
+          setIsGenerating(false);
+          return;
+        }
+      }
+
       const today = new Date();
       const targetDate = new Date(today);
       targetDate.setDate(today.getDate() + (selectedPlan.weeks * 7));
@@ -177,6 +221,8 @@ export default function PathScreen() {
         plan={selectedPlan}
         onStart={handleStartPlan}
         isGenerating={isGenerating}
+        isPremiumPlan={selectedPlan ? selectedPlan.value !== '5K' : false}
+        userHasPremium={revenueCatUser.pro}
       />
     </SafeAreaView>
   );

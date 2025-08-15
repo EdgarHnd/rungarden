@@ -1,5 +1,72 @@
 import { v } from "convex/values";
-import { action, mutation, query } from "./_generated/server";
+import { mutation } from "./_generated/server";
+
+// Admin mutation to normalize onboarding-related fields for existing users
+// - Normalizes trainingProfiles.goalDistance to one of:
+//   '5K' | '10K' | 'half-marathon' | 'marathon' | 'just-run-more'
+// - Optionally clears userProfiles.path (legacy field no longer used)
+export const adminNormalizeOnboarding = mutation({
+  args: {
+    dryRun: v.optional(v.boolean()),
+    clearPath: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args) => {
+    const canonicalSet = new Set([
+      "5K",
+      "10K",
+      "half-marathon",
+      "marathon",
+      "just-run-more",
+    ]);
+
+    let totalProfiles = 0;
+    let normalizedProfiles = 0;
+    let clearedPaths = 0;
+
+    // Normalize training profiles goalDistance
+    const trainingProfiles = await ctx.db.query("trainingProfiles").collect();
+    for (const tp of trainingProfiles) {
+      totalProfiles += 1;
+      const gd = (tp as any).goalDistance as string | undefined;
+      const needsNormalization = !gd || !canonicalSet.has(gd);
+      if (needsNormalization) {
+        normalizedProfiles += 1;
+        if (!args.dryRun) {
+          await ctx.db.patch(tp._id, {
+            goalDistance: "just-run-more",
+            updatedAt: new Date().toISOString(),
+          });
+        }
+      }
+    }
+
+    // Optionally clear legacy userProfiles.path
+    if (args.clearPath) {
+      const userProfiles = await ctx.db.query("userProfiles").collect();
+      for (const up of userProfiles) {
+        if ((up as any).path !== undefined) {
+          clearedPaths += 1;
+          if (!args.dryRun) {
+            await ctx.db.patch(up._id, {
+              path: undefined,
+              updatedAt: new Date().toISOString(),
+            } as any);
+          }
+        }
+      }
+    }
+
+    return {
+      totalTrainingProfiles: totalProfiles,
+      normalizedTrainingProfiles: normalizedProfiles,
+      clearedUserPaths: clearedPaths,
+      dryRun: args.dryRun ?? false,
+      clearPath: args.clearPath ?? false,
+    };
+  },
+});
+
+import { action, query } from "./_generated/server";
 
 /**
  * Database Migrations

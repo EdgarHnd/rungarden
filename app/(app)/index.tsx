@@ -58,6 +58,7 @@ export default function HomeScreen() {
 
   // Convex queries and mutations
   const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
   const activities = useQuery(api.activities.getUserActivities, { days: 21, limit: 100 });
   const activitiesNeedingCelebration = useQuery(api.activities.getActivitiesNeedingCelebration);
   const trainingPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
@@ -667,10 +668,12 @@ export default function HomeScreen() {
     }, [isAuthenticated, profile?.stravaSyncEnabled, profile?.stravaInitialSyncCompleted, checkInitialSyncModal])
   );
 
-  // Check for data source connection
+  // Check for data source connection - only prompt non-beginners
   useEffect(() => {
     const checkDataSource = async () => {
-      if (isAuthenticated && profile && !profile.healthKitSyncEnabled && !profile.stravaSyncEnabled) {
+      if (isAuthenticated && profile && trainingProfile &&
+        !profile.healthKitSyncEnabled && !profile.stravaSyncEnabled &&
+        trainingProfile.fitnessLevel !== 'true-beginner') {
         // Check if we've shown the alert before
         const hasShownAlert = await AsyncStorage.getItem('hasShownDataSourceAlert');
         if (!hasShownAlert) {
@@ -696,7 +699,7 @@ export default function HomeScreen() {
     };
 
     checkDataSource();
-  }, [isAuthenticated, profile]);
+  }, [isAuthenticated, profile, trainingProfile]);
 
   // Check for activities needing celebration
   useEffect(() => {

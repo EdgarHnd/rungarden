@@ -131,11 +131,10 @@ export interface OnboardingData {
   firstName: string | null;
   lastName: string | null;
   mascotName: string | null;
-  path: UserPath | null;
-  currentAbility: CurrentAbility | null;
+  canRun30Min: boolean | null; // Simple true/false for 30min running ability
+  goalDistance: GoalDistance | null;
   daysPerWeek: number;
   preferredDays: string[];
-  preferTimeOverDistance: boolean | null;
   metricSystem: MetricSystem | null;
   gender: Gender | null;
   age: number | null;

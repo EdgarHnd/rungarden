@@ -2,7 +2,7 @@ import Theme from '@/constants/theme';
 import { Ionicons } from '@expo/vector-icons';
 import { ImageBackground, Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-export default function PlanDetailsModal({ visible, onClose, plan, onStart, isGenerating }: { visible: boolean, onClose: () => void, plan: any, onStart: () => void, isGenerating: boolean }) {
+export default function PlanDetailsModal({ visible, onClose, plan, onStart, isGenerating, isPremiumPlan, userHasPremium }: { visible: boolean, onClose: () => void, plan: any, onStart: () => void, isGenerating: boolean, isPremiumPlan?: boolean, userHasPremium?: boolean }) {
   if (!plan) return null;
 
   return (
@@ -84,13 +84,19 @@ export default function PlanDetailsModal({ visible, onClose, plan, onStart, isGe
         </View>
 
         <View style={styles.modalFooter}>
+          {isPremiumPlan && !userHasPremium && (
+            <Text style={styles.premiumNotice}>
+              This is a premium plan. You'll be prompted to subscribe to continue.
+            </Text>
+          )}
           <TouchableOpacity
             style={[styles.modalStartButton, isGenerating && styles.modalStartButtonDisabled]}
             onPress={onStart}
             disabled={isGenerating}
           >
             <Text style={styles.modalStartButtonText}>
-              {isGenerating ? 'Creating Your Plan...' : `Start`}
+              {isGenerating ? 'Creating Your Plan...' :
+                isPremiumPlan && !userHasPremium ? 'Start Premium Plan' : 'Start'}
             </Text>
           </TouchableOpacity>
         </View>
@@ -233,5 +239,13 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.bold,
     fontSize: 20,
     textAlign: 'center',
+  },
+  premiumNotice: {
+    color: Theme.colors.text.tertiary,
+    fontFamily: Theme.fonts.medium,
+    fontSize: 14,
+    textAlign: 'center',
+    marginBottom: 16,
+    paddingHorizontal: 20,
   },
 });
