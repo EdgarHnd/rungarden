@@ -10,7 +10,6 @@ import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
 import {
-  Alert,
   RefreshControl,
   SafeAreaView,
   SectionList,
@@ -50,10 +49,6 @@ export default function ProgressScreen() {
   });
 
   const profile = useQuery(api.userProfile.getOrCreateProfile);
-  const trainingPlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
-  const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
-  const simpleSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
-  const completedWorkouts: any[] = [];
   const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
 
   const handleRefresh = async () => {
@@ -62,17 +57,8 @@ export default function ProgressScreen() {
 
   const handleStartNowPress = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-
-    // Check if we're in development mode
-    if (__DEV__) {
-      router.push('/manage-plan');
-    } else {
-      Alert.alert(
-        'Coming Soon',
-        'Training plan generation is coming soon! Stay tuned for updates.',
-        [{ text: 'OK', style: 'default' }]
-      );
-    }
+    // Navigate to run recording for Run Garden
+    router.push('/run');
   };
 
   const handleActivityPress = (activity: any) => {
@@ -80,6 +66,7 @@ export default function ProgressScreen() {
 
     // Convert database activity to the format expected by the activity detail screen
     const activityForDetail = {
+      _id: activity._id, // Include the database ID for plant fetching
       uuid: activity.healthKitUuid || `strava_${activity.stravaId}`,
       startDate: activity.startDate,
       endDate: activity.endDate,
@@ -98,34 +85,9 @@ export default function ProgressScreen() {
     });
   };
 
-  const getGoalDisplayName = (goal: string): string => {
-    const names: Record<string, string> = {
-      '5K': '0 to 5K',
-      '10K': 'First 10K',
-      'just-run-more': 'Get Fit'
-    };
-    return names[goal] || goal;
-  };
+  // Removed training goal logic for Run Garden
 
-  const calculateOverallProgress = () => {
-    if (!trainingPlan?.plan || !completedWorkouts) return { weeksCompleted: 0, totalWeeks: 0, totalDistance: 0 };
-
-    const totalWeeks = trainingPlan.plan.length;
-    const currentWeek = Math.min(
-      Math.floor((Date.now() - new Date(trainingPlan._creationTime).getTime()) / (7 * 24 * 60 * 60 * 1000)) + 1,
-      totalWeeks
-    );
-
-    const totalDistance = completedWorkouts.reduce((sum: number, completion: any) =>
-      sum + (completion.actualDistance || 0), 0
-    ) / 1000;
-
-    return {
-      weeksCompleted: Math.max(0, currentWeek - 1),
-      totalWeeks,
-      totalDistance: Math.round(totalDistance * 10) / 10
-    };
-  };
+  // Removed training plan progress calculation for Run Garden
 
   // Group activities by month
   const getActivitiesForMonth = (monthOffset: number = 0) => {
@@ -213,8 +175,6 @@ export default function ProgressScreen() {
     });
   };
 
-  const progress = calculateOverallProgress();
-  const planName = trainingProfile ? `${getGoalDisplayName(trainingProfile.goalDistance || '5K')} Plan` : '';
   const sections = generateDynamicSections();
 
   // Loading state
@@ -344,7 +304,7 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.medium,
   },
   buttonText: {
-    color: Theme.colors.background.primary,
+    color: '#FFFFFF', // White text for contrast on colored button
     fontSize: 14,
     fontFamily: Theme.fonts.bold,
     textAlign: 'center',
@@ -483,7 +443,7 @@ const styles = StyleSheet.create({
   actionButtonText: {
     fontSize: 18,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: '#FFFFFF', // White text for contrast on brown button
     textAlign: 'center',
   },
   inCardButton: {

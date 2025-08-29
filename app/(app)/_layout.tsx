@@ -1,34 +1,15 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useTrackNavigation } from '@/hooks/useTrackNavigation';
-import { FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Tabs, router } from 'expo-router';
-import React, { useState } from 'react';
+import { useState } from 'react';
 import { TouchableOpacity, View } from 'react-native';
 
-function LeaderboardIcon({ color, size }: { color: string; size: number }) {
-  const pending = useQuery(api.friends.getPendingFriendRequests);
-  const hasPending = (pending?.length ?? 0) > 0;
-  return (
-    <View style={{ position: 'relative' }}>
-      <FontAwesome6 name="fire-burner" size={size} color={color} />
-      {hasPending && (
-        <View style={{
-          position: 'absolute',
-          top: -2,
-          right: -2,
-          width: 10,
-          height: 10,
-          borderRadius: 5,
-          backgroundColor: Theme.colors.special.primary.heart,
-        }} />
-      )}
-    </View>
-  );
-}
+
 
 export default function AppLayout() {
   useTrackNavigation();
@@ -97,7 +78,7 @@ export default function AppLayout() {
           name="index"
           options={({ navigation }) => ({
             tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="home" size={size} color={color} />
+              <FontAwesome5 name="leaf" size={size} color={color} />
             ),
             tabBarButton: createTabBarButton(() => navigation.navigate('index')),
           })}
@@ -106,7 +87,7 @@ export default function AppLayout() {
           name="path"
           options={({ navigation }) => ({
             tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="running" size={size} color={color} />
+              <FontAwesome5 name="calendar-alt" size={size} color={color} />
             ),
             tabBarButton: createTabBarButton(() => navigation.navigate('path')),
           })}
@@ -123,7 +104,7 @@ export default function AppLayout() {
                 justifyContent: 'center',
                 alignItems: 'center',
               }}>
-                <FontAwesome5 name="circle" size={40} color={Theme.colors.text.primary} />
+                <FontAwesome5 name="circle" size={40} color={Theme.colors.background.primary} />
               </View>
             ),
             tabBarButton: createTabBarButton(() => {
@@ -135,7 +116,7 @@ export default function AppLayout() {
           name="leaderboard"
           options={({ navigation }) => ({
             tabBarIcon: ({ color, size }) => (
-              <LeaderboardIcon color={color as string} size={size as number} />
+              <FontAwesome5 name="users" size={size} color={color} />
             ),
             tabBarButton: createTabBarButton(() => navigation.navigate('leaderboard')),
           })}

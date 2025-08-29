@@ -16,11 +16,11 @@ import {
   View,
 } from 'react-native';
 
-const ICONS = {
-  contacts: require('@/assets/images/icons/apple-health.png'), // Placeholder, replace with contacts icon
-  search: require('@/assets/images/icons/strava.png'), // Placeholder, replace with search icon
-  share: require('@/assets/images/blaze/blazefriends.png'),
-};
+// const ICONS = {
+//   contacts: require('@/assets/images/icons/apple-health.png'), // Placeholder, replace with contacts icon
+//   search: require('@/assets/images/icons/strava.png'), // Placeholder, replace with search icon
+//   share: require('@/assets/images/blaze/blazefriends.png'),
+// };
 
 export default function AddFriendScreen() {
   const [query, setQuery] = useState('');
@@ -55,12 +55,12 @@ export default function AddFriendScreen() {
     try {
       Haptics.selectionAsync();
       analytics.track({ name: 'invite_link_shared' });
-      const shareUrl = 'https://blaze.run';
-      const message = 'Join me on Blaze! Download the app here:';
+      const shareUrl = 'https://rungarden.app';
+      const message = 'Join me on Run Garden! Download the app here:';
       await Share.share({
         message: `${message} ${shareUrl}`,
         url: shareUrl,
-        title: 'Join Blaze - Running & Fitness App',
+        title: 'Join Run Garden - Running & Garden App',
       });
     } catch (error) {
       console.error('Error sharing invite:', error);

@@ -17,6 +17,7 @@ export interface SyncResult {
   leveledUp?: boolean;
   newLevel?: number;
   oldLevel?: number;
+  plantsAwarded?: number; // Plants awarded during sync
 }
 
 class DatabaseHealthService {
@@ -109,6 +110,58 @@ class DatabaseHealthService {
   async forceSyncFromHealthKit(days: number = 30): Promise<SyncResult> {
     console.log('[DatabaseHealthService] Force syncing from HealthKit...');
     return this.syncActivitiesFromHealthKit(days);
+  }
+
+  /**
+   * Force sync with plant awarding - useful for testing
+   * This method will award plants even for existing activities
+   */
+  async forceSyncFromHealthKitWithPlants(days: number = 30): Promise<SyncResult> {
+    try {
+      console.log('[DatabaseHealthService] Force syncing from HealthKit with plant awarding...');
+      
+      // Get fresh data from HealthKit
+      const healthKitActivities = await HealthService.getRunningActivities(days);
+      
+      if (healthKitActivities.length === 0) {
+        console.log('[DatabaseHealthService] No HealthKit activities found');
+        return {
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          lastSyncDate: new Date().toISOString(),
+          distanceGained: 0,
+          leveledUp: false,
+        };
+      }
+
+      // Transform to database format
+      const activitiesForDb = healthKitActivities.map((activity: RunningActivity) => ({
+        healthKitUuid: activity.uuid,
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        duration: activity.duration,
+        distance: activity.distance,
+        calories: activity.calories,
+        averageHeartRate: activity.averageHeartRate,
+        workoutName: activity.workoutName,
+      }));
+
+      // Force plant awarding mode (never treat as initial sync)
+      const syncResult = await this.convexClient.mutation(
+        api.activities.syncActivitiesFromHealthKitWithPlants,
+        { activities: activitiesForDb }
+      );
+
+      console.log('[DatabaseHealthService] Sync with plants completed:', syncResult);
+      return {
+        ...syncResult,
+        lastSyncDate: new Date().toISOString(),
+      };
+    } catch (error) {
+      console.error('Error syncing activities from HealthKit with plants:', error);
+      throw error;
+    }
   }
 
   /**

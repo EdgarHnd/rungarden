@@ -68,6 +68,6 @@ const styles = StyleSheet.create({
   badgeValue: {
     fontSize: 22,
     fontFamily: Theme.fonts.bold,
-    color: '#FFFFFF',
+    color: Theme.colors.text.primary,
   },
 }); 

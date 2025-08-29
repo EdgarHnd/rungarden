@@ -5,11 +5,12 @@ import { useFonts } from 'expo-font';
 import { Stack } from 'expo-router';
 import * as SecureStore from "expo-secure-store";
 import * as SplashScreen from 'expo-splash-screen';
-import React, { useEffect } from 'react';
+import { useEffect } from 'react';
 import { Platform } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AnalyticsProviderComponent } from '../provider/AnalyticsProvider';
-import { MixpanelProvider } from '../provider/MixpanelProvider';
-import { RevenueCatProvider } from '../provider/RevenueCatProvider';
+// Temporarily disabled RevenueCat for testing
+
 import OnboardingScreen from './onboarding';
 
 // Keep the splash screen visible while we fetch resources
@@ -19,7 +20,11 @@ const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
   unsavedChangesWarning: false,
 });
 
-const mixpanelProvider = new MixpanelProvider(process.env.EXPO_PUBLIC_MIXPANEL_TOKEN!);
+// Create mock provider for testing (no token needed)
+const mixpanelProvider = {
+  initialize: () => Promise.resolve(),
+  track: () => { },
+} as any;
 
 const secureStorage = {
   getItem: SecureStore.getItemAsync,
@@ -32,23 +37,7 @@ function AuthenticatedApp() {
     <Stack screenOptions={{ headerShown: false }}>
       <Stack.Screen name="(app)" />
       <Stack.Screen
-        name="challenges"
-        options={{
-          presentation: 'card',
-          gestureEnabled: true,
-          animation: 'slide_from_right',
-        }}
-      />
-      <Stack.Screen
         name="activity-detail"
-        options={{
-          presentation: 'card',
-          gestureEnabled: true,
-          animation: 'slide_from_right',
-        }}
-      />
-      <Stack.Screen
-        name="training-detail"
         options={{
           presentation: 'card',
           gestureEnabled: true,
@@ -63,14 +52,7 @@ function AuthenticatedApp() {
           animation: 'slide_from_bottom',
         }}
       />
-      <Stack.Screen
-        name="training"
-        options={{
-          presentation: 'card',
-          gestureEnabled: true,
-          animation: 'slide_from_right',
-        }}
-      />
+
       <Stack.Screen
         name="run"
         options={{
@@ -116,8 +98,8 @@ export default function RootLayout() {
   }
 
   return (
-    <AnalyticsProviderComponent provider={mixpanelProvider}>
-      <RevenueCatProvider>
+    <GestureHandlerRootView style={{ flex: 1 }}>
+      <AnalyticsProviderComponent provider={mixpanelProvider}>
         <ConvexAuthProvider
           client={convex}
           storage={
@@ -136,7 +118,7 @@ export default function RootLayout() {
             <AuthenticatedApp />
           </Authenticated>
         </ConvexAuthProvider>
-      </RevenueCatProvider>
-    </AnalyticsProviderComponent>
+      </AnalyticsProviderComponent>
+    </GestureHandlerRootView>
   );
 }

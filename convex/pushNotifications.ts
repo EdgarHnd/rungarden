@@ -261,7 +261,7 @@ export const sendSimpleScheduleReminder = action({
       
       const bodies = [
         `Ready for your ${args.dayName} run? Keep that flame burning! 🔥`,
-        `${args.dayName} training day! Your ${profile.mascotName || 'Blaze'} is counting on you! ⚡`,
+        `${args.dayName} training day! Time to grow your garden! 🌱`,
         `Time for your ${args.dayName} run! ${args.runsPerWeek} runs this week = flame alive! 🏃‍♂️`,
         `${args.dayName} run day! Every run keeps your streak growing! 💪`,
         `Let's crush this ${args.dayName} workout! Your flame depends on it! 🔥`

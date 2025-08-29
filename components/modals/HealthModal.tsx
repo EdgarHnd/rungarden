@@ -115,7 +115,7 @@ export default function HealthModal({ visible, mascotHealth, simpleSchedule, onC
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
+    backgroundColor: Theme.colors.background.overlay,
     justifyContent: 'center',
     alignItems: 'center',
     padding: Theme.spacing.xl,

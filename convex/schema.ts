@@ -12,38 +12,15 @@ const schema = defineSchema({
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
 
-    weeklyGoal: v.number(),          // metres
     totalDistance: v.number(),       // metres
     totalWorkouts: v.number(),
     totalCalories: v.number(),
 
-    // Gamification
-    level: v.number(),
-    totalXP: v.number(),             // start at 0 in first mutation
-    coins: v.number(),
-
-    // Streak (weekly-based)
-    currentStreak: v.number(),       // consecutive weeks hitting goal
-    longestStreak: v.number(),
-    lastStreakWeek: v.optional(v.string()), // YYYY-MM-DD of week start
-    streakFreezeAvailable: v.number(),
-
-    // Mascot health system
-    mascotName: v.optional(v.string()),
-    mascotHealth: v.number(),        // 0-4, loses 1 per missed week
-
-    // Onboarding profile data
-    path: v.optional(v.union(
-      v.literal("true-beginner"), v.literal("run-habit"),
-      v.literal("weight-loss"), v.literal("race-ready")
-    )),
-    gender: v.optional(v.union(v.literal("female"), v.literal("male"), v.literal("other"))),
-    age: v.optional(v.number()),
-    hasSkippedTrainingPlan: v.optional(v.boolean()),
-
-    // Preferences
-    weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
+    // Basic preferences
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
+    
+    // Garden preferences
+    gardenTheme: v.optional(v.string()), // Future: different garden themes
 
     // Sync toggles & metadata
     healthKitSyncEnabled: v.optional(v.boolean()),
@@ -56,7 +33,7 @@ const schema = defineSchema({
     // Strava tokens
     stravaAthleteId: v.optional(v.number()),
     stravaAccessRevoked: v.optional(v.boolean()),
-    stravaInitialSyncCompleted: v.optional(v.boolean()), // Track if initial sync modal has been shown
+    stravaInitialSyncCompleted: v.optional(v.boolean()),
     stravaAccessToken: v.optional(v.string()),
     stravaRefreshToken: v.optional(v.string()),
     stravaTokenExpiresAt: v.optional(v.number()),
@@ -65,135 +42,12 @@ const schema = defineSchema({
     pushNotificationToken: v.optional(v.string()),
     pushNotificationsEnabled: v.optional(v.boolean()),
 
-    healthKitInitialSyncCompleted: v.optional(v.boolean()), // Track if HealthKit initial sync modal has been shown
+    healthKitInitialSyncCompleted: v.optional(v.boolean()),
 
     updatedAt: v.string()
   }).index("by_user", ["userId"]),
 
-  /* ────────────────────────────── onboarding */
-  trainingProfiles: defineTable({
-    userId: v.id("users"),
-    goalDistance: v.optional(v.string()),
-    goalDate: v.optional(v.string()),
-
-    currentAbility: v.string(),
-    longestDistance: v.string(),
-
-    daysPerWeek: v.number(),                 // 2-6
-    preferredDays: v.array(v.string()),      // ["Mon","Wed",…]
-    hasTreadmill: v.optional(v.boolean()),
-    preferTimeOverDistance: v.boolean(),
-
-    fitnessLevel: v.union(
-      v.literal("true-beginner"), v.literal("novice"),
-      v.literal("intermediate"), v.literal("advanced")
-    ),
-
-    updatedAt: v.string()
-  }).index("by_user", ["userId"]),
-
-  /* ────────────────────────────── simple training schedule */
-  simpleTrainingSchedule: defineTable({
-    userId: v.id("users"),
-    runsPerWeek: v.number(),           // Weekly minimum for streak (1-7)
-    preferredDays: v.array(v.string()), // ["Mon", "Wed", "Fri"] - for daily motivation
-    isActive: v.boolean(),
-    startDate: v.string(),             // YYYY-MM-DD when they started this schedule
-    updatedAt: v.string()
-  }).index("by_user", ["userId"]),
-
-  // Track schedule changes - new requirements apply to next week
-  scheduleHistory: defineTable({
-    userId: v.id("users"),
-    runsPerWeek: v.number(),
-    preferredDays: v.array(v.string()),
-    effectiveFromDate: v.string(),     // YYYY-MM-DD week start when this became active
-    createdAt: v.string()
-  }).index("by_user_date", ["userId", "effectiveFromDate"]),
-
-  /* ────────────────────────────── structured workouts */
-  workoutTemplates: defineTable({
-    name: v.optional(v.string()),
-    type: v.union(
-      v.literal("run"), v.literal("cross-train"),
-      v.literal("strength"), v.literal("rest")
-    ),
-    subType: v.optional(v.union(
-      v.literal("easy"), v.literal("tempo"), v.literal("interval"),
-      v.literal("long"), v.literal("recovery"), v.literal("race")
-    )),
-    description: v.optional(v.string()),
-    xp: v.optional(v.number()),              // XP awarded for completing this workout
-
-    steps: v.array(v.object({
-      order: v.number(),
-      label: v.optional(v.string()),         // "Warm-up"…
-      duration: v.optional(v.string()),      // "5 min"
-      distance: v.optional(v.number()),      // metres
-      pace: v.optional(v.number()),          // seconds per km
-      effort: v.optional(v.string()),        // "easy"…
-      target: v.optional(v.string()),        // HR zone, cadence…
-      notes: v.optional(v.string())
-    })),
-
-    updatedAt: v.string()
-  })
-    .index("by_type", ["type"]),
-
-  /* ────────────────────────────── training plan */
-  trainingPlans: defineTable({
-    userId: v.id("users"),
-    meta: v.object({
-      goal: v.string(),              // "5K", etc.
-      weeks: v.number(),
-      level: v.string(),             // "novice"…
-      daysPerWeek: v.number()
-    }),
-    isActive: v.boolean(),
-
-    plan: v.array(v.object({
-      week: v.number(),
-      microCycle: v.union(
-        v.literal("base"), v.literal("build"),
-        v.literal("peak"), v.literal("taper")
-      ),
-      days: v.array(v.object({
-        date: v.string(),
-        workoutTemplateId: v.optional(v.id("workoutTemplates")),
-        description: v.string(),
-        type: v.optional(v.string()),
-      }))
-    })),
-
-    updatedAt: v.string()
-  })
-    .index("by_user", ["userId"])
-    .index("by_user_active", ["userId", "isActive"]),
-
-  /* ────────────────────────────── calendar entries */
-  plannedWorkouts: defineTable({
-    userId: v.id("users"),
-    trainingPlanId: v.id("trainingPlans"),
-    workoutTemplateId: v.id("workoutTemplates"),            // <-- REQUIRED
-
-    scheduledDate: v.string(),              // YYYY-MM-DD
-    status: v.union(
-      v.literal("scheduled"),
-      v.literal("completed"),
-      v.literal("skipped"),
-      v.literal("missed")
-    ),
-    completedAt: v.optional(v.string()),
-    // Token-based plan metadata
-    token: v.optional(v.string()),          // e.g. "E4"
-    hydrated: v.optional(v.any())           // resolved placeholders JSON
-  })
-    .index("by_user", ["userId"])
-    .index("by_user_date", ["userId", "scheduledDate"])
-    .index("by_plan", ["trainingPlanId"])
-    .index("by_status", ["status"]),
-
-  /* ────────────────────────────── real activities */
+  /* ────────────────────────────── activities */
   activities: defineTable({
     userId: v.id("users"),
 
@@ -213,11 +67,8 @@ const schema = defineSchema({
     stravaId: v.optional(v.number()),
 
     pace: v.optional(v.number()),        // min/km numeric
-    plannedWorkoutId: v.optional(v.id("plannedWorkouts")),  // 🔗
-    type: v.optional(v.literal("rest")),                    // inserted by app
-    xpEarned: v.optional(v.number()),                       // XP earned from this activity
 
-    // Enhanced running data for achievements and gamification
+    // Enhanced running data
     totalElevationGain: v.optional(v.number()),      // meters gained
     elevationHigh: v.optional(v.number()),           // highest elevation
     elevationLow: v.optional(v.number()),            // lowest elevation
@@ -247,77 +98,125 @@ const schema = defineSchema({
     feelingRecordedAt: v.optional(v.string()),
 
     isNewActivity: v.optional(v.boolean()),
-    syncedAt: v.string()
+    syncedAt: v.string(),
+
+    // Garden integration - plant earned from this run
+    plantEarned: v.optional(v.id("plants")),
   })
     .index("by_user", ["userId"])
     .index("by_user_and_date", ["userId", "startDate"])
-    .index("by_planned", ["plannedWorkoutId"])
     .index("by_healthkit_uuid", ["healthKitUuid"])
     .index("by_strava_id", ["stravaId"])
     .index("by_source", ["source"]),
 
-  /* ────────────────────────────── rest activities */
-  restActivities: defineTable({
-    userId: v.id("users"),
-    date: v.string(),                    // YYYY-MM-DD format
-    completedAt: v.string(),             // ISO timestamp when completed
-    xpGained: v.number(),                // XP gained from rest day
-    coinsGained: v.number(),             // Coins gained from rest day
-    plannedWorkoutId: v.optional(v.id("plannedWorkouts")), // Link to planned workout if applicable
-    notes: v.optional(v.string()),       // Optional notes about the rest day
-  })
-    .index("by_user", ["userId"])
-    .index("by_user_date", ["userId", "date"])
-    .index("by_date", ["date"])
-    .index("by_planned", ["plannedWorkoutId"]),
+  /* ────────────────────────────── plant types */
+  plantTypes: defineTable({
+    name: v.string(),                    // "Radish", "Tomato", "Apple Tree"
+    emoji: v.string(),                   // 🥕, 🍅, 🍎
+    distanceRequired: v.number(),        // metres required to earn this plant
+    rarity: v.union(                     // rarity affects growth rate and appearance
+      v.literal("common"),
+      v.literal("uncommon"), 
+      v.literal("rare"),
+      v.literal("epic")
+    ),
+    category: v.union(                   // visual category
+      v.literal("vegetable"),
+      v.literal("fruit"),
+      v.literal("flower"),
+      v.literal("tree"),
+      v.literal("herb")
+    ),
+    description: v.string(),             // "A quick-growing root vegetable"
+    growthStages: v.array(v.object({     // different visual states as plant grows
+      stage: v.number(),                 // 0=seed, 1=sprout, 2=growing, 3=mature
+      name: v.string(),                  // "Seed", "Sprout", "Growing", "Mature"
+      emoji: v.string(),                 // visual representation for this stage
+    })),
+  }).index("by_distance", ["distanceRequired"]),
 
-  /* ────────────────────────────── achievements */
-  challenges: defineTable({
-    name: v.string(),
-    description: v.string(),
-    emoji: v.string(),
-    reward: v.optional(v.union(v.literal("coins"), v.literal("xp"), v.literal("energy"))),
-    requirements: v.string(),
-  }),
-
-  userAchievements: defineTable({
+  /* ────────────────────────────── user plants inventory */
+  plants: defineTable({
     userId: v.id("users"),
-    challengeId: v.id("challenges"), // Challenge identifier
-    unlockedAt: v.string(), // ISO string when unlocked
-    progress: v.number(), // Current progress toward challenge
-    maxProgress: v.number(), // Total required for completion
-    isCompleted: v.boolean(), // Whether challenge is completed
-    rewardClaimed: v.optional(v.boolean()), // Whether reward has been claimed
-    isNew: v.optional(v.boolean()), // Whether this is a new achievement that should show "NEW" badge
+    plantTypeId: v.id("plantTypes"),
+    earnedFromActivityId: v.id("activities"),  // which run earned this plant
+    earnedAt: v.string(),                      // when the plant was earned
+    
+    // Planting status
+    isPlanted: v.boolean(),                    // has user planted this in garden?
+    plantedAt: v.optional(v.string()),         // when planted in garden
+    gardenPosition: v.optional(v.object({      // absolute position in canvas
+      x: v.float64(),                          // pixel position from left
+      y: v.float64(),                          // pixel position from top
+    })),
+    
+    // Canvas properties for free-form garden
+    plantSize: v.optional(v.float64()),        // scale factor (0.5 to 2.0, default 1.0)
+    zIndex: v.optional(v.number()),            // layer order (higher = front)
+    rotation: v.optional(v.float64()),         // rotation in degrees (deprecated, will be removed)
+    
+    // Growth system
+    currentStage: v.number(),                  // 0-3 (seed to mature)
+    experiencePoints: v.number(),              // XP towards next growth stage
+    nextStageRequirement: v.number(),          // XP needed for next stage
+    
+    // Plant health and care
+    waterLevel: v.number(),                    // 0-100, decreases over time
+    lastWatered: v.optional(v.string()),       // last care date
+    isWilted: v.optional(v.boolean()),         // needs attention
+    
     updatedAt: v.string(),
   })
     .index("by_user", ["userId"])
-    .index("by_user_challenge", ["userId", "challengeId"])
-    .index("by_user_completed", ["userId", "isCompleted"])
-    .index("by_user_new", ["userId", "isNew"]),
+    .index("by_user_planted", ["userId", "isPlanted"])
+    .index("by_activity", ["earnedFromActivityId"])
+    .index("by_garden_position", ["userId", "gardenPosition.x", "gardenPosition.y"]),
 
-  // Activity achievements - links achievements to specific activities
-  activityAchievements: defineTable({
+  /* ────────────────────────────── garden layout */
+  gardenLayout: defineTable({
     userId: v.id("users"),
-    activityId: v.id("activities"), // The activity that unlocked this achievement
-    challengeId: v.id("challenges"), // Challenge identifier
-    achievementId: v.id("userAchievements"), // Reference to the user achievement
-    unlockedAt: v.string(), // ISO string when unlocked by this activity
+    gridSize: v.object({                       // garden dimensions
+      width: v.number(),                       // number of tiles wide
+      height: v.number(),                      // number of tiles tall
+    }),
+    unlockedTiles: v.array(v.object({          // which tiles are available for planting
+      x: v.number(),
+      y: v.number(),
+      unlockedAt: v.string(),                  // when this tile became available
+    })),
+    theme: v.optional(v.string()),             // visual theme of the garden
+    lastTended: v.optional(v.string()),        // last time user visited garden
+    updatedAt: v.string(),
+  }).index("by_user", ["userId"]),
+
+  /* ────────────────────────────── plant care history */
+  plantCareLog: defineTable({
+    userId: v.id("users"),
+    plantId: v.id("plants"),
+    action: v.union(                           // type of care given
+      v.literal("water"),
+      v.literal("fertilize"),
+      v.literal("harvest"),
+      v.literal("replant")
+    ),
+    timestamp: v.string(),                     // when care was given
+    experienceGained: v.optional(v.number()),  // XP gained from this action
   })
     .index("by_user", ["userId"])
-    .index("by_activity", ["activityId"])
-    .index("by_user_activity", ["userId", "activityId"])
-    .index("by_challenge", ["challengeId"]),
+    .index("by_plant", ["plantId"])
+    .index("by_user_date", ["userId", "timestamp"]),
 
-  /* ────────────────────────────── coin ledger */
-  coinTransactions: defineTable({
-    userId: v.id("users"),
-    type: v.union(v.literal("earn"), v.literal("spend")),
-    amount: v.number(),
-    source: v.string(),
-    referenceId: v.optional(v.union(v.id("activities"), v.id("restActivities"))), // Can link to run or rest reward
+  /* ────────────────────────────── friends */
+  friendRequests: defineTable({
+    fromUserId: v.string(),
+    toUserId: v.string(),
+    status: v.union(v.literal("pending"), v.literal("accepted"), v.literal("declined")),
     createdAt: v.string(),
-  }).index("by_user", ["userId"]),
+    respondedAt: v.optional(v.string()),
+  })
+    .index("by_users", ["fromUserId", "toUserId"])
+    .index("by_from", ["fromUserId"])
+    .index("by_to", ["toUserId"]),
 
   /* ────────────────────────────── push notifications */
   pushNotificationLogs: defineTable({
@@ -333,50 +232,6 @@ const schema = defineSchema({
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
     .index("by_type", ["type"]),
-
-  /* ────────────────────────────── friends */
-  friendRequests: defineTable({
-    fromUserId: v.id("users"),           // Sender of request
-    toUserId: v.id("users"),             // Receiver of request
-    status: v.union(
-      v.literal("pending"),
-      v.literal("accepted"),
-      v.literal("rejected"),
-      v.literal("blocked")
-    ),
-    createdAt: v.string(),
-    updatedAt: v.string(),
-  })
-    .index("by_from", ["fromUserId"])
-    .index("by_to", ["toUserId"])
-    .index("by_users", ["fromUserId", "toUserId"]),
-
-  /* ────────────────────────────── week rewards */
-  coachCards: defineTable({
-    title: v.string(),
-    content: v.string(),
-    category: v.union(
-      v.literal("technique"),
-      v.literal("nutrition"),
-      v.literal("mindset"),
-      v.literal("recovery"),
-      v.literal("motivation")
-    ),
-    iconEmoji: v.string(),
-    iconImageUrl: v.optional(v.string()),
-    orderIndex: v.number(),
-    createdAt: v.string(),
-  }),
-
-  weekRewards: defineTable({
-    userId: v.id("users"),
-    planId: v.id("trainingPlans"),
-    weekNumber: v.number(),
-    cardId: v.id("coachCards"),
-    claimedAt: v.string(),
-  })
-    .index("by_user_plan", ["userId", "planId"])
-    .index("by_user_week", ["userId", "planId", "weekNumber"]),
 });
 
 export default schema;

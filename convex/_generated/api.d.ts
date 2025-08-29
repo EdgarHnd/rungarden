@@ -16,26 +16,15 @@ import type {
 import type * as activities from "../activities.js";
 import type * as auth from "../auth.js";
 import type * as friends from "../friends.js";
+import type * as garden from "../garden.js";
 import type * as http from "../http.js";
 import type * as internal_verifyAppleToken from "../internal/verifyAppleToken.js";
-import type * as leaderboard from "../leaderboard.js";
-import type * as migrations from "../migrations.js";
-import type * as planTemplates from "../planTemplates.js";
+import type * as plantTypes from "../plantTypes.js";
+import type * as plants from "../plants.js";
 import type * as pushNotifications from "../pushNotifications.js";
-import type * as restReward from "../restReward.js";
-import type * as simpleTrainingSchedule from "../simpleTrainingSchedule.js";
 import type * as stravaAuth from "../stravaAuth.js";
 import type * as stravaWebhooks from "../stravaWebhooks.js";
-import type * as streak from "../streak.js";
-import type * as trainingPlan from "../trainingPlan.js";
-import type * as trainingProfile from "../trainingProfile.js";
 import type * as userProfile from "../userProfile.js";
-import type * as utils_challenges from "../utils/challenges.js";
-import type * as utils_coins from "../utils/coins.js";
-import type * as utils_gamification from "../utils/gamification.js";
-import type * as utils_streak from "../utils/streak.js";
-import type * as weekRewards from "../weekRewards.js";
-import type * as workoutLibrary from "../workoutLibrary.js";
 
 /**
  * A utility for referencing Convex functions in your app's API.
@@ -49,26 +38,15 @@ declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   auth: typeof auth;
   friends: typeof friends;
+  garden: typeof garden;
   http: typeof http;
   "internal/verifyAppleToken": typeof internal_verifyAppleToken;
-  leaderboard: typeof leaderboard;
-  migrations: typeof migrations;
-  planTemplates: typeof planTemplates;
+  plantTypes: typeof plantTypes;
+  plants: typeof plants;
   pushNotifications: typeof pushNotifications;
-  restReward: typeof restReward;
-  simpleTrainingSchedule: typeof simpleTrainingSchedule;
   stravaAuth: typeof stravaAuth;
   stravaWebhooks: typeof stravaWebhooks;
-  streak: typeof streak;
-  trainingPlan: typeof trainingPlan;
-  trainingProfile: typeof trainingProfile;
   userProfile: typeof userProfile;
-  "utils/challenges": typeof utils_challenges;
-  "utils/coins": typeof utils_coins;
-  "utils/gamification": typeof utils_gamification;
-  "utils/streak": typeof utils_streak;
-  weekRewards: typeof weekRewards;
-  workoutLibrary: typeof workoutLibrary;
 }>;
 export declare const api: FilterApi<
   typeof fullApi,

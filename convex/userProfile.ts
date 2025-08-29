@@ -1,13 +1,7 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-import { addCoins, spendCoinsInternal } from "./utils/coins";
-import {
-  calculateLevelFromXP,
-  distanceToXP,
-  getWorkoutLibraryXP
-} from "./utils/gamification";
- 
+
 export const currentUser = query({
   args: {},
   handler: async (ctx) => {
@@ -19,7 +13,7 @@ export const currentUser = query({
   },
 });
 
-// Get user profile
+// Get or create user profile for garden app
 export const getOrCreateProfile = query({
   args: {},
   handler: async (ctx) => {
@@ -33,12 +27,7 @@ export const getOrCreateProfile = query({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
-    if (existingProfile) {
-      return existingProfile;
-    }
-
-    // Return null if no profile exists - will be created by mutation
-    return null;
+    return existingProfile;
   },
 });
 
@@ -62,34 +51,16 @@ export const createProfile = mutation({
       return existingProfile;
     }
 
-    // Create new profile with default values
+    // Create new profile with default values for garden app
     const now = new Date().toISOString();
     const newProfileId = await ctx.db.insert("userProfiles", {
       userId,
-      weeklyGoal: 10000, // 10km default
       totalDistance: 0,
       totalWorkouts: 0,
       totalCalories: 0,
-      level: 1,
-      totalXP: 0,
-      coins: 0,
-      // Initialize streak fields
-      currentStreak: 0,
-      longestStreak: 0,
-      lastStreakWeek: undefined,
-      streakFreezeAvailable: 0,
-      // Initialize mascot health
-      mascotName: "Blaze",
-      mascotHealth: 4,
       firstName: currentUser?.name?.split(' ')[0] ?? undefined,
       lastName: currentUser?.name?.split(' ').slice(1).join(' ') ?? undefined,
-      // Onboarding profile data (initially empty)
-      path: undefined,
-      gender: undefined,
-      age: undefined,
-      hasSkippedTrainingPlan: false,
       // Default preferences
-      weekStartDay: 1, // Monday
       metricSystem: "metric",
       healthKitSyncEnabled: false,
       stravaSyncEnabled: false,
@@ -104,25 +75,13 @@ export const createProfile = mutation({
 // Update user profile (creates if doesn't exist)
 export const updateProfile = mutation({
   args: {
-    weeklyGoal: v.optional(v.number()),
-    totalDistance: v.optional(v.number()),
-    totalWorkouts: v.optional(v.number()),
-    totalCalories: v.optional(v.number()),
-    level: v.optional(v.number()),
-    totalXP: v.optional(v.number()),
-    coins: v.optional(v.number()),
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
-    mascotName: v.optional(v.string()),
-    path: v.optional(v.union(
-      v.literal("true-beginner"), v.literal("run-habit"),
-      v.literal("weight-loss"), v.literal("race-ready")
-    )),
-    gender: v.optional(v.union(v.literal("female"), v.literal("male"), v.literal("other"))),
-    age: v.optional(v.number()),
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
-    weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
-    hasSkippedTrainingPlan: v.optional(v.boolean()),
+    healthKitSyncEnabled: v.optional(v.boolean()),
+    stravaSyncEnabled: v.optional(v.boolean()),
+    autoSyncEnabled: v.optional(v.boolean()),
+    gardenTheme: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -130,30 +89,12 @@ export const updateProfile = mutation({
       throw new Error("Not authenticated");
     }
 
+    const now = new Date().toISOString();
+
     const existingProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
-
-    const now = new Date().toISOString();
-
-    // Calculate coins from total distance if not provided but totalDistance is
-    let calculatedCoins = args.coins;
-    if (calculatedCoins === undefined && args.totalDistance !== undefined) {
-      calculatedCoins = 0; // Don't calculate coins automatically
-    }
-
-    // Calculate totalXP from totalDistance if not provided
-    let calculatedTotalXP = args.totalXP;
-    if (calculatedTotalXP === undefined && args.totalDistance !== undefined) {
-      calculatedTotalXP = distanceToXP(args.totalDistance);
-    }
-
-    // Calculate level from totalXP if level not provided
-    let calculatedLevel = args.level;
-    if (calculatedLevel === undefined && calculatedTotalXP !== undefined) {
-      calculatedLevel = calculateLevelFromXP(calculatedTotalXP);
-    }
 
     if (existingProfile) {
       // Update existing profile
@@ -161,17 +102,6 @@ export const updateProfile = mutation({
         ...args,
         updatedAt: now,
       };
-      
-      // Include calculated values if we calculated them
-      if (calculatedCoins !== undefined) {
-        updateData.coins = calculatedCoins;
-      }
-      if (calculatedTotalXP !== undefined) {
-        updateData.totalXP = calculatedTotalXP;
-      }
-      if (calculatedLevel !== undefined) {
-        updateData.level = calculatedLevel;
-      }
 
       await ctx.db.patch(existingProfile._id, updateData);
       return existingProfile._id;
@@ -179,98 +109,86 @@ export const updateProfile = mutation({
       // Create new profile
       return await ctx.db.insert("userProfiles", {
         userId,
-        weeklyGoal: args.weeklyGoal ?? 10000,
-        totalDistance: args.totalDistance ?? 0,
-        totalWorkouts: args.totalWorkouts ?? 0,
-        totalCalories: args.totalCalories ?? 0,
-        level: calculatedLevel ?? 1,
-        totalXP: calculatedTotalXP ?? 0,
-        coins: calculatedCoins ?? 0,
-        currentStreak: 0,
-        longestStreak: 0,
-        streakFreezeAvailable: 0,
+        totalDistance: 0,
+        totalWorkouts: 0,
+        totalCalories: 0,
         firstName: args.firstName,
         lastName: args.lastName,
-        mascotName: args.mascotName ?? "Blaze",
-        mascotHealth: 4,
-        path: args.path,
-        gender: args.gender,
-        age: args.age,
-        hasSkippedTrainingPlan: args.hasSkippedTrainingPlan ?? false,
         metricSystem: args.metricSystem ?? "metric",
-        weekStartDay: args.weekStartDay ?? 1,
+        healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
+        stravaSyncEnabled: args.stravaSyncEnabled ?? false,
+        autoSyncEnabled: args.autoSyncEnabled ?? false,
+        gardenTheme: args.gardenTheme,
         updatedAt: now,
       });
     }
   },
 });
 
-// Update weekly goal
-export const updateWeeklyGoal = mutation({
-  args: { goal: v.number() },
+// Function for strava auth backward compatibility
+export const updateSyncPreferences = mutation({
+  args: {
+    // HealthKit fields
+    healthKitSyncEnabled: v.optional(v.boolean()),
+    lastHealthKitSync: v.optional(v.string()),
+    healthKitInitialSyncCompleted: v.optional(v.boolean()),
+    // Strava fields  
+    stravaAccessToken: v.optional(v.string()),
+    stravaRefreshToken: v.optional(v.string()), 
+    stravaTokenExpiresAt: v.optional(v.number()),
+    stravaAthleteId: v.optional(v.number()),
+    stravaSyncEnabled: v.optional(v.boolean()),
+    lastStravaSync: v.optional(v.string()),
+    autoSyncEnabled: v.optional(v.boolean()),
+    stravaInitialSyncCompleted: v.optional(v.boolean()),
+  },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new Error("Not authenticated");
     }
 
-    const profile = await ctx.db
+    const existingProfile = await ctx.db
       .query("userProfiles")
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
-    if (!profile) {
-      throw new Error("Profile not found");
+    if (existingProfile) {
+      await ctx.db.patch(existingProfile._id, {
+        ...args,
+        updatedAt: new Date().toISOString(),
+      });
     }
-
-    await ctx.db.patch(profile._id, {
-      weeklyGoal: args.goal,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return { success: true };
   },
 });
 
-// Update metric system preference
-export const updateMetricSystem = mutation({
-  args: { metricSystem: v.union(v.literal("metric"), v.literal("imperial")) },
+// Simple function for backward compatibility  
+export const getProfileByUserId = query({
+  args: { userId: v.id("users") },
   handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const profile = await ctx.db
+    return await ctx.db
       .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .withIndex("by_user", (q) => q.eq("userId", args.userId))
       .first();
-
-    if (!profile) {
-      throw new Error("Profile not found");
-    }
-
-    await ctx.db.patch(profile._id, {
-      metricSystem: args.metricSystem,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return { success: true };
   },
 });
 
-// Update Strava tokens (for server-side token refresh)
+// Simple function for backward compatibility
 export const updateStravaTokens = mutation({
   args: {
-    userId: v.id("users"),
     accessToken: v.string(),
     refreshToken: v.string(),
     expiresAt: v.number(),
   },
   handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
     const existingProfile = await ctx.db
       .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
     if (existingProfile) {
@@ -284,492 +202,54 @@ export const updateStravaTokens = mutation({
   },
 });
 
-// Update sync preferences
-export const updateSyncPreferences = mutation({
-  args: {
-    healthKitSyncEnabled: v.optional(v.boolean()),
-    stravaSyncEnabled: v.optional(v.boolean()),
-    lastHealthKitSync: v.optional(v.union(v.string(), v.null())),
-    lastStravaSync: v.optional(v.union(v.string(), v.null())),
-    stravaAthleteId: v.optional(v.number()),
-    stravaAccessRevoked: v.optional(v.boolean()),
-    stravaInitialSyncCompleted: v.optional(v.boolean()),
-    stravaAccessToken: v.optional(v.string()),
-    stravaRefreshToken: v.optional(v.string()),
-    stravaTokenExpiresAt: v.optional(v.number()),
-    pushNotificationToken: v.optional(v.string()),
-    pushNotificationsEnabled: v.optional(v.boolean()),
-    healthKitInitialSyncCompleted: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const existingProfile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    const now = new Date().toISOString();
-
-    if (existingProfile) {
-      // Update existing profile
-      const updateData: any = {
-        ...args,
-        updatedAt: now,
-      };
-
-      // Handle null values properly for optional string fields
-      if (args.lastHealthKitSync === null) {
-        updateData.lastHealthKitSync = undefined;
-      }
-      if (args.lastStravaSync === null) {
-        updateData.lastStravaSync = undefined;
-      }
-
-      await ctx.db.patch(existingProfile._id, updateData);
-      return existingProfile._id;
-    } 
-  },
-});
-
-// Get current week's progress
-export const getCurrentWeekProgress = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    // Get user's week start preference
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    const weekStartDay = profile?.weekStartDay ?? 1; // Default to Monday
-
-    // Get start of current week based on user preference
-    const now = new Date();
-    const dayOfWeek = now.getDay(); // 0 = Sunday, 1 = Monday, etc.
-    
-    let daysToWeekStart;
-    if (weekStartDay === 1) { // Monday start
-      daysToWeekStart = dayOfWeek === 0 ? 6 : dayOfWeek - 1; // Sunday = 0, Monday = 1
-    } else { // Sunday start
-      daysToWeekStart = dayOfWeek;
-    }
-    
-    const weekStart = new Date(now);
-    weekStart.setDate(now.getDate() - daysToWeekStart);
-    weekStart.setHours(0, 0, 0, 0);
-    const weekStartISO = weekStart.toISOString();
-
-    const endOfWeek = new Date(weekStart);
-    endOfWeek.setDate(weekStart.getDate() + 7);
-    
-    const weekActivities = await ctx.db
-      .query("activities")
-      .withIndex("by_user_and_date", (q) => 
-        q.eq("userId", userId).gte("startDate", weekStartISO).lt("startDate", endOfWeek.toISOString())
-      )
-      .collect();
-
-    const actualDistance = weekActivities.reduce((sum, activity) => sum + activity.distance, 0);
-    const totalCalories = weekActivities.reduce((sum, activity) => sum + activity.calories, 0);
-
-    return {
-      weekStart: weekStartISO,
-      goalDistance: profile?.weeklyGoal ?? 10000,
-      actualDistance,
-      workoutCount: weekActivities.length,
-      totalCalories,
-    };
-  },
-});
-
-// Spend coins mutation (for shop functionality)
-export const spendCoins = mutation({
-  args: {
-    amount: v.number(),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const remaining = await spendCoinsInternal(ctx, userId, args.amount, "shop");
-
-    return {
-      success: true,
-      remainingCoins: remaining,
-    };
-  },
-});
-
-// Get user's current coin balance
-export const getUserCoins = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    return profile?.coins ?? 0;
-  },
-});
-
-// Update push notification settings
-export const updatePushNotificationSettings = mutation({
-  args: {
-    token: v.optional(v.string()),
-    enabled: v.optional(v.boolean()),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const existingProfile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!existingProfile) {
-      throw new Error("Profile not found");
-    }
-
-    const updateData: any = {
-      updatedAt: new Date().toISOString(),
-    };
-
-    if (args.token !== undefined) {
-      updateData.pushNotificationToken = args.token;
-    }
-    if (args.enabled !== undefined) {
-      updateData.pushNotificationsEnabled = args.enabled;
-    }
-
-    await ctx.db.patch(existingProfile._id, updateData);
-    
-    return { success: true };
-  },
-});
-
-// Get user's push notification settings
-export const getPushNotificationSettings = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      return { enabled: false, token: null };
-    }
-
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    return {
-      enabled: profile?.pushNotificationsEnabled ?? false,
-      token: profile?.pushNotificationToken ?? null,
-    };
-  },
-});
-
-// Get rest activities for a user within a date range
-export const getRestActivities = query({
-  args: {
-    startDate: v.string(), // YYYY-MM-DD format
-    endDate: v.string(),   // YYYY-MM-DD format
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const restActivities = await ctx.db
-      .query("restActivities")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .filter((q) => 
-        q.and(
-          q.gte(q.field("date"), args.startDate),
-          q.lte(q.field("date"), args.endDate)
-        )
-      )
-      .collect();
-
-    return restActivities;
-  },
-});
-
-// Check if a specific date has a completed rest day
-export const isRestDayCompleted = query({
-  args: { 
-    date: v.string() // YYYY-MM-DD format
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const restActivity = await ctx.db
-      .query("restActivities")
-      .withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", args.date))
-      .first();
-
-    return {
-      isCompleted: !!restActivity,
-      restActivity: restActivity || null,
-    };
-  },
-});
-
-// Complete rest day (no streak change)
-export const completeRestDay = mutation({
-  args: { 
-    date: v.string(), // Date in YYYY-MM-DD format
-    notes: v.optional(v.string()) // Optional notes about the rest day
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!profile) {
-      throw new Error("Profile not found");
-    }
-
-    const todayUtc = new Date();
-    const todayUtcStr = todayUtc.toISOString().split('T')[0];
-
-    // Also calculate the previous day in UTC to account for users behind UTC timezone
-    const yesterdayUtc = new Date(todayUtc.getTime() - 24 * 60 * 60 * 1000);
-    const yesterdayUtcStr = yesterdayUtc.toISOString().split('T')[0];
-
-    // Allow completing rest day if the supplied date matches either today's date (in UTC) or yesterday's date.
-    // This small tolerance handles cases where the user's local date is still "yesterday" while the server is already on the next UTC day.
-    const allowedDates = new Set([todayUtcStr, yesterdayUtcStr]);
-
-    if (!allowedDates.has(args.date)) {
-      throw new Error("Can only complete today's rest day");
-    }
-
-    // Check if rest day has already been completed today
-    const existingRestActivity = await ctx.db
-      .query("restActivities")
-      .withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", args.date))
-      .first();
-
-    if (existingRestActivity) {
-      // Return success with current streak info instead of throwing error
-      return {
-        success: false,
-        alreadyCompleted: true,
-        message: "Rest day already completed for today",
-        rewards: {
-          xpGained: existingRestActivity.xpGained,
-          coinsGained: existingRestActivity.coinsGained,
-          leveledUp: false,
-          oldLevel: profile.level || 1,
-          newLevel: profile.level || 1,
-        },
-        streak: {
-          currentStreak: profile.currentStreak || 0,
-          longestStreak: profile.longestStreak || 0,
-          streakIncreased: false,
-          milestoneMessage: undefined,
-          streakFreezesEarned: 0
-        }
-      };
-    }
-
-    // Rest day rewards: XP from workout library and 10 coins
-    const restXP = getWorkoutLibraryXP("R"); // Get rest XP from workout library
-    const restCoins = 10;
-    
-    const currentXP = profile.totalXP || 0;
-    const currentStreak = profile.currentStreak || 0;
-    const longestStreak = profile.longestStreak || 0;
-
-    // Calculate new totals (XP/Level only – coins added via ledger helper below)
-    const newTotalXP = currentXP + restXP;
-    const newLevel = calculateLevelFromXP(newTotalXP);
-    const oldLevel = profile.level || 1;
-
-    // Create rest activity entry
-    const restActivityId = await ctx.db.insert("restActivities", {
-      userId,
-      date: args.date,
-      completedAt: new Date().toISOString(),
-      xpGained: restXP,
-      coinsGained: restCoins,
-      notes: args.notes,
-    });
-
-    // Award coins via centralized helper (ensures ledger + atomic balance)
-    await addCoins(ctx, userId, restCoins, "rest-day", restActivityId);
-
-    // Update profile with new values (do NOT modify streak fields)
-    await ctx.db.patch(profile._id, {
-      totalXP: newTotalXP,
-      level: newLevel,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return {
-      success: true,
-      restActivityId,
-      rewards: {
-        xpGained: restXP,
-        coinsGained: restCoins,
-        leveledUp: newLevel > oldLevel,
-        oldLevel,
-        newLevel,
-      },
-      streak: {
-        currentStreak: currentStreak,
-        longestStreak: longestStreak,
-        streakIncreased: false,
-        milestoneMessage: undefined,
-        streakFreezesEarned: 0
-      }
-    };
-  },
-});
-
-// Get user profile by userId (for server-side operations like webhooks)
-export const getProfileByUserId = query({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    return await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", args.userId))
-      .first();
-  },
-});
-
-// Get user profile or create if it doesn't exist
-export const getOrCreateProfileByUserId = query({
-  args: { userId: v.id("users") },
-  handler: async (ctx, args) => {
-    const userId = args.userId;
-    const existingProfile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (existingProfile) {
-      return existingProfile;
-    }
-
-    // Return null if no profile exists - will be created by mutation
-    return null;
-  },
-});
-
-// Delete a rest activity (for corrections or testing)
-export const deleteRestActivity = mutation({
-  args: { 
-    date: v.string() // YYYY-MM-DD format
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    const restActivity = await ctx.db
-      .query("restActivities")
-      .withIndex("by_user_date", (q) => q.eq("userId", userId).eq("date", args.date))
-      .first();
-
-    if (!restActivity) {
-      throw new Error("Rest activity not found for this date");
-    }
-
-    await ctx.db.delete(restActivity._id);
-
-    return {
-      success: true,
-      message: "Rest activity deleted successfully",
-    };
-  },
-});
-
-// ────────────────────────────── search profiles by name
+// Search profiles for adding friends
 export const searchProfiles = query({
-  args: { text: v.string() },
+  args: { 
+    text: v.string() 
+  },
   handler: async (ctx, args) => {
-    const searchText = args.text.trim().toLowerCase();
-    if (searchText.length < 2) return [];
-
-    const currentUserId = await getAuthUserId(ctx);
-
-    // Build set of friendIds to exclude
-    const excludeIds = new Set<string>();
-    if (currentUserId) excludeIds.add(currentUserId);
-
-    if (currentUserId) {
-      // Accepted friend requests where current user is sender or receiver
-      const sent = await ctx.db
-        .query("friendRequests")
-        .withIndex("by_from", q => q.eq("fromUserId", currentUserId))
-        .filter(q => q.eq(q.field("status"), "accepted"))
-        .collect();
-
-      const received = await ctx.db
-        .query("friendRequests")
-        .withIndex("by_to", q => q.eq("toUserId", currentUserId))
-        .filter(q => q.eq(q.field("status"), "accepted"))
-        .collect();
-
-      sent.forEach(fr => excludeIds.add(fr.toUserId as string));
-      received.forEach(fr => excludeIds.add(fr.fromUserId as string));
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return [];
     }
 
-    const allUsers = await ctx.db.query("users").collect();
-    const profiles = await ctx.db.query("userProfiles").collect();
-    const profilesByUserId = new Map(profiles.map(p => [p.userId, p]));
+    if (args.text.length < 2) {
+      return [];
+    }
 
-    const matches = allUsers.filter((user) => {
-      if (excludeIds.has(user._id)) return false;
-      const profile = profilesByUserId.get(user._id);
-      
-      // Construct full name from profile, fall back to user object name
-      const firstName = profile?.firstName || user.name?.split(' ')[0] || '';
-      const lastName = profile?.lastName || user.name?.split(' ').slice(1).join(' ') || '';
-      const fullName = `${firstName} ${lastName}`.trim();
+    // Get current user profile
+    const currentUserProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
 
-      if (!fullName) return false;
-      return fullName.toLowerCase().includes(searchText);
-    }).slice(0, 20);
+    // Search for profiles by name
+    const profiles = await ctx.db
+      .query("userProfiles")
+      .collect();
 
-    return matches.map((user) => {
-      const profile = profilesByUserId.get(user._id);
-      const firstName = profile?.firstName || user.name?.split(' ')[0] || '';
-      const lastName = profile?.lastName || user.name?.split(' ').slice(1).join(' ') || '';
-      const fullName = `${firstName} ${lastName}`.trim();
-      return ({ userId: user._id, name: fullName });
-    });
+    const searchText = args.text.toLowerCase();
+    
+    const matchingProfiles = profiles
+      .filter(profile => {
+        // Don't include current user
+        if (profile.userId === userId) return false;
+        
+        // Search in first name, last name, or full name
+        const firstName = profile.firstName?.toLowerCase() || "";
+        const lastName = profile.lastName?.toLowerCase() || "";
+        const fullName = `${firstName} ${lastName}`.trim();
+        
+        return firstName.includes(searchText) || 
+               lastName.includes(searchText) || 
+               fullName.includes(searchText);
+      })
+      .slice(0, 10) // Limit results
+      .map(profile => ({
+        userId: profile.userId,
+        name: `${profile.firstName || ""} ${profile.lastName || ""}`.trim() || "Unknown User",
+      }));
+
+    return matchingProfiles;
   },
-}); 
+});

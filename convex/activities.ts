@@ -2,15 +2,7 @@ import { getAuthUserId } from "@convex-dev/auth/server";
 import { v } from "convex/values";
 import { api } from "./_generated/api";
 import { action, mutation, query } from "./_generated/server";
-import { addCoins } from "./utils/coins";
-import {
-    calculateLevelFromXP,
-    calculateTotalXPFromActivities,
-    distanceToXP,
-    getPlannedWorkoutXP,
-    getRunXP
-} from "./utils/gamification";
-import { recalcStreak } from "./utils/streak";
+// Simplified for garden app - no complex gamification
 
 // Sync result interface
 interface SyncResult {
@@ -19,10 +11,6 @@ interface SyncResult {
   skipped: number;
   lastSyncDate: string;
   distanceGained?: number;
-  coinsGained?: number;
-  leveledUp?: boolean;
-  newLevel?: number;
-  oldLevel?: number;
   newRuns?: any[];
 }
 
@@ -98,6 +86,68 @@ export const getUserActivities = query({
   },
 });
 
+// Get a specific activity by ID
+export const getActivityById = query({
+  args: {
+    activityId: v.id("activities"),
+  },
+  handler: async (ctx, { activityId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const activity = await ctx.db.get(activityId);
+    
+    // Ensure the activity belongs to the authenticated user
+    if (!activity || activity.userId !== userId) {
+      return null;
+    }
+
+    return activity;
+  },
+});
+
+// Debug mutation to create fake activities for testing
+export const createDebugActivity = mutation({
+  args: {
+    distance: v.number(), // distance in meters
+  },
+  handler: async (ctx, { distance }): Promise<{
+    success: boolean;
+    distance: number;
+    result: any;
+  }> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const now = new Date();
+    const fakeActivity = {
+      healthKitUuid: `debug-${Date.now()}`,
+      startDate: now.toISOString(),
+      endDate: new Date(now.getTime() + 30 * 60 * 1000).toISOString(), // 30 min later
+      duration: Math.max(Math.round(distance / 100), 5), // Rough pace calculation, min 5 minutes
+      distance: distance,
+      calories: Math.round(distance * 0.06), // Rough estimate
+      workoutName: `Debug Run ${(distance / 1000).toFixed(1)}km`,
+    };
+
+    // Use the existing sync function to create the activity
+    const result: any = await ctx.runMutation(api.activities.syncActivitiesFromHealthKit, {
+      activities: [fakeActivity],
+      initialSync: false,
+    });
+
+    return {
+      success: true,
+      distance: distance,
+      result: result,
+    };
+  },
+});
+
 // Sync activities from HealthKit (bulk insert/update)
 export const syncActivitiesFromHealthKit = mutation({
   args: {
@@ -126,10 +176,6 @@ export const syncActivitiesFromHealthKit = mutation({
       updated: 0,
       skipped: 0,
       distanceGained: 0,
-      leveledUp: false,
-      newLevel: 1,
-      oldLevel: 1,
-      coinsGained: 0,
       newRuns: [] as any[], // Track newly created activities
     };
 
@@ -183,8 +229,7 @@ export const syncActivitiesFromHealthKit = mutation({
           console.log(`[syncActivitiesFromHealthKit] Skipped unchanged activity: ${activity.healthKitUuid}`);
         }
       } else {
-        // Create new activity and track distance
-        const xpEarned = getRunXP(); // Fixed 500 XP per run
+        // Create new activity
         const newActivityId = await ctx.db.insert("activities", {
           userId,
           source: "healthkit",
@@ -197,14 +242,11 @@ export const syncActivitiesFromHealthKit = mutation({
           averageHeartRate: activity.averageHeartRate,
           workoutName: activity.workoutName,
           pace,
-          xpEarned,
           isNewActivity: initialSync ? false : true, // Mark as new only for incremental sync
           syncedAt: now,
         });
         
-        // Link to planned workout if one exists for this date
-        const activityDate = new Date(activity.startDate).toISOString().split('T')[0];
-        await linkActivityToPlannedWorkout(ctx, userId, newActivityId, activityDate);
+        // No more planned workout linking in garden app
         
         // Get the full activity record to include in results
         const newActivityRecord = await ctx.db.get(newActivityId);
@@ -218,12 +260,15 @@ export const syncActivitiesFromHealthKit = mutation({
         // Track distance for new activity
         totalDistanceGained += activity.distance;
 
-        // Award coins when this run should count (isNewActivity = true means not from initial sync)
-        if (!initialSync) {
-          const coinsEarned = Math.floor(activity.distance / 100);
-          if (coinsEarned > 0) {
-            await addCoins(ctx, userId, coinsEarned, "run", newActivityId);
-            syncResults.coinsGained += coinsEarned;
+        // Award plant for this run distance (if distance meets criteria)
+        if (!initialSync && activity.distance > 0) {
+          try {
+            await ctx.runMutation(api.plants.awardPlantForActivity, {
+              activityId: newActivityId,
+              distance: activity.distance,
+            });
+          } catch (error) {
+            console.error(`[syncActivitiesFromHealthKit] Failed to award plant for activity ${newActivityId}:`, error);
           }
         }
       }
@@ -232,32 +277,11 @@ export const syncActivitiesFromHealthKit = mutation({
     // Update user profile totals after sync (this calculates everything correctly from DB)
     await updateUserProfileTotalsInternal(ctx, userId);
     
-    // Recalculate streak after new activities (linking is now handled automatically)
-    if (syncResults.newRuns.length > 0) {
-      try {
-        await recalcStreak(ctx.db, userId, new Date().toISOString().split('T')[0]);
-        console.log(`[syncActivitiesFromHealthKit] Recalculated streak after adding ${syncResults.newRuns.length} activities`);
-      } catch (error) {
-        console.error('[syncActivitiesFromHealthKit] Failed to recalculate streak:', error);
-      }
-    }
+    // No streak system in garden app - removed recalculation
     
-    // Get the updated profile to calculate sync results
-    if (totalDistanceGained > 0 && currentProfile) {
-      const updatedProfile = await ctx.db
-        .query("userProfiles")
-        .withIndex("by_user", (q) => q.eq("userId", userId))
-        .first();
-        
-      if (updatedProfile) {
-        const oldLevel = currentProfile.level || 1;
-        const newLevel = updatedProfile.level;
-        
-        syncResults.distanceGained = totalDistanceGained;
-        syncResults.leveledUp = newLevel > oldLevel;
-        syncResults.newLevel = newLevel;
-        syncResults.oldLevel = oldLevel;
-      }
+    // Simple distance tracking for garden app
+    if (totalDistanceGained > 0) {
+      syncResults.distanceGained = totalDistanceGained;
     }
     
     // Update last sync date and mark initial sync completed if applicable
@@ -274,6 +298,150 @@ export const syncActivitiesFromHealthKit = mutation({
     }
 
     return syncResults;
+  },
+});
+
+/*──────────────────────── sync activities from HealthKit with forced plant awarding */
+export const syncActivitiesFromHealthKitWithPlants = mutation({
+  args: {
+    activities: v.array(v.object({
+      healthKitUuid: v.string(),
+      startDate: v.string(),
+      endDate: v.string(),
+      duration: v.number(),
+      distance: v.number(),
+      calories: v.number(),
+      averageHeartRate: v.optional(v.number()),
+      workoutName: v.optional(v.string()),
+    })),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const now = new Date().toISOString();
+    const syncResults = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      distanceGained: 0,
+      newRuns: [] as any[], // Track newly created activities
+    };
+
+    let totalDistanceGained = 0;
+    let plantsAwarded = 0;
+
+    for (const activity of args.activities) {
+      // Check if activity already exists
+      const existingActivity = await ctx.db
+        .query("activities")
+        .withIndex("by_healthkit_uuid", (q) => 
+          q.eq("healthKitUuid", activity.healthKitUuid)
+        )
+        .first();
+
+      // Calculate pace (min/km)
+      const pace = activity.distance > 0 ? 
+        (activity.duration / (activity.distance / 1000)) : undefined;
+
+      console.log(`[syncActivitiesFromHealthKitWithPlants] Processing activity: ${activity.workoutName} on ${activity.startDate}, distance: ${activity.distance}m`);
+
+      if (existingActivity) {
+        // Update existing activity
+        await ctx.db.patch(existingActivity._id, {
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          duration: activity.duration,
+          distance: activity.distance,
+          calories: activity.calories,
+          averageHeartRate: activity.averageHeartRate,
+          workoutName: activity.workoutName,
+          pace,
+        });
+        
+        syncResults.updated++;
+        console.log(`[syncActivitiesFromHealthKitWithPlants] Updated existing activity: ${activity.healthKitUuid}`);
+
+        // FORCE plant awarding even for existing activities (for testing)
+        if (activity.distance > 0) {
+          try {
+            await ctx.runMutation(api.plants.awardPlantForActivity, {
+              activityId: existingActivity._id,
+              distance: activity.distance,
+            });
+            plantsAwarded++;
+            console.log(`[syncActivitiesFromHealthKitWithPlants] Awarded plant for existing activity: ${activity.distance}m`);
+          } catch (error) {
+            console.error(`[syncActivitiesFromHealthKitWithPlants] Failed to award plant for existing activity:`, error);
+          }
+        }
+      } else {
+        // Create new activity
+        const newActivityId = await ctx.db.insert("activities", {
+          userId,
+          healthKitUuid: activity.healthKitUuid,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          duration: activity.duration,
+          distance: activity.distance,
+          calories: activity.calories,
+          averageHeartRate: activity.averageHeartRate,
+          workoutName: activity.workoutName,
+          pace,
+          source: "healthkit",
+          syncedAt: now,
+        });
+        
+        totalDistanceGained += activity.distance;
+        syncResults.created++;
+        syncResults.newRuns.push({ id: newActivityId, distance: activity.distance });
+        console.log(`[syncActivitiesFromHealthKitWithPlants] Created new activity: ${activity.healthKitUuid}, ID: ${newActivityId}`);
+
+        // Award plant for new activity
+        if (activity.distance > 0) {
+          try {
+            await ctx.runMutation(api.plants.awardPlantForActivity, {
+              activityId: newActivityId,
+              distance: activity.distance,
+            });
+            plantsAwarded++;
+            console.log(`[syncActivitiesFromHealthKitWithPlants] Awarded plant for new activity: ${activity.distance}m`);
+          } catch (error) {
+            console.error(`[syncActivitiesFromHealthKitWithPlants] Failed to award plant for new activity:`, error);
+          }
+        }
+      }
+    }
+
+    // Update user profile totals after sync
+    await updateUserProfileTotalsInternal(ctx, userId);
+    
+    // Simple distance tracking for garden app
+    if (totalDistanceGained > 0) {
+      syncResults.distanceGained = totalDistanceGained;
+    }
+    
+    // Update last sync date
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .first();
+
+    if (userProfile) {
+      await ctx.db.patch(userProfile._id, {
+        lastHealthKitSync: now,
+        updatedAt: now,
+      });
+    }
+
+    console.log(`[syncActivitiesFromHealthKitWithPlants] Sync completed: ${syncResults.created} created, ${syncResults.updated} updated, ${plantsAwarded} plants awarded`);
+
+    return {
+      ...syncResults,
+      plantsAwarded, // Add plants awarded to result
+    };
   },
 });
 
@@ -317,7 +485,6 @@ export const syncActivitiesFromStravaServer = mutation({
     let created = 0;
     let updated = 0;
     let skipped = 0;
-    let coinsGained = 0;
     const newRuns: any[] = [];
 
     for (const activity of activities) {
@@ -363,7 +530,6 @@ export const syncActivitiesFromStravaServer = mutation({
         } else {
           // Create new activity
           const pace = activity.distance > 0 ? (activity.duration / (activity.distance / 1000)) : 0;
-          const xpEarned = getRunXP(); // Fixed 500 XP per run
           
           const newActivityId = await ctx.db.insert("activities", {
             userId,
@@ -377,14 +543,11 @@ export const syncActivitiesFromStravaServer = mutation({
             averageHeartRate: activity.averageHeartRate,
             workoutName: activity.workoutName,
             pace,
-            xpEarned,
             isNewActivity: initialSync ? false : true,
             syncedAt: now,
           });
 
-          // Link to planned workout if one exists for this date
-          const activityDate = new Date(activity.startDate).toISOString().split('T')[0];
-          await linkActivityToPlannedWorkout(ctx, userId, newActivityId, activityDate);
+          // No more planned workout linking in garden app
 
           const newActivity = await ctx.db.get(newActivityId);
           if (newActivity) {
@@ -393,12 +556,15 @@ export const syncActivitiesFromStravaServer = mutation({
           
           created++;
 
-          // Award coins when this run should count (isNewActivity = true means not from initial sync)
-          if (!initialSync) {
-            const coinsEarned = Math.floor(activity.distance / 100);
-            if (coinsEarned > 0) {
-              await addCoins(ctx, userId, coinsEarned, "run", newActivityId);
-              coinsGained += coinsEarned;
+          // Award plant for this run distance (if distance meets criteria)
+          if (!initialSync && activity.distance > 0) {
+            try {
+              await ctx.runMutation(api.plants.awardPlantForActivity, {
+                activityId: newActivityId,
+                distance: activity.distance,
+              });
+            } catch (error) {
+              console.error(`[syncActivitiesFromStravaServer] Failed to award plant for activity ${newActivityId}:`, error);
             }
           }
         }
@@ -411,12 +577,7 @@ export const syncActivitiesFromStravaServer = mutation({
     if (created > 0) {
       await updateUserProfileTotalsServer(ctx, userId);
       
-      // Recalculate streak after new activities
-      try {
-        await recalcStreak(ctx.db, userId, new Date().toISOString().split('T')[0]);
-      } catch (error) {
-        console.error('[syncActivitiesFromStravaServer] Failed to recalculate streak:', error);
-      }
+      // No streak system in garden app - removed recalculation
       
       // Update last sync time
       const userProfile = await ctx.db
@@ -438,7 +599,6 @@ export const syncActivitiesFromStravaServer = mutation({
       skipped,
       lastSyncDate: now,
       newRuns,
-      coinsGained,
     };
 
     return result;
@@ -462,16 +622,11 @@ async function updateUserProfileTotalsServer(ctx: any, userId: string) {
     .first();
 
   if (userProfile) {
-    const totalXP = distanceToXP(totalDistance);
-    const level = calculateLevelFromXP(totalXP);
-    const coins = 0; // Don't calculate coins automatically
-
+    // Simple stats tracking for garden app
     await ctx.db.patch(userProfile._id, {
       totalDistance,
       totalWorkouts,
       totalCalories,
-      totalXP,
-      level,
       updatedAt: new Date().toISOString(),
     });
   }
@@ -495,18 +650,11 @@ export const getProfileStats = query({
     const totalCalories = allActivities.reduce((sum, a) => sum + a.calories, 0);
     const totalWorkouts = allActivities.length;
     
-    // Calculate XP and level from activities (new system)
-    const totalXP = calculateTotalXPFromActivities(allActivities);
-    const level = calculateLevelFromXP(totalXP);
-    const coins = 0; // Don't calculate coins automatically
-
+    // Simple stats for garden app - no XP or level system  
     return {
       totalDistance,
       totalWorkouts,
       totalCalories,
-      totalXP,
-      level,
-      coins,
     };
   },
 });
@@ -557,9 +705,7 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
   const totalCalories = allActivities.reduce((sum: number, a: any) => sum + a.calories, 0);
   const totalWorkouts = allActivities.length;
   
-  // Calculate XP and level from activities (new system)
-  const totalXP = calculateTotalXPFromActivities(allActivities);
-  const level = calculateLevelFromXP(totalXP);
+  // No XP or level system in garden app
   
   const existingProfile = await ctx.db
     .query("userProfiles")
@@ -573,20 +719,14 @@ async function updateUserProfileTotalsInternal(ctx: any, userId: any) {
       totalDistance,
       totalWorkouts,
       totalCalories,
-      totalXP,
-      level,
       updatedAt: now,
     });
   } else {
     await ctx.db.insert("userProfiles", {
       userId,
-      weeklyGoal: 10000, // Default 10km
       totalDistance,
       totalWorkouts,
       totalCalories,
-      totalXP,
-      level,
-      coins: 0,
       updatedAt: now,
     });
   }
@@ -692,7 +832,6 @@ export const fetchStravaActivityFromServer = action({
         
         // Update the stored tokens
         await ctx.runMutation(api.userProfile.updateStravaTokens, {
-          userId,
           accessToken: refreshResult.accessToken!,
           refreshToken: refreshResult.refreshToken!,
           expiresAt: refreshResult.expiresAt!,
@@ -874,7 +1013,6 @@ export const syncActivitiesFromStrava = mutation({
     let created = 0;
     let updated = 0;
     let skipped = 0;
-    let coinsGained = 0;
     const newRuns: any[] = [];
     let totalDistanceGained = 0;
 
@@ -997,9 +1135,7 @@ export const syncActivitiesFromStrava = mutation({
             syncedAt: now,
           });
 
-          // Link to planned workout if one exists for this date
-          const activityDate = new Date(activity.startDate).toISOString().split('T')[0];
-          await linkActivityToPlannedWorkout(ctx, userId, newActivityId, activityDate);
+          // No more planned workout linking in garden app
 
           const newActivity = await ctx.db.get(newActivityId);
           if (newActivity) {
@@ -1009,14 +1145,7 @@ export const syncActivitiesFromStrava = mutation({
           created++;
           totalDistanceGained += activity.distance;
 
-          // Award coins for runs that are not part of initial sync
-          if (activity.isNewActivity !== false) {
-            const coinsEarned = Math.floor(activity.distance / 100);
-            if (coinsEarned > 0) {
-              await addCoins(ctx, userId, coinsEarned, "run", newActivityId);
-              coinsGained += coinsEarned;
-            }
-          }
+                  // No coins system in garden app
         }
       } catch (error) {
         console.error(`[syncActivitiesFromStrava] Error processing activity ${activity.stravaId}:`, error);
@@ -1025,25 +1154,10 @@ export const syncActivitiesFromStrava = mutation({
 
     // Calculate sync results for client
     let distanceGained = 0;
-    let leveledUp = false;
-    let newLevel = 1;
-    let oldLevel = 1;
-
-    // Capture the OLD level BEFORE updating the profile
-    if (created > 0 && currentProfile) {
-      oldLevel = currentProfile.level || 1;
-    }
 
     // Update user profile totals if we created new activities
     if (created > 0) {
       await updateUserProfileTotalsServer(ctx, userId);
-      
-      // Recalculate streak after new activities
-      try {
-        await recalcStreak(ctx.db, userId, new Date().toISOString().split('T')[0]);
-      } catch (error) {
-        console.error('[syncActivitiesFromStrava] Failed to recalculate streak:', error);
-      }
       
       // Update last sync time
       const userProfile = await ctx.db
@@ -1056,11 +1170,9 @@ export const syncActivitiesFromStrava = mutation({
           lastStravaSync: now,
           updatedAt: now,
         });
-        
-        // Get the NEW level AFTER updating the profile
-        newLevel = userProfile.level || 1;
-        leveledUp = newLevel > oldLevel;
       }
+      
+      distanceGained = totalDistanceGained;
     }
 
     const result: SyncResult = {
@@ -1068,409 +1180,10 @@ export const syncActivitiesFromStrava = mutation({
       updated,
       skipped,
       lastSyncDate: now,
-      distanceGained: totalDistanceGained,
-      coinsGained,
-      leveledUp,
-      newLevel,
-      oldLevel,
+      distanceGained,
       newRuns,
     };
 
     return result;
-  },
-});
-
-// Helper function to link an activity to a planned workout
-async function linkActivityToPlannedWorkout(
-  ctx: any,
-  userId: any,
-  activityId: any,
-  activityDate: string
-) {
-  // Find a planned workout for this date
-  const plannedWorkout = await ctx.db
-    .query("plannedWorkouts")
-    .withIndex("by_user_date", (q: any) => 
-      q.eq("userId", userId).eq("scheduledDate", activityDate)
-    )
-    .first();
-
-  if (plannedWorkout && plannedWorkout.status === 'scheduled') {
-    // Get the workout template to determine XP
-    const workoutTemplate = await ctx.db.get(plannedWorkout.workoutTemplateId);
-    
-    // Calculate XP for completing this planned workout
-    const plannedWorkoutXP = getPlannedWorkoutXP(workoutTemplate);
-    
-    // Link the activity to the planned workout and update XP
-    await ctx.db.patch(activityId, {
-      plannedWorkoutId: plannedWorkout._id,
-      xpEarned: plannedWorkoutXP, // Override run XP with planned workout XP
-    });
-
-    // Mark planned workout as completed
-    await ctx.db.patch(plannedWorkout._id, {
-      status: "completed",
-      completedAt: new Date().toISOString(),
-    });
-
-    return plannedWorkout._id;
-  }
-
-  return null;
-}
-
-// Migration function to convert existing users from distance-based XP to activity-based XP
-export const migrateUserToActivityBasedXP = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    console.log(`[migrateUserToActivityBasedXP] Starting migration for user: ${userId}`);
-    
-    // Get all activities for this user that don't have xpEarned set
-    const allActivities = await ctx.db
-      .query("activities")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-
-    const activitiesNeedingMigration = allActivities.filter(activity => !activity.xpEarned);
-    
-    console.log(`[migrateUserToActivityBasedXP] Found ${activitiesNeedingMigration.length} activities needing migration`);
-
-    // Update each activity with appropriate XP
-    for (const activity of activitiesNeedingMigration) {
-      let xpEarned = getRunXP(); // Default to 500 XP for runs
-      
-      // If activity is linked to a planned workout, get workout-specific XP
-      if (activity.plannedWorkoutId) {
-        try {
-          const plannedWorkout = await ctx.db.get(activity.plannedWorkoutId);
-          if (plannedWorkout?.workoutTemplateId) {
-            const workoutTemplate = await ctx.db.get(plannedWorkout.workoutTemplateId);
-            if (workoutTemplate) {
-              xpEarned = getPlannedWorkoutXP(workoutTemplate);
-            }
-          }
-        } catch (error) {
-          console.warn(`[migrateUserToActivityBasedXP] Failed to get planned workout XP for activity ${activity._id}, using default`);
-        }
-      }
-
-      // Update the activity with XP
-      await ctx.db.patch(activity._id, {
-        xpEarned: xpEarned,
-      });
-    }
-
-    // Recalculate user profile totals with new XP system
-    await updateUserProfileTotalsInternal(ctx, userId);
-
-    console.log(`[migrateUserToActivityBasedXP] Migration completed for user: ${userId}`);
-    
-    return {
-      success: true,
-      activitiesMigrated: activitiesNeedingMigration.length,
-      message: `Successfully migrated ${activitiesNeedingMigration.length} activities to activity-based XP system`,
-    };
-  },
-});
-
-// Admin function to migrate all users to activity-based XP (use with caution)
-export const migrateAllUsersToActivityBasedXP = mutation({
-  args: { adminKey: v.string() },
-  handler: async (ctx, args) => {
-    // Simple admin protection - in production, use proper admin auth
-    if (args.adminKey !== "migrate-xp-system-2024") {
-      throw new Error("Unauthorized");
-    }
-
-    console.log(`[migrateAllUsersToActivityBasedXP] Starting global migration`);
-    
-    // Get all users with profiles
-    const allProfiles = await ctx.db.query("userProfiles").collect();
-    
-    let migratedUsers = 0;
-    let totalActivitiesMigrated = 0;
-
-    for (const profile of allProfiles) {
-      try {
-        // Get all activities for this user that don't have xpEarned set
-        const allActivities = await ctx.db
-          .query("activities")
-          .withIndex("by_user", (q) => q.eq("userId", profile.userId))
-          .collect();
-
-        const activitiesNeedingMigration = allActivities.filter(activity => !activity.xpEarned);
-        
-        if (activitiesNeedingMigration.length > 0) {
-          console.log(`[migrateAllUsersToActivityBasedXP] Migrating ${activitiesNeedingMigration.length} activities for user: ${profile.userId}`);
-
-          // Update each activity with appropriate XP
-          for (const activity of activitiesNeedingMigration) {
-            let xpEarned = getRunXP(); // Default to 500 XP for runs
-            
-            // If activity is linked to a planned workout, get workout-specific XP
-            if (activity.plannedWorkoutId) {
-              try {
-                const plannedWorkout = await ctx.db.get(activity.plannedWorkoutId);
-                if (plannedWorkout?.workoutTemplateId) {
-                  const workoutTemplate = await ctx.db.get(plannedWorkout.workoutTemplateId);
-                  if (workoutTemplate) {
-                    xpEarned = getPlannedWorkoutXP(workoutTemplate);
-                  }
-                }
-              } catch (error) {
-                console.warn(`[migrateAllUsersToActivityBasedXP] Failed to get planned workout XP for activity ${activity._id}, using default`);
-              }
-            }
-
-            // Update the activity with XP
-            await ctx.db.patch(activity._id, {
-              xpEarned: xpEarned,
-            });
-          }
-
-          // Recalculate user profile totals with new XP system
-          await updateUserProfileTotalsInternal(ctx, profile.userId);
-          
-          migratedUsers++;
-          totalActivitiesMigrated += activitiesNeedingMigration.length;
-        }
-      } catch (error) {
-        console.error(`[migrateAllUsersToActivityBasedXP] Failed to migrate user ${profile.userId}:`, error);
-      }
-    }
-
-    console.log(`[migrateAllUsersToActivityBasedXP] Global migration completed. Users migrated: ${migratedUsers}, Total activities: ${totalActivitiesMigrated}`);
-    
-    return {
-      success: true,
-      usersMigrated: migratedUsers,
-      totalActivitiesMigrated,
-      message: `Successfully migrated ${migratedUsers} users with ${totalActivitiesMigrated} total activities to activity-based XP system`,
-    };
-  },
-});
-
-// Get activities linked to a planned workout
-export const getActivitiesForPlannedWorkout = query({
-  args: {
-    plannedWorkoutId: v.id("plannedWorkouts"),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new Error("Not authenticated");
-    }
-
-    return await ctx.db
-      .query("activities")
-      .withIndex("by_planned", (q) => q.eq("plannedWorkoutId", args.plannedWorkoutId))
-      .collect();
-  },
-});
-
-// -----------------------------------------------------------------------------
-// Full Strava sync (server-side). Pulls activities from Strava API then re-uses
-// existing syncActivitiesFromStravaServer mutation to store them.
-export const fullStravaSyncServer = action({
-  args: {
-    days: v.optional(v.number()),
-  },
-  handler: async (ctx, args): Promise<SyncResult> => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    // For initial sync pull data from Jan 1 2025 onwards (same logic as old client)
-    const startDate = new Date(2025, 0, 1);
-    const after = Math.floor(startDate.getTime() / 1000);
-
-    // Get user tokens
-    const profile = await ctx.runQuery(api.userProfile.getProfileByUserId, { userId });
-    if (!profile || !profile.stravaSyncEnabled || !profile.stravaAccessToken) {
-      throw new Error("Strava sync not enabled or no tokens");
-    }
-
-    let accessToken = profile.stravaAccessToken as string;
-
-    // Refresh if expired
-    const now = Math.floor(Date.now() / 1000);
-    if (profile.stravaTokenExpiresAt && profile.stravaTokenExpiresAt <= now) {
-      if (!profile.stravaRefreshToken) throw new Error("Access token expired and no refresh token");
-
-      const refresh = await refreshStravaToken(profile.stravaRefreshToken);
-      if (!refresh.success) throw new Error(refresh.error || "Failed to refresh token");
-
-      accessToken = refresh.accessToken!;
-
-      // persist new tokens
-      await ctx.runMutation(api.userProfile.updateStravaTokens, {
-        userId,
-        accessToken: refresh.accessToken!,
-        refreshToken: refresh.refreshToken!,
-        expiresAt: refresh.expiresAt!,
-      });
-    }
-
-    // Fetch activities
-    const listResp = await fetch(`https://www.strava.com/api/v3/athlete/activities?after=${after}&per_page=100`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-        "Content-Type": "application/json",
-      },
-    });
-
-    if (!listResp.ok) {
-      const txt = await listResp.text();
-      console.error("[fullStravaSyncServer] API err", txt);
-      throw new Error("Failed to fetch activities from Strava");
-    }
-
-    const activities = (await listResp.json()) as any[];
-
-    const running = activities.filter((a) => ["Run", "TrailRun", "Treadmill"].includes(a.type));
-
-    const mapped = running.map((activity) => {
-      const startDateIso = activity.start_date;
-      const endDateIso = new Date(new Date(activity.start_date).getTime() + activity.elapsed_time * 1000).toISOString();
-      return {
-        stravaId: activity.id,
-        startDate: startDateIso,
-        endDate: endDateIso,
-        duration: Math.round(activity.moving_time / 60),
-        distance: Math.round(activity.distance),
-        calories: activity.calories ?? estimateCalories(activity.distance, activity.moving_time),
-        averageHeartRate: activity.average_heartrate,
-        workoutName: activity.name,
-        // Enhanced running metrics
-        totalElevationGain: activity.total_elevation_gain,
-        elevationHigh: activity.elev_high,
-        elevationLow: activity.elev_low,
-        averageTemp: activity.average_temp,
-        startLatLng: activity.start_latlng,
-        endLatLng: activity.end_latlng,
-        timezone: activity.timezone,
-        isIndoor: activity.is_indoor,
-        isCommute: activity.is_commute,
-        averageCadence: activity.average_cadence,
-        averageWatts: activity.average_watts,
-        maxWatts: activity.max_watts,
-        kilojoules: activity.kilojoules,
-        polyline: activity.map?.polyline,
-        maxSpeed: activity.max_speed,
-        averageSpeed: activity.average_speed,
-        // mark as not new for initial sync
-        isNewActivity: false,
-      };
-    });
-
-    // Store in DB
-    const result = await ctx.runMutation(api.activities.syncActivitiesFromStravaServer, {
-      userId,
-      activities: mapped,
-      initialSync: true,
-    });
-
-    return result;
-  },
-});
-
-// Helper: estimate calories for a run
-function estimateCalories(distance: number, durationSec: number) {
-  const avgWeightKg = 70;
-  const distanceKm = distance / 1000;
-  return Math.round(avgWeightKg * distanceKm * 0.75);
-} 
-
-// -----------------------------------------------------------------------------
-// Record a manual run from the Blaze app (free-run v1)
-export const recordManualRun = mutation({
-  args: {
-    startDate: v.string(),
-    endDate: v.string(),
-    duration: v.number(), // minutes
-    distance: v.number(), // metres
-    calories: v.optional(v.number()),
-    averageHeartRate: v.optional(v.number()),
-    polyline: v.optional(v.string()), // JSON encoded for now
-    plannedWorkoutId: v.optional(v.id("plannedWorkouts")), // Link to planned workout
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    const pace = args.distance > 0 ? args.duration / (args.distance / 1000) : undefined; // min/km
-
-    const newActivityId = await ctx.db.insert("activities", {
-      userId,
-      source: "app",
-      startDate: args.startDate,
-      endDate: args.endDate,
-      duration: args.duration,
-      distance: args.distance,
-      calories: args.calories ?? Math.round(args.distance / 1000 * 70),
-      averageHeartRate: args.averageHeartRate,
-      pace,
-      polyline: args.polyline,
-      plannedWorkoutId: args.plannedWorkoutId,
-      isNewActivity: true,
-      syncedAt: new Date().toISOString(),
-    });
-
-    // Update totals & streaks using existing helpers
-    await updateUserProfileTotalsInternal(ctx, userId);
-    try {
-      await recalcStreak(ctx.db, userId, args.startDate.split('T')[0]);
-    } catch (e) {
-      console.error('[recordManualRun] Failed to recalc streak', e);
-    }
-
-    return newActivityId;
-  }
-}); 
-
-export const getActivityById = query({
-  args: { activityId: v.id("activities") },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-    const activity = await ctx.db.get(args.activityId);
-    if (!activity || activity.userId !== userId) return null;
-    return activity;
-  },
-}); 
-
-// Record user's post-run feeling on an activity
-export const recordActivityFeeling = mutation({
-  args: {
-    activityId: v.id("activities"),
-    feeling: v.union(
-      v.literal("amazing"),
-      v.literal("good"),
-      v.literal("okay"),
-      v.literal("tough"),
-      v.literal("struggled"),
-      v.literal("dead")
-    ),
-  },
-  handler: async (ctx, args) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    const activity = await ctx.db.get(args.activityId);
-    if (!activity || activity.userId !== userId) {
-      throw new Error("Activity not found or unauthorized");
-    }
-
-    await ctx.db.patch(args.activityId, {
-      feeling: args.feeling,
-      feelingRecordedAt: new Date().toISOString(),
-    });
-
-    return { success: true };
   },
 });

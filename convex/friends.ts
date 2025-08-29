@@ -1,23 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
-import { v } from "convex/values";
-import { api } from "./_generated/api";
+import { ConvexError, v } from "convex/values";
 import { mutation, query } from "./_generated/server";
-
-/**
- * Friend system utilities and APIs
- */
-
-// Types
-export type FriendRequestStatus = "pending" | "accepted" | "rejected" | "blocked";
-
-export interface FriendRequest {
-  _id: string;
-  fromUserId: string;
-  toUserId: string;
-  status: FriendRequestStatus;
-  createdAt: string;
-  updatedAt: string;
-}
 
 /*──────────────────────── send friend request */
 export const sendFriendRequest = mutation({
@@ -26,8 +9,13 @@ export const sendFriendRequest = mutation({
   },
   handler: async (ctx, args) => {
     const fromUserId = await getAuthUserId(ctx);
-    if (!fromUserId) throw new Error("Not authenticated");
-    if (fromUserId === args.toUserId) throw new Error("Cannot add yourself as a friend");
+    if (!fromUserId) {
+      throw new ConvexError("Not authenticated");
+    }
+
+    if (fromUserId === args.toUserId) {
+      throw new ConvexError("Cannot send friend request to yourself");
+    }
 
     // Check if there is an existing request or friendship
     const existing = await ctx.db
@@ -41,43 +29,21 @@ export const sendFriendRequest = mutation({
       .unique();
 
     if (existing || reverseExisting) {
-      const req = (existing || reverseExisting)!;
-      if (req.status === "pending") {
-        throw new Error("Friend request already pending");
+      if (existing?.status === "accepted" || reverseExisting?.status === "accepted") {
+        throw new ConvexError("Already friends");
       }
-      if (req.status === "accepted") {
-        throw new Error("You are already friends");
+      if (existing?.status === "pending" || reverseExisting?.status === "pending") {
+        throw new ConvexError("Friend request already sent");
       }
-      // If previously rejected/blocked we allow new request
     }
 
     const now = new Date().toISOString();
     const id = await ctx.db.insert("friendRequests", {
       fromUserId,
       toUserId: args.toUserId,
-      status: "pending" as FriendRequestStatus,
+      status: "pending",
       createdAt: now,
-      updatedAt: now,
     });
-
-    // Fetch sender name for notification (optional)
-    const senderProfile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", q => q.eq("userId", fromUserId))
-      .first();
-
-    const senderName = senderProfile?.mascotName ?? undefined;
-
-    // Fire push notification to recipient (non-blocking)
-    try {
-      await ctx.scheduler.runAfter(0, api.pushNotifications.sendFriendRequestNotification, {
-        toUserId: args.toUserId,
-        fromName: senderName,
-      });
-      console.log(`[Friends] Sent friend request push to ${args.toUserId}`);
-    } catch (e) {
-      console.error("Failed to send friend request push", e);
-    }
 
     return id;
   },
@@ -91,48 +57,39 @@ export const respondToFriendRequest = mutation({
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
-
-    const request = await ctx.db.get(args.requestId);
-    if (!request) throw new Error("Request not found");
-    if (request.toUserId !== userId) throw new Error("Not authorized to respond to this request");
-    if (request.status !== "pending") throw new Error("Request already processed");
-
-    const newStatus: FriendRequestStatus = args.accept ? "accepted" : "rejected";
-    await ctx.db.patch(args.requestId, {
-      status: newStatus,
-      updatedAt: new Date().toISOString(),
-    });
-
-    if (newStatus === "accepted") {
-      // Notify original sender
-      const recipientProfile = await ctx.db
-        .query("userProfiles")
-        .withIndex("by_user", q => q.eq("userId", userId))
-        .first();
-
-      const recipientName = recipientProfile?.mascotName ?? undefined;
-
-      try {
-        await ctx.scheduler.runAfter(0, api.pushNotifications.sendFriendAcceptNotification, {
-          toUserId: request.fromUserId,
-          friendName: recipientName,
-        });
-      } catch (e) {
-        console.error("Failed to send friend accept push", e);
-      }
+    if (!userId) {
+      throw new ConvexError("Not authenticated");
     }
 
-    return { success: true, status: newStatus };
+    const request = await ctx.db.get(args.requestId);
+    if (!request) {
+      throw new ConvexError("Friend request not found");
+    }
+
+    if (request.toUserId !== userId) {
+      throw new ConvexError("Not authorized to respond to this request");
+    }
+
+    if (request.status !== "pending") {
+      throw new ConvexError("Request already responded to");
+    }
+
+    const status = args.accept ? "accepted" : "declined";
+    await ctx.db.patch(args.requestId, {
+      status,
+      respondedAt: new Date().toISOString(),
+    });
+
+    return { success: true };
   },
 });
 
-/*──────────────────────── get list of accepted friend userIds */
-export const getFriendIds = query({
+/*──────────────────────── get friends */
+export const getFriends = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) return [];
 
     // Friends where current user is sender
     const sent = await ctx.db
@@ -148,20 +105,25 @@ export const getFriendIds = query({
       .filter(q => q.eq(q.field("status"), "accepted"))
       .collect();
 
-    const ids = new Set<string>();
-    sent.forEach(fr => ids.add(fr.toUserId as string));
-    received.forEach(fr => ids.add(fr.fromUserId as string));
+    const friendUserIds = [
+      ...sent.map(r => r.toUserId),
+      ...received.map(r => r.fromUserId)
+    ];
 
-    return Array.from(ids);
+    const friends = await Promise.all(
+      friendUserIds.map(id => ctx.db.get(id as any))
+    );
+
+    return friends.filter(Boolean);
   },
 });
 
-/*──────────────────────── get pending friend requests for current user */
-export const getPendingFriendRequests = query({
+/*──────────────────────── get pending friend requests (incoming) */
+export const getIncomingFriendRequests = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new ConvexError("Not authenticated");
 
     const incomingRaw = await ctx.db
       .query("friendRequests")
@@ -169,29 +131,26 @@ export const getPendingFriendRequests = query({
       .filter(q => q.eq(q.field("status"), "pending"))
       .collect();
 
-    // Attach sender name
     const incoming = await Promise.all(
-      incomingRaw.map(async (req) => {
-        const sender = await ctx.db.get(req.fromUserId);
+      incomingRaw.map(async (request) => {
+        const fromUser = await ctx.db.get(request.fromUserId as any);
         return {
-          _id: req._id,
-          userId: req.fromUserId,
-          name: (sender as any)?.name ?? "Unknown",
-          createdAt: req.createdAt,
+          ...request,
+          fromUser,
         };
       })
     );
 
-    return incoming;
+    return incoming.filter(r => r.fromUser);
   },
 });
 
-/*──────────────────────── get sent friend requests for current user */
-export const getSentFriendRequests = query({
+/*──────────────────────── get pending friend requests (outgoing) */
+export const getOutgoingFriendRequests = query({
   args: {},
   handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Not authenticated");
+    if (!userId) throw new ConvexError("Not authenticated");
 
     const outgoingRaw = await ctx.db
       .query("friendRequests")
@@ -200,17 +159,35 @@ export const getSentFriendRequests = query({
       .collect();
 
     const outgoing = await Promise.all(
-      outgoingRaw.map(async (req) => {
-        const recipient = await ctx.db.get(req.toUserId);
+      outgoingRaw.map(async (request) => {
+        const toUser = await ctx.db.get(request.toUserId as any);
         return {
-          _id: req._id,
-          userId: req.toUserId,
-          name: (recipient as any)?.name ?? "Unknown",
-          createdAt: req.createdAt,
+          ...request,
+          toUser,
         };
       })
     );
 
-    return outgoing;
+    return outgoing.filter(r => r.toUser);
   },
-}); 
+});
+
+/*──────────────────────── get sent friend requests (alias for compatibility) */
+export const getSentFriendRequests = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+
+    const outgoingRaw = await ctx.db
+      .query("friendRequests")
+      .withIndex("by_from", q => q.eq("fromUserId", userId))
+      .filter(q => q.eq(q.field("status"), "pending"))
+      .collect();
+
+    return outgoingRaw.map(request => ({
+      userId: request.toUserId,
+      status: request.status,
+    }));
+  },
+});

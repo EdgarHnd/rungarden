@@ -1,26 +1,26 @@
 {
   "expo": {
-    "name": "Blaze",
-    "slug": "blaze",
+    "name": "Run Garden",
+    "slug": "run-garden",
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "blaze",
+    "scheme": "run-garden",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "appleSignIn": true,
       "supportsTablet": false,
-      "bundleIdentifier": "com.edgarhnd.blaze",
+      "bundleIdentifier": "com.edgarhnd.rungarden",
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "aps-environment": "development"
       },
       "infoPlist": {
-        "NSHealthShareUsageDescription": "This app needs access to health data to track your running activities and provide insights about your fitness progress.",
-        "NSHealthUpdateUsageDescription": "This app needs permission to write workout data to Apple Health to keep your fitness data synchronized.",
-        "NSLocationWhenInUseUsageDescription": "Blaze needs your location to record your runs and show realtime stats.",
-        "NSLocationAlwaysAndWhenInUseUsageDescription": "Blaze needs background location to continue recording your runs when the screen is locked or the app is in the background.",
+        "NSHealthShareUsageDescription": "Run Garden needs access to health data to track your running activities and grow plants in your garden.",
+        "NSHealthUpdateUsageDescription": "Run Garden needs permission to write workout data to Apple Health to keep your fitness data synchronized.",
+        "NSLocationWhenInUseUsageDescription": "Run Garden needs your location to record your runs and grow your plants.",
+        "NSLocationAlwaysAndWhenInUseUsageDescription": "Run Garden needs background location to continue recording your runs when the screen is locked or the app is in the background.",
         "LSApplicationQueriesSchemes": [
           "strava"
         ],
@@ -37,7 +37,7 @@
         "backgroundColor": "#0D1B2A"
       },
       "edgeToEdgeEnabled": true,
-      "package": "com.edgarhnd.blaze",
+      "package": "com.edgarhnd.rungarden",
       "permissions": [
         "android.permission.RECEIVE_BOOT_COMPLETED",
         "android.permission.VIBRATE",
@@ -65,8 +65,8 @@
         "react-native-health",
         {
           "isClinicalDataEnabled": false,
-          "healthSharePermission": "This app needs access to health data to track your running activities and provide insights about your fitness progress.",
-          "healthUpdatePermission": "This app needs permission to write workout data to Apple Health to keep your fitness data synchronized."
+          "healthSharePermission": "Run Garden needs access to health data to track your running activities and grow plants in your garden.",
+          "healthUpdatePermission": "Run Garden needs permission to write workout data to Apple Health to keep your fitness data synchronized."
         }
       ],
       [

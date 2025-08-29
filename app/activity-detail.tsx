@@ -8,21 +8,27 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
-  Animated,
-  Image,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
+import { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
   const [activity, setActivity] = useState<any | null>(null);
   const deleteActivity = useMutation(api.activities.deleteActivity);
   const [linkedPlannedWorkout, setLinkedPlannedWorkout] = useState<any | null>(null);
-  const [scaleAnim] = useState(new Animated.Value(0));
+  const scaleAnim = useSharedValue(0);
+
+  // Animated style for entrance animation
+  const animatedStyle = useAnimatedStyle(() => {
+    return {
+      transform: [{ scale: scaleAnim.value }],
+    };
+  });
 
   // Get user profile for metric system preference
   const profile = useQuery(api.userProfile.getOrCreateProfile);
@@ -82,6 +88,9 @@ export default function ActivityDetailScreen() {
 
   const activityFromId = useQuery(api.activities.getActivityById, params.id ? { activityId: params.id as any } : "skip");
 
+  // Get plant associated with the activity
+  const plantEarned = useQuery(api.plants.getPlantByActivityId, activity?._id ? { activityId: activity._id } : "skip");
+
   useEffect(() => {
     if (activityFromId) {
       setActivity(activityFromId as any);
@@ -93,12 +102,10 @@ export default function ActivityDetailScreen() {
         setLinkedPlannedWorkout(activityData.plannedWorkout || null);
 
         // Entrance animation
-        Animated.spring(scaleAnim, {
-          toValue: 1,
-          tension: 100,
-          friction: 8,
-          useNativeDriver: true,
-        }).start();
+        scaleAnim.value = withSpring(1, {
+          damping: 15,
+          stiffness: 150,
+        });
       } catch (error) {
         console.error('Error parsing activity data:', error);
         router.back();
@@ -221,22 +228,46 @@ export default function ActivityDetailScreen() {
           Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           router.back();
         }} style={styles.backButton}>
-          <Ionicons name="arrow-back" size={24} color="#fff" />
+          <Ionicons name="arrow-back" size={24} color={Theme.colors.text.primary} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {formatDetailedDate(activity.startDate)}
-        </Text>
+        <View style={styles.headerTitleContainer}>
+          <Text style={styles.headerTitle}>
+            {new Date(activity.startDate).toLocaleDateString('en-US', { weekday: 'long' })}
+          </Text>
+          <Text style={styles.headerSubtitle}>
+            {new Date(activity.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at {new Date(activity.startDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}
+          </Text>
+        </View>
         <TouchableOpacity onPress={handleDelete} style={styles.backButton}>
-          <Ionicons name="trash" size={24} color="#fff" />
+          <Ionicons name="trash" size={24} color={Theme.colors.text.primary} />
         </TouchableOpacity>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Hero Section */}
-        <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
+        {/* <Animated.View style={[styles.heroSection, { transform: [{ scale: scaleAnim }] }]}>
           <Image source={require('@/assets/images/blaze/blazelove.png')} style={styles.heroImage} resizeMode="contain" />
           <Text style={styles.heroTitle}>{`${runRank.rank} Run!`}</Text>
-        </Animated.View>
+        </Animated.View> */}
+
+
+
+        {/* Plant Earned Section */}
+        {plantEarned && (
+          <View style={styles.plantSection}>
+            <View style={styles.plantCard}>
+              {/* Plant Visual */}
+              <View style={styles.plantVisualContainer}>
+                <Text style={styles.plantEmoji}>{plantEarned.plantType?.emoji || '🌱'}</Text>
+              </View>
+
+              {/* New Plant Badge */}
+              <View style={styles.newPlantBadge}>
+                <Text style={styles.newPlantBadgeText}>New Plant Unlocked!</Text>
+              </View>
+            </View>
+          </View>
+        )}
 
         {/* Main Stats - Badge Style */}
         <View style={styles.statsSection}>
@@ -256,7 +287,7 @@ export default function ActivityDetailScreen() {
             {
               label: 'Pace',
               value: formatPace(calculatePace(activity.duration, activity.distance)),
-              icon: '🏃',
+              icon: '⚡️',
               color: Theme.colors.text.primary
             },
             ...(activity.calories ? [{
@@ -309,12 +340,8 @@ export default function ActivityDetailScreen() {
           <View style={styles.plannedWorkoutSection}>
             <Text style={styles.sectionTitle}>📋 Training Plan Completed</Text>
             <TouchableOpacity style={styles.plannedWorkoutCard} onPress={() => {
-              router.push({
-                pathname: '/training-detail',
-                params: {
-                  scheduleWorkoutId: linkedPlannedWorkout._id
-                }
-              });
+              // TODO: Add training detail navigation when route is available
+              console.log('Navigate to training detail:', linkedPlannedWorkout._id);
             }}>
               <View style={styles.plannedWorkoutHeader}>
                 <Text style={styles.plannedWorkoutType}>
@@ -357,10 +384,20 @@ const styles = StyleSheet.create({
   backButton: {
     padding: Theme.spacing.sm,
   },
+  headerTitleContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
   headerTitle: {
     fontSize: 20,
     fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
+  },
+  headerSubtitle: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.tertiary,
+    marginTop: 2,
   },
   placeholder: {
     width: 32,
@@ -890,4 +927,48 @@ const styles = StyleSheet.create({
     minHeight: 60,
     justifyContent: 'center',
   },
+
+  // Plant Section Styles
+  plantSection: {
+    paddingHorizontal: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxxl,
+  },
+  plantCard: {
+    // backgroundColor: '#F5F5F5',
+    //borderRadius: 20,
+    padding: Theme.spacing.xl,
+    alignItems: 'center',
+    // borderWidth: 3,
+    // borderColor: '#000000',
+  },
+  plantTimeText: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 16,
+  },
+  plantVisualContainer: {
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+  },
+  plantEmoji: {
+    fontSize: 120,
+  },
+  newPlantBadge: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderWidth: 2,
+    borderColor: '#000000',
+    marginBottom: 32,
+  },
+  newPlantBadgeText: {
+    fontSize: 18,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: '#000000',
+    textAlign: 'center',
+  },
+
 }); 

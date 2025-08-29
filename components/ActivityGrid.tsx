@@ -14,9 +14,10 @@ import {
 interface ActivityGridProps {
   activities: any[];
   profile?: any;
+  showPlants?: boolean;
 }
 
-export const ActivityGrid = ({ activities, profile }: ActivityGridProps) => {
+export const ActivityGrid = ({ activities, profile, showPlants }: ActivityGridProps) => {
   const scrollViewRef = React.useRef<ScrollView>(null);
   const monthScrollRef = React.useRef<ScrollView>(null);
 
@@ -197,7 +198,8 @@ export const ActivityGrid = ({ activities, profile }: ActivityGridProps) => {
         }</Text>
         <View style={styles.activityGridViewAll}>
           <Text style={styles.activityGridStats}>
-            View all
+
+
           </Text>
           <Ionicons name="arrow-forward" size={20} color={Theme.colors.text.primary} />
         </View>

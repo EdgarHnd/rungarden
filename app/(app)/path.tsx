@@ -1,247 +1,395 @@
-import PlanDetailsModal from '@/components/modals/PlanDetailsModal';
-import ActivePlanView from '@/components/path/ActivePlanView';
-import PlanBrowserView from '@/components/path/PlanBrowserView';
-import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
-import { useRevenueCat } from '@/provider/RevenueCatProvider';
-import { useMutation, useQuery } from 'convex/react';
+import { formatDistance } from '@/utils/formatters';
+import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
-import { useRouter } from 'expo-router';
-import { useRef, useState } from 'react';
-import { Alert, Animated, Dimensions, ImageSourcePropType, SafeAreaView, StyleSheet, Text, View } from 'react-native';
-import RevenueCatUI, { PAYWALL_RESULT } from 'react-native-purchases-ui';
+import { router } from 'expo-router';
+import { useMemo, useState } from 'react';
+import {
+  Alert,
+  SafeAreaView,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View
+} from 'react-native';
 
-interface PlanOption {
-  value: string;
-  title: string;
-  level: string;
-  subtitle: string;
-  description: string;
-  image?: ImageSourcePropType;
-  weeks: number;
-  totalRuns: number;
-  targetDate: string;
-  disabled?: boolean;
+interface ActivityWithPlant {
+  _id: string;
+  startDate: string;
+  distance: number;
+  duration: number;
+  calories: number;
+  workoutName?: string;
+  plantEarned?: string;
+  source?: string;
 }
 
-const { width: screenWidth } = Dimensions.get('window');
-const CARD_WIDTH = screenWidth * 0.8;
-const SPACING = 0;
+interface DayData {
+  date: string;
+  activities: ActivityWithPlant[];
+  plantsEarned: any[];
+}
 
-export default function PathScreen() {
-  const router = useRouter();
-  const activePlan = useQuery(api.trainingPlan.getActiveTrainingPlan);
-  const simpleSchedule = useQuery(api.simpleTrainingSchedule.getSimpleTrainingSchedule);
-  const trainingProfile = useQuery(api.trainingProfile.getTrainingProfile);
-  const userProfile = useQuery(api.userProfile.getOrCreateProfile);
-  const { user: revenueCatUser } = useRevenueCat();
+export default function ActivitiesScreen() {
+  const [selectedMonth, setSelectedMonth] = useState(new Date());
 
-  const [selectedGoalIndex, setSelectedGoalIndex] = useState(0);
-  const [showPlanModal, setShowPlanModal] = useState(false);
-  const [selectedPlan, setSelectedPlan] = useState<PlanOption | null>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
+  // Get user's activities and plants
+  const activities = useQuery(api.activities.getUserActivities, { days: 90, limit: 200 });
+  const userPlants = useQuery(api.plants.getUserPlants);
 
-  // Mutations for plan generation
-  const updateTrainingProfile = useMutation(api.trainingProfile.updateTrainingProfile);
-  const generateTrainingPlan = useMutation(api.trainingPlan.generateTrainingPlan);
-  const [isGenerating, setIsGenerating] = useState(false);
-  const formatDate = (date: Date) => {
-    return date.toLocaleDateString('en-US', {
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-    });
-  };
+  // Get the most recent activity for "Last run" display
+  const lastRun = useMemo(() => {
+    if (!activities || activities.length === 0) return null;
+    return activities[0]; // Activities are typically sorted by date descending
+  }, [activities]);
 
-  // Plan options for slideshow
-  const planOptions: PlanOption[] = [
-    {
-      value: '5K',
-      title: 'Couch to 5K',
-      level: 'Beginner',
-      subtitle: 'From 0 to 5K in 8 weeks',
-      description: 'Inspired by the famous Couch to 5K program, this plan is perfect for complete beginners. Start with walk-run intervals and build up to running 5K continuously.',
-      image: require('@/assets/images/blaze/blazespark.png'),
-      weeks: 8,
-      totalRuns: 24,
-      targetDate: formatDate(new Date(new Date().setDate(new Date().getDate() + 8 * 7))),
-    },
-    {
-      value: '10K',
-      title: 'First 10K',
-      level: 'Intermediate',
-      subtitle: 'Coming soon!',
-      image: require('@/assets/images/blaze/blazefriends.png'),
-      description: 'Build your endurance and achieve your first 10K milestone with structured training.',
-      weeks: 10,
-      totalRuns: 40,
-      targetDate: formatDate(new Date(new Date().setDate(new Date().getDate() + 10 * 7))),
-      disabled: true,
-    },
-    {
-      value: 'half-marathon',
-      title: 'Half Marathon',
-      image: require('@/assets/images/blaze/blazerace.png'),
-      level: 'Expert',
-      subtitle: 'Coming Soon!',
-      description: 'Train for the ultimate endurance challenge with our comprehensive half marathon program.',
-      weeks: 16,
-      totalRuns: 48,
-      targetDate: formatDate(new Date(new Date().setDate(new Date().getDate() + 16 * 7))),
-      disabled: true,
-    },
-    {
-      value: 'marathon',
-      title: 'Marathon',
-      image: require('@/assets/images/blaze/blazerace.png'),
-      level: 'Expert',
-      subtitle: 'Coming Soon!',
-      description: 'Train for the ultimate endurance challenge with our comprehensive marathon program.',
-      weeks: 24,
-      totalRuns: 72,
-      targetDate: new Date(new Date().setDate(new Date().getDate() + 24 * 7)).toISOString(),
-      disabled: true,
-    },
-  ];
+  // Get plant associated with the last run
+  const lastRunPlant = useMemo(() => {
+    if (!lastRun || !userPlants) return null;
 
-  const handleShowPlanDetails = (plan: PlanOption) => {
-    if (plan.disabled) return;
+    // Find the plant that was earned from the last run
+    const plant = userPlants.find((plant: any) =>
+      plant.earnedFromActivityId === lastRun._id
+    );
 
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedPlan(plan);
-    setShowPlanModal(true);
-  };
+    return plant;
+  }, [lastRun, userPlants]);
 
-  const handleStartPlan = async () => {
-    if (!selectedPlan) return;
+  // Generate calendar days for the selected month
+  const calendarDays = useMemo(() => {
+    if (!activities || !userPlants) return [];
 
-    try {
-      setIsGenerating(true);
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    const year = selectedMonth.getFullYear();
+    const month = selectedMonth.getMonth();
+    const firstDay = new Date(year, month, 1);
+    const lastDay = new Date(year, month + 1, 0);
+    const daysInMonth = lastDay.getDate();
 
-      // Check if this is a premium plan (disabled plans are premium-only)
-      const isPremiumPlan = true;
+    const days: DayData[] = [];
 
-      // If it's a premium plan and user doesn't have premium access, show paywall
-      if (isPremiumPlan && !revenueCatUser.pro) {
-        try {
-          const result = await RevenueCatUI.presentPaywall();
+    for (let day = 1; day <= daysInMonth; day++) {
+      const date = new Date(year, month, day);
+      const dateStr = date.toISOString().split('T')[0];
 
-          switch (result) {
-            case PAYWALL_RESULT.PURCHASED:
-            case PAYWALL_RESULT.RESTORED:
-              // User successfully subscribed, continue with plan creation
-              console.log('User subscribed, proceeding with premium plan');
-              break;
-            case PAYWALL_RESULT.CANCELLED:
-            case PAYWALL_RESULT.ERROR:
-            case PAYWALL_RESULT.NOT_PRESENTED:
-            default:
-              // User cancelled or error occurred, don't proceed
-              setIsGenerating(false);
-              return;
-          }
-        } catch (error: any) {
-          console.log('Paywall interaction:', error);
-
-          // Check if this is a user cancellation (common with RevenueCat)
-          if (error?.userCancelled || error?.code === 'userCancelled' ||
-            error?.message?.includes('cancelled') || error?.message?.includes('canceled')) {
-            console.log('User cancelled subscription');
-            setIsGenerating(false);
-            return;
-          }
-
-          // For actual errors, show error message
-          console.error('Paywall error:', error);
-          Alert.alert('Error', 'Something went wrong with the subscription. Please try again.');
-          setIsGenerating(false);
-          return;
-        }
-      }
-
-      const today = new Date();
-      const targetDate = new Date(today);
-      targetDate.setDate(today.getDate() + (selectedPlan.weeks * 7));
-
-      await updateTrainingProfile({
-        goalDistance: selectedPlan.value as any,
-        goalDate: targetDate.toISOString(),
-        daysPerWeek: 3,
-        preferredDays: ['Mon', 'Wed', 'Fri'],
+      // Find activities for this day
+      const dayActivities = activities.filter((activity: ActivityWithPlant) => {
+        const activityDate = new Date(activity.startDate).toISOString().split('T')[0];
+        return activityDate === dateStr;
       });
 
-      await generateTrainingPlan();
+      // Find plants earned on this day
+      const plantsEarned = userPlants.filter((plant: any) => {
+        if (!plant.earnedFromActivity) return false;
+        const plantDate = new Date(plant.earnedFromActivity.startDate).toISOString().split('T')[0];
+        return plantDate === dateStr;
+      });
 
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      setShowPlanModal(false);
-    } catch (error) {
-      console.error('Failed to generate plan:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      Alert.alert("Error", "Failed to generate your plan. Please try again.");
-    } finally {
-      setIsGenerating(false);
+      days.push({
+        date: dateStr,
+        activities: dayActivities,
+        plantsEarned,
+      });
     }
+
+    return days;
+  }, [selectedMonth, activities, userPlants]);
+
+  const navigateMonth = (direction: 'prev' | 'next') => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    const newMonth = new Date(selectedMonth);
+    if (direction === 'prev') {
+      newMonth.setMonth(newMonth.getMonth() - 1);
+    } else {
+      newMonth.setMonth(newMonth.getMonth() + 1);
+    }
+    setSelectedMonth(newMonth);
   };
 
-  const completedMap = useQuery(api.trainingPlan.getPlannedWorkouts, activePlan ? {
-    startDate: activePlan.plan[0].days[0].date,
-    endDate: activePlan.plan.at(-1)!.days.at(-1)!.date,
-  } : "skip");
+  const showDayDetails = (day: DayData) => {
+    if (day.activities.length === 0) return;
 
-  if (activePlan === undefined || simpleSchedule === undefined || userProfile === undefined) {
-    return (
-      <View style={styles.center}>
-        <Text style={styles.loadingText}>Loading plan…</Text>
-      </View>
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+
+    // If there's only one activity, navigate directly to detail page
+    if (day.activities.length === 1) {
+      router.push({
+        pathname: '/activity-detail',
+        params: {
+          id: day.activities[0]._id
+        }
+      });
+      return;
+    }
+
+    // If multiple activities, show alert with option to view each
+    const totalDistance = day.activities.reduce((sum, act) => sum + act.distance, 0);
+    const totalDuration = day.activities.reduce((sum, act) => sum + act.duration, 0);
+    const plantsText = day.plantsEarned.length > 0
+      ? `\n\n🌱 Plants earned: ${day.plantsEarned.map(p => p.plantType?.emoji || '🌱').join(' ')}`
+      : '';
+
+    Alert.alert(
+      `📅 ${new Date(day.date).toLocaleDateString()}`,
+      `🏃‍♂️ ${day.activities.length} runs\n` +
+      `📏 ${formatDistance(totalDistance, 'metric')}\n` +
+      `⏱️ ${Math.round(totalDuration)} minutes\n` +
+      `🔥 ${day.activities.reduce((sum, act) => sum + act.calories, 0)} calories` +
+      plantsText,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        ...day.activities.map((activity, index) => ({
+          text: `View Run ${index + 1}`,
+          onPress: () => {
+            router.push({
+              pathname: '/activity-detail',
+              params: {
+                id: activity._id
+              }
+            });
+          }
+        }))
+      ]
     );
-  }
+  };
 
-  if (activePlan) {
-    return <ActivePlanView activePlan={activePlan} completedMap={completedMap} userId={userProfile?.userId || ''} />;
-  }
+
+
+  const getPlantEmoji = (day: DayData) => {
+    if (day.plantsEarned.length === 0) return null;
+    return day.plantsEarned[0]?.plantType?.emoji || '🌱';
+  };
+
+  const monthName = selectedMonth.toLocaleDateString('en-US', {
+    month: 'long',
+    year: 'numeric'
+  });
+
+  const isCurrentMonth = useMemo(() => {
+    const now = new Date();
+    return selectedMonth.getMonth() === now.getMonth() &&
+      selectedMonth.getFullYear() === now.getFullYear();
+  }, [selectedMonth]);
 
   return (
-    <SafeAreaView style={styles.container}>
-      <PlanBrowserView
-        simpleSchedule={simpleSchedule}
-        planOptions={planOptions}
-        onSelectPlan={handleShowPlanDetails}
-        setSelectedGoalIndex={setSelectedGoalIndex}
-        scrollX={scrollX}
-      />
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView style={styles.container} showsVerticalScrollIndicator={false}>
+        <View style={styles.content}>
+          <Text style={styles.title}>Last run</Text>
 
-      {/* Plan Details Modal */}
-      <PlanDetailsModal
-        visible={showPlanModal}
-        onClose={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-          setShowPlanModal(false);
-        }}
-        plan={selectedPlan}
-        onStart={handleStartPlan}
-        isGenerating={isGenerating}
-        isPremiumPlan={selectedPlan ? selectedPlan.value !== '5K' : false}
-        userHasPremium={revenueCatUser.pro}
-      />
+          {/* Last Run Card */}
+          {lastRun && (
+            <TouchableOpacity
+              style={styles.lastRunCard}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push({
+                  pathname: '/activity-detail',
+                  params: {
+                    id: lastRun._id
+                  }
+                });
+              }}
+              activeOpacity={0.8}
+            >
+              <Text style={styles.dayOfWeek}>
+                {new Date(lastRun.startDate).toLocaleDateString('en-US', { weekday: 'long' })}
+              </Text>
+              <Text style={styles.runDate}>
+                {new Date(lastRun.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+              </Text>
+
+              {/* Plant Illustration */}
+              <View style={styles.treeContainer}>
+                <Text style={styles.treeEmoji}>
+                  {lastRunPlant?.plantType?.emoji || '🌳'}
+                </Text>
+              </View>
+
+              <Text style={styles.distanceText}>
+                DISTANCE {formatDistance(lastRun.distance, 'metric')}
+              </Text>
+              <Text style={styles.paceText}>
+                PACE {lastRun.duration > 0 ? Math.round((lastRun.duration / 60) / (lastRun.distance / 1000)) : 0}:{String(Math.round(((lastRun.duration / 60) / (lastRun.distance / 1000) % 1) * 60)).padStart(2, '0')} /km
+              </Text>
+            </TouchableOpacity>
+          )}
+
+          {/* Month Navigation */}
+          <View style={styles.monthNavigation}>
+            <TouchableOpacity
+              style={styles.monthButton}
+              onPress={() => navigateMonth('prev')}
+            >
+              <Text style={styles.monthButtonText}>‹</Text>
+            </TouchableOpacity>
+
+            <Text style={styles.monthTitle}>{isCurrentMonth ? 'This month' : monthName}</Text>
+
+            <TouchableOpacity
+              style={styles.monthButton}
+              onPress={() => navigateMonth('next')}
+            >
+              <Text style={styles.monthButtonText}>›</Text>
+            </TouchableOpacity>
+          </View>
+
+          {/* Calendar Grid */}
+          <View style={styles.calendarGrid}>
+            {/* Add empty cells for first week offset */}
+            {Array.from({ length: new Date(selectedMonth.getFullYear(), selectedMonth.getMonth(), 1).getDay() }, (_, i) => (
+              <View key={`empty-${i}`} style={styles.calendarDay} />
+            ))}
+
+            {calendarDays.map((day, index) => {
+              const plantEmoji = getPlantEmoji(day);
+              const hasActivity = day.activities.length > 0;
+              const dayNumber = new Date(day.date).getDate();
+
+              return (
+                <TouchableOpacity
+                  key={day.date}
+                  style={[
+                    styles.calendarDay,
+                    hasActivity && styles.calendarDayWithActivity,
+                    plantEmoji && styles.calendarDayWithPlant
+                  ]}
+                  onPress={() => showDayDetails(day)}
+                  disabled={!hasActivity}
+                  activeOpacity={0.7}
+                >
+                  {plantEmoji ? (
+                    <Text style={styles.dayPlantEmoji}>{plantEmoji}</Text>
+                  ) : (
+                    <Text style={[
+                      styles.dayNumber,
+                      hasActivity && styles.dayNumberActive
+                    ]}>
+                      {dayNumber}
+                    </Text>
+                  )}
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
+      </ScrollView>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  center: {
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.primary,
+  safeArea: {
     flex: 1,
-    justifyContent: 'center',
+    backgroundColor: '#FFFFFF',
   },
   container: {
-    backgroundColor: Theme.colors.background.primary,
     flex: 1,
-    justifyContent: 'center',
   },
-  loadingText: {
-    color: Theme.colors.text.primary,
-    fontFamily: Theme.fonts.semibold,
+  content: {
+    paddingHorizontal: 24,
+    paddingTop: 20,
+    paddingBottom: 100, // Space for tab bar
+  },
+  title: {
+    fontSize: 32,
+    fontFamily: 'SF-Pro-Rounded-Black',
+    color: '#000000',
+    marginBottom: 24,
+  },
+  lastRunCard: {
+    backgroundColor: '#F5F5F5',
+    borderRadius: 20,
+    padding: 24,
+    alignItems: 'center',
+    marginBottom: 32,
+    borderWidth: 3,
+    borderColor: '#000000',
+  },
+  dayOfWeek: {
+    fontSize: 24,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: '#000000',
+    marginBottom: 4,
+  },
+  runDate: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: '#666666',
+    marginBottom: 20,
+  },
+  treeContainer: {
+    marginVertical: 20,
+  },
+  treeEmoji: {
+    fontSize: 80,
+  },
+  distanceText: {
+    fontSize: 14,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: '#000000',
+    marginTop: 20,
+    marginBottom: 4,
+    letterSpacing: 1,
+  },
+  paceText: {
+    fontSize: 14,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: '#000000',
+    letterSpacing: 1,
+  },
+  monthNavigation: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 24,
+    paddingHorizontal: 8,
+  },
+  monthButton: {
+    width: 40,
+    height: 40,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  monthButtonText: {
+    fontSize: 24,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: '#000000',
+  },
+  monthTitle: {
+    fontSize: 18,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: '#000000',
+  },
+  calendarGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    paddingHorizontal: 8,
+  },
+  calendarDay: {
+    width: '14.28%', // 100% / 7 days
+    aspectRatio: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 8,
+    borderRadius: 20,
+  },
+  calendarDayWithActivity: {
+    //backgroundColor: '#B8E6B8', // Light green background for activity days
+  },
+  calendarDayWithPlant: {
+    //backgroundColor: '#A8D8A8', // Slightly darker green for plant days
+  },
+  dayNumber: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Semibold',
+    color: '#666666',
+  },
+  dayNumberActive: {
+    color: '#000000',
+    fontFamily: 'SF-Pro-Rounded-Bold',
+  },
+  dayPlantEmoji: {
+    fontSize: 24,
   },
 }); 

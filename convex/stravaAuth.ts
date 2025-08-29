@@ -51,17 +51,12 @@ export const exchangeCode = action({
       stravaAccessToken: tokens.access_token,
       stravaRefreshToken: tokens.refresh_token,
       stravaTokenExpiresAt: tokens.expires_at,
-      stravaAthleteId: tokens.athlete?.id,
+      stravaAthleteId: tokens.athlete?.id ? Number(tokens.athlete.id) : undefined,
       stravaSyncEnabled: true,
       stravaInitialSyncCompleted: false,
     });
 
-    // Trigger an initial full Strava sync for the user
-    try {
-      await ctx.scheduler.runAfter(0, api.activities.fullStravaSyncServer, {});
-    } catch (err) {
-      console.warn("[stravaAuth.exchangeCode] Unable to schedule initial Strava sync:", err);
-    }
+    // Note: Initial sync can be triggered manually by user in garden app
 
     return { success: true };
   },

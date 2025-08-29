@@ -17,13 +17,13 @@ interface FriendAvatarProps {
   isCurrent?: boolean;
 }
 
-const getAvatarImage = (level: number) => {
-  if (level >= 30) return require('@/assets/images/flame/age4.png');
-  if (level >= 20) return require('@/assets/images/flame/age3.png');
-  if (level >= 10) return require('@/assets/images/flame/age2.png');
-  if (level >= 5) return require('@/assets/images/flame/age1.png');
-  return require('@/assets/images/flame/age0.png');
-};
+// const getAvatarImage = (level: number) => {
+//   if (level >= 30) return require('@/assets/images/flame/age4.png');
+//   if (level >= 20) return require('@/assets/images/flame/age3.png');
+//   if (level >= 10) return require('@/assets/images/flame/age2.png');
+//   if (level >= 5) return require('@/assets/images/flame/age1.png');
+//   return require('@/assets/images/flame/age0.png');
+// };
 
 export default function FriendAvatar({ entry, metricSystem = 'metric', isCurrent = false }: FriendAvatarProps) {
   const xp = Math.floor(entry.totalDistance * 0.1); // Approx XP gained from distance
