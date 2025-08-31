@@ -1,11 +1,10 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useTrackNavigation } from '@/hooks/useTrackNavigation';
-import { FontAwesome5 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Tabs, router } from 'expo-router';
+import { Tabs } from 'expo-router';
 import { useState } from 'react';
 import { TouchableOpacity, View } from 'react-native';
 
@@ -42,7 +41,7 @@ export default function AppLayout() {
             bottom: 0,
             backgroundColor: Theme.colors.background.primary,
             height: 80,
-            paddingBottom: 0,
+            paddingBottom: 20,
             borderTopWidth: 0,
             elevation: 0,
             shadowOpacity: 0,
@@ -66,68 +65,56 @@ export default function AppLayout() {
               />
             </View>
           ),
-          tabBarShowLabel: false,
-          tabBarActiveTintColor: Theme.colors.accent.primary,
-          tabBarIconStyle: {
-            marginTop: 10,
+          tabBarShowLabel: true,
+          tabBarLabelStyle: {
+            fontSize: 16,
+            fontFamily: 'SF-Pro-Rounded-Medium',
+            marginTop: 5,
           },
+          tabBarActiveTintColor: Theme.colors.accent.primary,
           tabBarInactiveTintColor: Theme.colors.text.muted,
         }}
       >
         <Tabs.Screen
-          name="index"
-          options={({ navigation }) => ({
-            tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="leaf" size={size} color={color} />
-            ),
-            tabBarButton: createTabBarButton(() => navigation.navigate('index')),
-          })}
-        />
-        <Tabs.Screen
-          name="path"
-          options={({ navigation }) => ({
-            tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="calendar-alt" size={size} color={color} />
-            ),
-            tabBarButton: createTabBarButton(() => navigation.navigate('path')),
-          })}
-        />
-        <Tabs.Screen
-          name="add"
-          options={({ navigation }) => ({
-            tabBarIcon: ({ focused }) => (
-              <View style={{
-                width: 70,
-                height: 70,
-                backgroundColor: Theme.colors.accent.primary,
-                borderRadius: Theme.borderRadius.full,
-                justifyContent: 'center',
-                alignItems: 'center',
-              }}>
-                <FontAwesome5 name="circle" size={40} color={Theme.colors.background.primary} />
-              </View>
-            ),
-            tabBarButton: createTabBarButton(() => {
-              router.push('/run');
-            }),
-          })}
-        />
-        <Tabs.Screen
           name="leaderboard"
           options={({ navigation }) => ({
-            tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="users" size={size} color={color} />
-            ),
+            title: 'feed',
+            tabBarIcon: () => null,
             tabBarButton: createTabBarButton(() => navigation.navigate('leaderboard')),
+            tabBarLabelStyle: {
+              fontSize: 24,
+              fontFamily: 'Times',
+              fontWeight: '400',
+              bottom: 20,
+            },
+          })}
+        />
+        <Tabs.Screen
+          name="index"
+          options={({ navigation }) => ({
+            title: 'garden',
+            tabBarIcon: () => null,
+            tabBarButton: createTabBarButton(() => navigation.navigate('index')),
+            tabBarLabelStyle: {
+              fontSize: 24,
+              fontFamily: 'Times',
+              bottom: 20,
+              fontWeight: '400',
+            },
           })}
         />
         <Tabs.Screen
           name="profile"
           options={({ navigation }) => ({
-            tabBarIcon: ({ color, size }) => (
-              <FontAwesome5 name="user-alt" size={size} color={color} />
-            ),
+            title: 'profile',
+            tabBarIcon: () => null,
             tabBarButton: createTabBarButton(() => navigation.navigate('profile')),
+            tabBarLabelStyle: {
+              fontSize: 24,
+              fontFamily: 'Times',
+              fontWeight: '400',
+              bottom: 20,
+            },
           })}
         />
       </Tabs>

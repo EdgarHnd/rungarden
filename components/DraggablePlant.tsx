@@ -1,6 +1,9 @@
+import { Theme } from '@/constants/theme';
+import { FontAwesome5 } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import React, { useState } from 'react';
 import {
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -34,6 +37,7 @@ interface PlantInGarden {
   plantType: {
     name: string;
     emoji: string;
+    imagePath?: string;
     growthStages: Array<{ stage: number; name: string; emoji: string }>;
     rarity: 'common' | 'uncommon' | 'rare' | 'epic';
   };
@@ -54,19 +58,41 @@ interface DraggablePlantProps {
 
 // Helper function to get the correct plant emoji
 const getPlantEmoji = (plant: PlantInGarden) => {
-  // Use the plant type emoji if available
-  if (plant.plantType?.emoji) {
-    return plant.plantType.emoji;
-  }
-
   // Use growth stage emoji if available
   const currentStageEmoji = plant.plantType?.growthStages?.[plant.currentStage]?.emoji;
   if (currentStageEmoji) {
     return currentStageEmoji;
   }
 
+  // Use the plant type emoji if available
+  if (plant.plantType?.emoji) {
+    return plant.plantType.emoji;
+  }
+
   // Fallback to a generic plant emoji
   return '🌱';
+};
+
+// Helper function to get the correct plant image path
+const getPlantImagePath = (plant: PlantInGarden) => {
+  // Check if plant type has an image
+  if (plant.plantType?.imagePath) {
+    return plant.plantType.imagePath;
+  }
+
+  return null;
+};
+
+// Helper function to get image source from path
+const getImageSource = (imagePath: string) => {
+  // Map image paths to actual require statements
+  const imageMap: { [key: string]: any } = {
+    'assets/images/plants/01.png': require('../assets/images/plants/01.png'),
+    'assets/images/plants/carrot.png': require('../assets/images/plants/carrot.png'),
+    'assets/images/plants/sakura.png': require('../assets/images/plants/sakura.png'),
+  };
+
+  return imageMap[imagePath] || null;
 };
 
 export default function DraggablePlant({
@@ -257,13 +283,33 @@ export default function DraggablePlant({
 
 
 
-                          {/* Plant emoji */}
-                          <Text style={[
-                            styles.plantEmoji,
-                            plant.isWilted && styles.wiltedPlant,
-                          ]}>
-                            {getPlantEmoji(plant)}
-                          </Text>
+                          {/* Plant emoji or image */}
+                          {(() => {
+                            const imagePath = getPlantImagePath(plant);
+                            const imageSource = imagePath ? getImageSource(imagePath) : null;
+
+                            if (imageSource) {
+                              return (
+                                <Image
+                                  source={imageSource}
+                                  style={[
+                                    styles.plantImage,
+                                    plant.isWilted && styles.wiltedPlant,
+                                  ]}
+                                  resizeMode="contain"
+                                />
+                              );
+                            } else {
+                              return (
+                                <Text style={[
+                                  styles.plantEmoji,
+                                  plant.isWilted && styles.wiltedPlant,
+                                ]}>
+                                  {getPlantEmoji(plant)}
+                                </Text>
+                              );
+                            }
+                          })()}
 
                           {/* Water level indicator */}
                           {plant.waterLevel < 30 && (
@@ -289,25 +335,19 @@ export default function DraggablePlant({
             style={styles.controlButton}
             onPress={() => onLayerChange(plant._id, 'front')}
           >
-            <Text style={styles.controlButtonText}>⬆️</Text>
+            <FontAwesome5 name="arrow-up" size={16} color={Theme.colors.accent.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.controlButton}
             onPress={() => onLayerChange(plant._id, 'back')}
           >
-            <Text style={styles.controlButtonText}>⬇️</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={styles.controlButton}
-            onPress={exitGestureMode}
-          >
-            <Text style={styles.controlButtonText}>✕</Text>
+            <FontAwesome5 name="arrow-down" size={16} color={Theme.colors.accent.primary} />
           </TouchableOpacity>
           <TouchableOpacity
             style={[styles.controlButton, styles.deleteButton]}
             onPress={() => onDeletePlant(plant._id)}
           >
-            <Text style={styles.controlButtonText}>🗑️</Text>
+            <FontAwesome5 name="trash" size={16} color={Theme.colors.background.primary} />
           </TouchableOpacity>
         </View>
       )}
@@ -338,6 +378,10 @@ const styles = StyleSheet.create({
     fontSize: 64,
     textAlign: 'center',
     lineHeight: 80,
+  },
+  plantImage: {
+    width: 64,
+    height: 64,
   },
   wiltedPlant: {
     opacity: 0.6,

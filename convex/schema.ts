@@ -113,6 +113,7 @@ const schema = defineSchema({
   plantTypes: defineTable({
     name: v.string(),                    // "Radish", "Tomato", "Apple Tree"
     emoji: v.string(),                   // 🥕, 🍅, 🍎
+    imagePath: v.optional(v.string()),   // optional path to plant image (e.g., "plants/01.png")
     distanceRequired: v.number(),        // metres required to earn this plant
     rarity: v.union(                     // rarity affects growth rate and appearance
       v.literal("common"),

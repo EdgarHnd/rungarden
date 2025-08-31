@@ -6,6 +6,7 @@ export const PLANT_DISTANCE_REWARDS = [
   {
     name: "Radish",
     emoji: "🥕",
+    imagePath: "assets/images/plants/01.png",
     distanceRequired: 1000, // 1km
     rarity: "common" as const,
     category: "vegetable" as const,
@@ -182,5 +183,38 @@ export const getPlantTypesByRarity = query({
       .filter((q) => q.eq(q.field("rarity"), rarity))
       .order("asc")
       .collect();
+  },
+});
+
+// Migration function to update existing plant types with imagePath
+export const migratePlantTypesWithImages = mutation({
+  args: {},
+  handler: async (ctx) => {
+    // Get all existing plant types
+    const existingPlantTypes = await ctx.db.query("plantTypes").collect();
+    
+    let updatedCount = 0;
+    
+    // Update each plant type with imagePath from PLANT_DISTANCE_REWARDS
+    for (const existingType of existingPlantTypes) {
+      const definitionType = PLANT_DISTANCE_REWARDS.find(
+        (def) => def.name === existingType.name
+      );
+      
+      if (definitionType && definitionType.imagePath) {
+        // Update the plant type with imagePath
+        await ctx.db.patch(existingType._id, {
+          imagePath: definitionType.imagePath,
+        });
+        
+        updatedCount++;
+      }
+    }
+    
+    return { 
+      success: true, 
+      message: `Updated ${updatedCount} plant types with image paths`,
+      updatedCount 
+    };
   },
 });

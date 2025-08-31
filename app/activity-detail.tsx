@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Image,
   ScrollView,
   StyleSheet,
   Text,
@@ -15,6 +16,40 @@ import {
   View
 } from 'react-native';
 import { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+
+// Helper function to get image source from path
+const getImageSource = (imagePath: string) => {
+  // Map image paths to actual require statements
+  const imageMap: { [key: string]: any } = {
+    'assets/images/plants/01.png': require('../assets/images/plants/01.png'),
+    'assets/images/plants/carrot.png': require('../assets/images/plants/carrot.png'),
+    'assets/images/plants/sakura.png': require('../assets/images/plants/sakura.png'),
+  };
+
+  return imageMap[imagePath] || null;
+};
+
+// Helper function to get plant display (image or emoji)
+const getPlantDisplay = (plantType: any) => {
+  const imagePath = plantType?.imagePath;
+  const imageSource = imagePath ? getImageSource(imagePath) : null;
+
+  if (imageSource) {
+    return (
+      <Image
+        source={imageSource}
+        style={styles.plantImage}
+        resizeMode="contain"
+      />
+    );
+  } else {
+    return (
+      <Text style={styles.plantEmoji}>
+        {plantType?.emoji || '🌱'}
+      </Text>
+    );
+  }
+};
 
 export default function ActivityDetailScreen() {
   const params = useLocalSearchParams();
@@ -258,7 +293,7 @@ export default function ActivityDetailScreen() {
             <View style={styles.plantCard}>
               {/* Plant Visual */}
               <View style={styles.plantVisualContainer}>
-                <Text style={styles.plantEmoji}>{plantEarned.plantType?.emoji || '🌱'}</Text>
+                {getPlantDisplay(plantEarned.plantType)}
               </View>
 
               {/* New Plant Badge */}
@@ -954,6 +989,10 @@ const styles = StyleSheet.create({
   },
   plantEmoji: {
     fontSize: 120,
+  },
+  plantImage: {
+    width: 120,
+    height: 120,
   },
   newPlantBadge: {
     backgroundColor: '#FFFFFF',

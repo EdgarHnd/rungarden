@@ -1,3 +1,4 @@
+import { Theme } from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
@@ -33,6 +34,7 @@ interface PlantInGarden {
   plantType: {
     name: string;
     emoji: string;
+    imagePath?: string;
     growthStages: Array<{ stage: number; name: string; emoji: string }>;
     rarity: 'common' | 'uncommon' | 'rare' | 'epic';
   };
@@ -43,6 +45,7 @@ interface PlantInventoryItem {
   plantType: {
     name: string;
     emoji: string;
+    imagePath?: string;
     rarity: 'common' | 'uncommon' | 'rare' | 'epic';
   };
 }
@@ -500,29 +503,29 @@ export default function GardenView() {
             style={styles.resetButton}
             onPress={handleResetGarden}
           >
-            <Text style={styles.resetButtonText}>🗑️</Text>
+            <Text style={styles.resetButtonText}>reset</Text>
           </TouchableOpacity>
           <TouchableOpacity
             style={styles.inventoryButton}
             onPress={toggleInventory}
           >
             <Text style={styles.inventoryButtonText}>
-              🎒 Plants ({plantInventory?.length || 0})
+              stash ({plantInventory?.length || 0})
             </Text>
           </TouchableOpacity>
         </View>
       </View>
 
       {/* Plant instruction */}
-      <Text style={[
+      {/* <Text style={[
         styles.instruction,
         selectedPlant && styles.instructionActive
       ]}>
         {selectedPlant
           ? `Tap anywhere to plant your ${selectedPlant.plantType?.name}`
-          : 'Select a plant from inventory, then tap to plant it'
+          : 'Select a plant from stash, then tap to plant it'
         }
-      </Text>
+      </Text> */}
 
       {/* Garden Canvas */}
       <GardenCanvas backgroundColor="#F8F9FA" onCanvasTap={handleCanvasTap}>
@@ -713,6 +716,18 @@ export default function GardenView() {
         </View>
       )}
 
+      {/* Floating Record Run Button */}
+      <TouchableOpacity
+        style={styles.floatingButton}
+        onPress={() => {
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+          router.push('/run');
+        }}
+        activeOpacity={0.8}
+      >
+        <Text style={styles.floatingButtonText}>Record Run</Text>
+      </TouchableOpacity>
+
       {/* Plant Celebration Modal */}
       <PlantCelebrationModal
         visible={showCelebrationModal}
@@ -740,7 +755,7 @@ export default function GardenView() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Theme.colors.background.primary,
   },
   header: {
     flexDirection: 'row',
@@ -754,24 +769,23 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
-    backgroundColor: '#FFFFFF',
+    backgroundColor: Theme.colors.background.primary,
   },
   loadingText: {
     fontSize: 18,
-    color: '#000000',
+    color: Theme.colors.accent.primary,
     fontFamily: 'SF-Pro-Rounded-Medium',
   },
   title: {
     fontSize: 32,
-    fontFamily: 'SF-Pro-Rounded-Black',
-    color: '#000000',
+    fontFamily: 'Times',
+    color: Theme.colors.accent.primary,
   },
   headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
   },
   resetButton: {
-    backgroundColor: '#ef4444',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
@@ -780,18 +794,17 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   resetButtonText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accent.primary,
     fontSize: 16,
     fontFamily: 'SF-Pro-Rounded-Medium',
   },
   inventoryButton: {
-    backgroundColor: '#22c55e',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
   },
   inventoryButtonText: {
-    color: '#FFFFFF',
+    color: Theme.colors.accent.primary,
     fontSize: 14,
     fontFamily: 'SF-Pro-Rounded-Medium',
   },
@@ -1000,6 +1013,26 @@ const styles = StyleSheet.create({
     fontFamily: 'SF-Pro-Rounded-Bold',
     color: '#FFFFFF',
     textAlign: 'center',
+  },
+
+  // Floating button styles
+  floatingButton: {
+    position: 'absolute',
+    bottom: 100,
+    left: '50%',
+    transform: [{ translateX: -75 }],
+    width: 150,
+    height: 50,
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  floatingButtonText: {
+    fontSize: 20,
+    fontFamily: 'Times',
+    color: Theme.colors.background.primary,
   },
 
 });
