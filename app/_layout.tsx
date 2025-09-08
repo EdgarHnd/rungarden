@@ -62,6 +62,14 @@ function AuthenticatedApp() {
         }}
       />
       <Stack.Screen
+        name="stash"
+        options={{
+          presentation: 'modal',
+          gestureEnabled: true,
+          animation: 'slide_from_bottom',
+        }}
+      />
+      <Stack.Screen
         name="add-friend"
         options={{
           presentation: 'modal',

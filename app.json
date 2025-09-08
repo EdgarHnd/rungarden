@@ -5,13 +5,14 @@
     "version": "1.0.1",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
-    "scheme": "run-garden",
+    "scheme": "rungarden",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
     "ios": {
       "appleSignIn": true,
       "supportsTablet": false,
       "bundleIdentifier": "com.edgarhnd.rungarden",
+      "deploymentTarget": "15.1",
       "entitlements": {
         "com.apple.developer.healthkit": true,
         "aps-environment": "development"
@@ -89,7 +90,7 @@
     "extra": {
       "router": {},
       "eas": {
-        "projectId": "0b6e768e-a95d-4f3d-a6a3-bdaf57f52c99"
+        "projectId": "ab6589c7-d93b-43dd-9741-ee894ebc64f4"
       }
     }
   }

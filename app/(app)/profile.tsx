@@ -1,4 +1,3 @@
-import { ActivityGrid } from '@/components/ActivityGrid';
 import LoadingScreen from '@/components/LoadingScreen';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
@@ -49,6 +48,7 @@ export default function ProfileScreen() {
   const currentUser = useQuery(api.userProfile.currentUser);
   // Convex queries
   const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
   const profileStats = useQuery(api.activities.getProfileStats);
   const activities = useQuery(api.activities.getUserActivitiesForYear, {
     year: new Date().getFullYear(),
@@ -153,7 +153,7 @@ export default function ProfileScreen() {
     Alert.alert(
       `📅 ${new Date(day.date).toLocaleDateString()}`,
       `🏃‍♂️ ${day.activities.length} runs\n` +
-      `📏 ${formatDistance(totalDistance, 'metric')}\n` +
+      `📏 ${formatDistance(totalDistance, metricSystem)}\n` +
       `⏱️ ${Math.round(totalDuration)} minutes\n` +
       `🔥 ${day.activities.reduce((sum, act) => sum + act.calories, 0)} calories` +
       plantsText,
@@ -177,12 +177,6 @@ export default function ProfileScreen() {
   const getPlantEmoji = (day: DayData) => {
     if (day.plantsEarned.length === 0) return null;
     return day.plantsEarned[0]?.plantType?.emoji || '🌱';
-  };
-
-  const handleSignOut = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    await signOut();
-    router.replace('/');
   };
 
   if (!isAuthenticated) {
@@ -223,18 +217,6 @@ export default function ProfileScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <View style={styles.userInfo}>
-            <View style={styles.avatar}>
-              <Text style={styles.avatarText}>
-                {userName.charAt(0).toUpperCase()}
-              </Text>
-            </View>
-            <View style={styles.userDetails}>
-              <Text style={styles.userName}>{userName}</Text>
-              <Text style={styles.userSubtitle}>Garden Runner 🌱</Text>
-            </View>
-          </View>
-
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => {
@@ -246,35 +228,72 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </View>
 
-        {/* Garden Stats */}
-        <View style={styles.statsContainer}>
-          <Text style={styles.sectionTitle}>Running Garden Stats</Text>
+        {/* Centered Profile Section */}
+        <View style={styles.profileSection}>
+          <View style={styles.avatar}>
+            <Text style={styles.avatarText}>
+              {userName.charAt(0).toUpperCase()}
+            </Text>
+          </View>
+          <Text style={styles.userName}>{userName}</Text>
 
-          <View style={styles.statsGrid}>
-            <View style={styles.statCard}>
-              <FontAwesome5 name="route" size={24} color={Theme.colors.accent.primary} />
-              <Text style={styles.statValue}>{formatDistanceForProfile(totalDistance)}</Text>
-              <Text style={styles.statLabel}>Total Distance</Text>
+          {/* Integrated Stats */}
+          <View style={styles.integratedStats}>
+            <View style={styles.integratedStatItem}>
+              <Text style={styles.integratedStatValue}>{formatDistanceForProfile(totalDistance)}</Text>
+              <Text style={styles.integratedStatLabel}>Total Distance</Text>
             </View>
 
-            <View style={styles.statCard}>
-              <FontAwesome5 name="running" size={24} color={Theme.colors.accent.secondary} />
-              <Text style={styles.statValue}>{totalWorkouts}</Text>
-              <Text style={styles.statLabel}>Total Runs</Text>
+            <View style={styles.integratedStatItem}>
+              <Text style={styles.integratedStatValue}>{totalWorkouts}</Text>
+              <Text style={styles.integratedStatLabel}>Total Runs</Text>
             </View>
+          </View>
 
-            <View style={styles.statCard}>
-              <FontAwesome5 name="fire" size={24} color={Theme.colors.accent.secondary} />
-              <Text style={styles.statValue}>{totalCalories.toLocaleString()}</Text>
-              <Text style={styles.statLabel}>Calories Burned</Text>
-            </View>
+          {/* Action Buttons */}
+          <View style={styles.actionButtons}>
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                // TODO: Navigate to edit profile screen
+              }}
+              activeOpacity={0.7}
+            >
+              <FontAwesome5 name="edit" size={16} color={Theme.colors.text.primary} />
+              <Text style={styles.actionButtonText}>Edit Profile</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.actionButton}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                router.push('/add-friend');
+              }}
+              activeOpacity={0.7}
+            >
+              <FontAwesome5 name="user-plus" size={16} color={Theme.colors.text.primary} />
+              <Text style={styles.actionButtonText}>Add Friends</Text>
+            </TouchableOpacity>
           </View>
         </View>
 
         {/* Last Run Card */}
         {lastRun && (
           <View style={styles.lastRunContainer}>
-            <Text style={styles.sectionTitle}>Last Run</Text>
+            <View style={styles.lastRunHeader}>
+              <Text style={styles.sectionTitle}>Last Run</Text>
+              <TouchableOpacity
+                style={styles.lastRunHeaderButton}
+                onPress={() => {
+                  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                  router.push('/activities');
+                }}
+              >
+                <Text style={styles.lastRunHeaderButtonText}>View All</Text>
+                <FontAwesome5 name="arrow-right" size={20} color={Theme.colors.text.primary} />
+              </TouchableOpacity>
+            </View>
             <TouchableOpacity
               style={styles.lastRunCard}
               onPress={() => {
@@ -390,7 +409,7 @@ export default function ProfileScreen() {
         </View>
 
         {/* Recent Activities */}
-        <View style={styles.activitiesContainer}>
+        {/* <View style={styles.activitiesContainer}>
           <Text style={styles.sectionTitle}>Recent Runs</Text>
           {activities && activities.length > 0 ? (
             <ActivityGrid
@@ -403,16 +422,7 @@ export default function ProfileScreen() {
               <Text style={styles.emptyStateText}>Start running to grow your garden!</Text>
             </View>
           )}
-        </View>
-
-        {/* Sign Out */}
-        <TouchableOpacity
-          style={styles.signOutButton}
-          onPress={handleSignOut}
-        >
-          <FontAwesome5 name="sign-out-alt" size={18} color={Theme.colors.status.error} />
-          <Text style={styles.signOutText}>Sign Out</Text>
-        </TouchableOpacity>
+        </View> */}
       </ScrollView>
     </SafeAreaView>
   );
@@ -431,80 +441,84 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
+    justifyContent: 'flex-end',
     alignItems: 'center',
-    padding: 20,
+    paddingHorizontal: 20,
     paddingTop: 10,
-  },
-  userInfo: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  avatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: Theme.colors.accent.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-    marginRight: 16,
-  },
-  avatarText: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: 'white',
-  },
-  userDetails: {
-    flex: 1,
-  },
-  userName: {
-    fontSize: 24,
-    fontWeight: 'bold',
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  userSubtitle: {
-    fontSize: 16,
-    color: Theme.colors.text.secondary,
+    paddingBottom: 0,
   },
   settingsButton: {
     padding: 12,
     borderRadius: 8,
-    backgroundColor: Theme.colors.background.secondary,
   },
-  statsContainer: {
-    margin: 20,
-    marginTop: 0,
+  profileSection: {
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    marginBottom: 20,
+  },
+  avatar: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
+    backgroundColor: Theme.colors.text.primary,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  avatarText: {
+    fontSize: 32,
+    fontWeight: 'bold',
+    color: 'white',
+  },
+  userName: {
+    fontSize: 28,
+    fontWeight: 'bold',
+    color: Theme.colors.text.primary,
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  actionButtons: {
+    flexDirection: 'row',
+    gap: 12,
+  },
+  actionButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: 8,
+    gap: 8,
+  },
+  actionButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Theme.colors.text.primary,
+  },
+  integratedStats: {
+    flexDirection: 'row',
+    justifyContent: 'center',
+    gap: 40,
+    marginBottom: 24,
+  },
+  integratedStatItem: {
+    alignItems: 'center',
+    gap: 8,
+  },
+  integratedStatValue: {
+    fontSize: 20,
+    fontWeight: 'bold',
+    color: Theme.colors.text.primary,
+  },
+  integratedStatLabel: {
+    fontSize: 14,
+    color: Theme.colors.text.secondary,
+    textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 20,
     fontWeight: 'bold',
     color: Theme.colors.text.primary,
-    marginBottom: 16,
-  },
-  statsGrid: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: 12,
-    padding: 16,
-    alignItems: 'center',
-    marginHorizontal: 4,
-  },
-  statValue: {
-    fontSize: 18,
-    fontWeight: 'bold',
-    color: Theme.colors.text.primary,
-    marginTop: 8,
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 12,
-    color: Theme.colors.text.secondary,
-    textAlign: 'center',
   },
   lastRunContainer: {
     margin: 20,
@@ -517,6 +531,22 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     borderWidth: 3,
     borderColor: '#000000',
+  },
+  lastRunHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 16,
+  },
+  lastRunHeaderButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  lastRunHeaderButtonText: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: Theme.colors.text.primary,
   },
   dayOfWeek: {
     fontSize: 24,
@@ -574,12 +604,12 @@ const styles = StyleSheet.create({
   monthButtonText: {
     fontSize: 24,
     fontFamily: 'SF-Pro-Rounded-Bold',
-    color: Theme.colors.accent.primary,
+    color: Theme.colors.text.primary,
   },
   monthTitle: {
     fontSize: 18,
     fontFamily: 'SF-Pro-Rounded-Bold',
-    color: Theme.colors.accent.primary,
+    color: Theme.colors.text.primary,
   },
   calendarGrid: {
     flexDirection: 'row',
@@ -603,7 +633,7 @@ const styles = StyleSheet.create({
   dayNumber: {
     fontSize: 16,
     fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: Theme.colors.accent.primary,
+    color: Theme.colors.text.primary,
   },
   dayNumberActive: {
     color: '#000000',
@@ -628,22 +658,5 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.secondary,
     marginTop: 12,
     textAlign: 'center',
-  },
-  signOutButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    margin: 20,
-    padding: 16,
-    borderRadius: 12,
-    backgroundColor: Theme.colors.background.secondary,
-    borderWidth: 1,
-    borderColor: Theme.colors.status.error,
-  },
-  signOutText: {
-    fontSize: 16,
-    color: Theme.colors.status.error,
-    marginLeft: 8,
-    fontWeight: '600',
   },
 });

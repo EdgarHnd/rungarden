@@ -1,12 +1,13 @@
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useTrackNavigation } from '@/hooks/useTrackNavigation';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
-import { Tabs } from 'expo-router';
+import { router, Tabs, usePathname } from 'expo-router';
 import { useState } from 'react';
-import { TouchableOpacity, View } from 'react-native';
+import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
 
 
@@ -14,6 +15,7 @@ export default function AppLayout() {
   useTrackNavigation();
   const [showRecordingModal, setShowRecordingModal] = useState(false);
   const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const pathname = usePathname();
 
   const createTabBarButton = (onPress: () => void) => {
     return ({ children, style, ...props }: any) => (
@@ -30,6 +32,9 @@ export default function AppLayout() {
       </TouchableOpacity>
     );
   };
+
+  // Check if we're on the index screen
+  const isOnIndexScreen = pathname === '/' || pathname === '/index';
 
   return (
     <>
@@ -65,7 +70,7 @@ export default function AppLayout() {
               />
             </View>
           ),
-          tabBarShowLabel: true,
+          tabBarShowLabel: false,
           tabBarLabelStyle: {
             fontSize: 16,
             fontFamily: 'SF-Pro-Rounded-Medium',
@@ -78,46 +83,66 @@ export default function AppLayout() {
         <Tabs.Screen
           name="leaderboard"
           options={({ navigation }) => ({
-            title: 'feed',
-            tabBarIcon: () => null,
+            tabBarIcon: ({ color, size }) => (
+              <FontAwesome5 name="users" size={size} color={color} />
+            ),
             tabBarButton: createTabBarButton(() => navigation.navigate('leaderboard')),
-            tabBarLabelStyle: {
-              fontSize: 24,
-              fontFamily: 'Times',
-              fontWeight: '400',
-              bottom: 20,
-            },
           })}
         />
         <Tabs.Screen
           name="index"
           options={({ navigation }) => ({
-            title: 'garden',
-            tabBarIcon: () => null,
+            tabBarIcon: ({ color, size }) => (
+              <FontAwesome5 name="seedling" size={size} color={color} />
+            ),
             tabBarButton: createTabBarButton(() => navigation.navigate('index')),
-            tabBarLabelStyle: {
-              fontSize: 24,
-              fontFamily: 'Times',
-              bottom: 20,
-              fontWeight: '400',
-            },
           })}
         />
         <Tabs.Screen
           name="profile"
           options={({ navigation }) => ({
-            title: 'profile',
-            tabBarIcon: () => null,
+            tabBarIcon: ({ color, size }) => (
+              <FontAwesome5 name="user" solid size={size} color={color} />
+            ),
             tabBarButton: createTabBarButton(() => navigation.navigate('profile')),
-            tabBarLabelStyle: {
-              fontSize: 24,
-              fontFamily: 'Times',
-              fontWeight: '400',
-              bottom: 20,
-            },
           })}
         />
       </Tabs>
+
+      {/* Floating Record Run Button - Only show on index screen */}
+      {isOnIndexScreen && (
+        <TouchableOpacity
+          style={styles.floatingButton}
+          onPress={() => {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+            router.push('/run');
+          }}
+          activeOpacity={0.8}
+        >
+          <Text style={styles.floatingButtonText}>Record Run</Text>
+        </TouchableOpacity>
+      )}
     </>
   );
 }
+
+const styles = StyleSheet.create({
+  floatingButton: {
+    position: 'absolute',
+    bottom: 100,
+    left: '50%',
+    transform: [{ translateX: -75 }],
+    width: 150,
+    height: 50,
+    backgroundColor: Theme.colors.accent.primary,
+    borderRadius: 10,
+    justifyContent: 'center',
+    alignItems: 'center',
+    zIndex: 1000,
+  },
+  floatingButtonText: {
+    fontSize: 20,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.background.primary,
+  },
+});

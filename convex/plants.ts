@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
+import { api } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 
 // Award a plant to user based on run distance
@@ -14,12 +15,22 @@ export const awardPlantForActivity = mutation({
       throw new ConvexError("Not authenticated");
     }
 
-    // Find the appropriate plant type for this distance
-    const plantTypes = await ctx.db.query("plantTypes")
-      .order("desc") // Start with highest distance requirements
-      .collect();
+    // Convert distance to km and find the exact plant type
+    const distanceKm = Math.floor(distance / 1000);
+    
+    // Cap at 100km max
+    const cappedDistanceKm = Math.min(distanceKm, 100);
+    
+    if (cappedDistanceKm < 1) {
+      return null; // No plant for distances under 1km
+    }
 
-    const eligiblePlant = plantTypes.find(plant => distance >= plant.distanceRequired);
+    // Get the exact plant type for this distance (1km = 1000m, 2km = 2000m, etc.)
+    const requiredDistance = cappedDistanceKm * 1000;
+    const eligiblePlant = await ctx.db
+      .query("plantTypes")
+      .withIndex("by_distance", (q) => q.eq("distanceRequired", requiredDistance))
+      .first();
     
     if (!eligiblePlant) {
       // No plant earned for this distance
@@ -39,45 +50,66 @@ export const awardPlantForActivity = mutation({
       earnedFromActivityId: activityId,
       earnedAt: new Date().toISOString(),
       isPlanted: false,
-      currentStage: 0, // Start as seed
+      currentStage: 3, // Start at mature stage (no growth needed)
       experiencePoints: 0,
-      nextStageRequirement: getXPRequiredForStage(1), // XP needed for first growth
+      nextStageRequirement: 0, // No more growth needed
       waterLevel: 100, // Start fully watered
       updatedAt: new Date().toISOString(),
     });
+
+    // Auto-plant the plant immediately
+    try {
+      await ctx.runMutation(api.garden.autoPlantInGarden, {
+        plantId: plantId,
+      });
+    } catch (error) {
+      console.log("Could not auto-plant, keeping in inventory:", error);
+      // Plant stays in inventory if auto-planting fails
+    }
 
     // Update activity to reference the earned plant
     await ctx.db.patch(activityId, {
       plantEarned: plantId,
     });
 
-    // Get the created plant with its type
+    // Get the created plant
     const createdPlant = await ctx.db.get(plantId);
-    const plantType = await ctx.db.get(eligiblePlant._id);
 
     return {
       plant: createdPlant,
-      plantType,
+      plantType: eligiblePlant,
       isNewType: await isFirstTimeEarningPlantType(ctx, userId, eligiblePlant._id),
     };
   },
 });
 
-// Helper function to calculate XP required for each growth stage
-function getXPRequiredForStage(stage: number): number {
-  const baseXP = 100;
-  return baseXP * stage; // Stage 1: 100 XP, Stage 2: 200 XP, Stage 3: 300 XP
-}
+// Note: Growth stages and XP system removed in new plant system
+// All plants now start at mature stage (stage 3)
 
-// Check if this is the first time user earns this plant type
+// Check if this is the first time user earns this plant type and update profile
 async function isFirstTimeEarningPlantType(ctx: any, userId: string, plantTypeId: any): Promise<boolean> {
-  const existingPlants = await ctx.db
-    .query("plants")
+  // Get user profile
+  const profile = await ctx.db
+    .query("userProfiles")
     .withIndex("by_user", (q: any) => q.eq("userId", userId))
-    .filter((q: any) => q.eq(q.field("plantTypeId"), plantTypeId))
-    .collect();
+    .first();
 
-  return existingPlants.length <= 1; // 1 because we just created one
+  if (!profile) {
+    return true; // No profile means first time
+  }
+
+  const unlockedPlantTypes = profile.unlockedPlantTypes || [];
+  const isFirstTime = !unlockedPlantTypes.includes(plantTypeId);
+
+  // If it's the first time, add to unlocked list
+  if (isFirstTime) {
+    await ctx.db.patch(profile._id, {
+      unlockedPlantTypes: [...unlockedPlantTypes, plantTypeId],
+      updatedAt: new Date().toISOString(),
+    });
+  }
+
+  return isFirstTime;
 }
 
 // Get all plants owned by user
@@ -158,114 +190,49 @@ export const getPlantByActivityId = query({
   },
 });
 
-// Grow plant by adding experience (from caring actions)
+// DEPRECATED: Growth system removed in new plant system
+// Plants now start at mature stage and don't require growth
 export const growPlant = mutation({
   args: {
     plantId: v.id("plants"),
     experiencePoints: v.number(),
   },
   handler: async (ctx, { plantId, experiencePoints }) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new ConvexError("Not authenticated");
-    }
-
-    const plant = await ctx.db.get(plantId);
-    if (!plant || plant.userId !== userId) {
-      throw new ConvexError("Plant not found or not owned by user");
-    }
-
-    const newXP = plant.experiencePoints + experiencePoints;
-    let newStage = plant.currentStage;
-    let newRequirement = plant.nextStageRequirement;
-
-    // Check if plant can advance to next stage
-    const maxStage = 3; // 0=seed, 1=sprout, 2=growing, 3=mature
-    if (newStage < maxStage && newXP >= newRequirement) {
-      newStage += 1;
-      newRequirement = newStage < maxStage ? getXPRequiredForStage(newStage + 1) : newRequirement;
-    }
-
-    await ctx.db.patch(plantId, {
-      experiencePoints: newXP,
-      currentStage: newStage,
-      nextStageRequirement: newRequirement,
-      updatedAt: new Date().toISOString(),
-    });
-
+    // This function is deprecated but kept for backward compatibility
+    // New plants start at mature stage and don't need growth
     return {
       success: true,
-      leveledUp: newStage > plant.currentStage,
-      newStage,
-      newXP,
+      leveledUp: false,
+      newStage: 3,
+      newXP: 0,
+      deprecated: true,
+      message: "Growth system has been simplified. All plants start mature.",
     };
   },
 });
 
-// Apply natural plant decay (water level decreases over time)
+// DEPRECATED: Plant health/watering system simplified
+// Plants no longer require maintenance in the new system
 export const updatePlantHealth = mutation({
   args: { plantId: v.id("plants") },
   handler: async (ctx, { plantId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new ConvexError("Not authenticated");
-    }
-
-    const plant = await ctx.db.get(plantId);
-    if (!plant || plant.userId !== userId) {
-      throw new ConvexError("Plant not found or not owned by user");
-    }
-
-    // Calculate time since last watered
-    const now = new Date();
-    const lastWatered = plant.lastWatered ? new Date(plant.lastWatered) : new Date(plant.earnedAt);
-    const hoursSinceWatered = (now.getTime() - lastWatered.getTime()) / (1000 * 60 * 60);
-
-    // Decrease water level over time (1 point per hour, faster if not planted)
-    const decayRate = plant.isPlanted ? 1 : 2;
-    const waterLoss = Math.floor(hoursSinceWatered * decayRate);
-    const newWaterLevel = Math.max(0, plant.waterLevel - waterLoss);
-
-    // Plant wilts if water level is very low
-    const isWilted = newWaterLevel < 20;
-
-    await ctx.db.patch(plantId, {
-      waterLevel: newWaterLevel,
-      isWilted,
-      updatedAt: new Date().toISOString(),
-    });
-
-    return { waterLevel: newWaterLevel, isWilted };
+    // This function is deprecated but kept for backward compatibility
+    // Plants no longer decay or require watering in the simplified system
+    return { 
+      waterLevel: 100, 
+      isWilted: false,
+      deprecated: true,
+      message: "Plant health system has been simplified. Plants no longer require maintenance.",
+    };
   },
 });
 
-// Get plants that need care (low water, wilted)
+// DEPRECATED: Plant care system removed
 export const getPlantsNeedingCare = query({
   args: {},
   handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      return [];
-    }
-
-    const plants = await ctx.db
-      .query("plants")
-      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", true))
-      .filter((q) => q.or(
-        q.lt(q.field("waterLevel"), 30),
-        q.eq(q.field("isWilted"), true)
-      ))
-      .collect();
-
-    // Fetch plant type details
-    const plantsWithTypes = await Promise.all(
-      plants.map(async (plant) => {
-        const plantType = await ctx.db.get(plant.plantTypeId);
-        return { ...plant, plantType };
-      })
-    );
-
-    return plantsWithTypes;
+    // No plants need care in the simplified system
+    return [];
   },
 });
 
@@ -318,4 +285,225 @@ export const getPlantCollectionStats = query({
       stageCount,
     };
   },
+});
+
+// Get user's maximum distance achieved (for unlocking plants)
+export const getUserMaxDistance = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return 0;
+    }
+
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    if (activities.length === 0) {
+      return 0;
+    }
+
+    // Find the maximum distance from all activities
+    const maxDistance = Math.max(...activities.map(activity => activity.distance));
+    return maxDistance;
+  },
+});
+
+// Debug function to check plant ID mismatches
+export const debugPlantStashData = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return { message: "Not authenticated" };
+    }
+
+    const [allPlantTypes, userPlants] = await Promise.all([
+      ctx.db.query("plantTypes").order("asc").collect(),
+      ctx.db.query("plants").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+    ]);
+
+    return {
+      totalPlantTypes: allPlantTypes.length,
+      totalUserPlants: userPlants.length,
+      plantTypeIds: allPlantTypes.slice(0, 5).map(pt => ({ id: pt._id, name: pt.name })),
+      userPlantTypeIds: userPlants.slice(0, 5).map(p => ({ 
+        plantTypeId: p.plantTypeId, 
+        typeIdType: typeof p.plantTypeId,
+        isPlanted: p.isPlanted 
+      })),
+      plantCounts: userPlants.reduce((acc, plant) => {
+        const key = String(plant.plantTypeId);
+        acc[key] = (acc[key] || 0) + 1;
+        return acc;
+      }, {} as Record<string, number>)
+    };
+  },
+});
+
+// Get plant stash data using profile unlocked plant types
+export const getPlantStashData = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return { plants: [], maxDistance: 0 };
+    }
+
+    // Get user profile with unlocked plant types
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    const unlockedPlantTypeIds = profile?.unlockedPlantTypes || [];
+
+    // Get all plant types (should be exactly 100: 1km to 100km)
+    const allPlantTypes = await ctx.db
+      .query("plantTypes")
+      .order("asc")
+      .take(100); // Limit to prevent fetching too many
+
+    // Get user's unplanted plants count (with limit to prevent overflow)
+    const userPlants = await ctx.db
+      .query("plants")
+      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", false))
+      .take(200); // Reasonable limit for unplanted plants
+
+    // Count unplanted plants by type
+    const unplantedCounts: Record<string, number> = {};
+    for (const plant of userPlants) {
+      const typeId = String(plant.plantTypeId);
+      unplantedCounts[typeId] = (unplantedCounts[typeId] || 0) + 1;
+    }
+
+    // Create plant stash data
+    const plants = allPlantTypes.map(plantType => {
+      const isUnlocked = unlockedPlantTypeIds.includes(plantType._id);
+      const unplantedCount = unplantedCounts[String(plantType._id)] || 0;
+      
+      return {
+        ...plantType,
+        isUnlocked,
+        totalCount: isUnlocked ? 1 : 0, // Simple: unlocked = 1, locked = 0
+        unplantedCount,
+        distanceToUnlock: isUnlocked ? 0 : Math.floor(plantType.distanceRequired / 1000),
+      };
+    }).sort((a, b) => a.distanceRequired - b.distanceRequired); // Sort by distance required
+
+    return {
+      plants,
+      maxDistance: 100, // Max 100km
+    };
+  },
+});
+
+// Fix plants with invalid plantTypeId references
+export const fixInvalidPlantReferences = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError("Not authenticated");
+    }
+
+    const [allPlantTypes, userPlants] = await Promise.all([
+      ctx.db.query("plantTypes").collect(),
+      ctx.db.query("plants").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
+    ]);
+
+    const validPlantTypeIds = new Set([
+      ...allPlantTypes.map(pt => pt._id),
+      ...allPlantTypes.map(pt => String(pt._id)),
+      "ultra_mushroom" // Special case for ultra mushrooms
+    ]);
+
+    let fixedCount = 0;
+    let deletedCount = 0;
+
+    for (const plant of userPlants) {
+      const plantTypeId = plant.plantTypeId;
+      
+      // Skip ultra mushrooms and other special plants
+      if (plantTypeId === "ultra_mushroom" || typeof plantTypeId === "string") {
+        continue;
+      }
+
+      // Check if the plant type ID is valid
+      if (!validPlantTypeIds.has(plantTypeId) && !validPlantTypeIds.has(String(plantTypeId))) {
+        // Try to find a matching plant type by distance
+        const activity = await ctx.db.get(plant.earnedFromActivityId);
+        if (activity) {
+          const distance = activity.distance;
+          const matchingPlantType = allPlantTypes
+            .sort((a, b) => b.distanceRequired - a.distanceRequired)
+            .find(pt => distance >= pt.distanceRequired);
+          
+          if (matchingPlantType) {
+            // Fix the plant by updating its plantTypeId
+            await ctx.db.patch(plant._id, {
+              plantTypeId: matchingPlantType._id,
+              updatedAt: new Date().toISOString(),
+            });
+            fixedCount++;
+          } else {
+            // Delete plants that can't be fixed
+            await ctx.db.delete(plant._id);
+            deletedCount++;
+          }
+        } else {
+          // Delete plants without valid activity references
+          await ctx.db.delete(plant._id);
+          deletedCount++;
+        }
+      }
+    }
+
+    return {
+      success: true,
+      fixedCount,
+      deletedCount,
+      message: `Fixed ${fixedCount} plants, deleted ${deletedCount} invalid plants`,
+    };
+  },
+});
+
+// Simple debug query to check user's plants
+export const debugUserPlants = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return { error: "Not authenticated" };
+    }
+
+    const userPlants = await ctx.db
+      .query("plants")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .take(10);
+
+    const plantTypes = await ctx.db
+      .query("plantTypes")
+      .take(10);
+
+    return {
+      userId,
+      totalUserPlants: userPlants.length,
+      totalPlantTypes: plantTypes.length,
+      sampleUserPlants: userPlants.map(p => ({
+        id: p._id,
+        plantTypeId: p.plantTypeId,
+        isPlanted: p.isPlanted,
+        earnedAt: p.earnedAt,
+      })),
+      samplePlantTypes: plantTypes.map(pt => ({
+        id: pt._id,
+        name: pt.name,
+        emoji: pt.emoji,
+        distanceRequired: pt.distanceRequired,
+      })),
+    };
+  }
 });

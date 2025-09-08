@@ -32,7 +32,11 @@ export default function SettingsScreen() {
   const [pushService, setPushService] = useState<PushNotificationService | null>(null);
   const [isSyncing, setIsSyncing] = useState(false);
 
-
+  const handleSignOut = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    await signOut();
+    router.replace('/');
+  };
 
   /**
    * Attempt to open the specific Health privacy page in iOS Settings. If that fails, fall back to the
@@ -776,15 +780,22 @@ export default function SettingsScreen() {
         {/* Danger Zone */}
         <View style={styles.sectionGroup}>
           <Text style={styles.sectionTitle}>Danger Zone</Text>
+          {/* Sign Out */}
           <TouchableOpacity
-            style={[styles.section, styles.dangerSection]}
+            style={styles.signOutButton}
+            onPress={handleSignOut}
+            activeOpacity={0.7}
+          >
+            <FontAwesome5 name="sign-out-alt" size={18} color={Theme.colors.status.error} />
+            <Text style={styles.signOutText}>Sign Out</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={styles.signOutButton}
             onPress={handleDeleteAccount}
             activeOpacity={0.7}
           >
-            <View style={styles.sectionContent}>
-              <Text style={[styles.optionText, styles.dangerText]}>Delete Account</Text>
-              <FontAwesome5 name="trash-alt" size={20} color={Theme.colors.status.error} />
-            </View>
+            <FontAwesome5 name="trash-alt" size={20} color={Theme.colors.status.error} />
+            <Text style={styles.signOutText}>Delete Account</Text>
           </TouchableOpacity>
         </View>
       </ScrollView >
@@ -827,6 +838,7 @@ const styles = StyleSheet.create({
   },
   sectionGroup: {
     marginBottom: Theme.spacing.xxxl,
+    gap: Theme.spacing.lg,
   },
   sectionTitle: {
     fontSize: 20,
@@ -965,5 +977,21 @@ const styles = StyleSheet.create({
   selectionButtonTextSelected: {
     color: Theme.colors.text.primary,
     fontFamily: Theme.fonts.semibold,
+  },
+  signOutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 16,
+    borderRadius: 12,
+    backgroundColor: Theme.colors.background.secondary,
+    borderWidth: 1,
+    borderColor: Theme.colors.status.error,
+  },
+  signOutText: {
+    fontSize: 16,
+    color: Theme.colors.status.error,
+    marginLeft: 8,
+    fontWeight: '600',
   },
 }); 

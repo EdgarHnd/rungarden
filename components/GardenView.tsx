@@ -7,13 +7,15 @@ import { useEffect, useState } from 'react';
 import {
   Alert,
   Dimensions,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
-import { State } from 'react-native-gesture-handler';
+import { formatDate, formatDistance } from '../utils/formatters';
+import {
+  GridPosition
+} from '../utils/isometricGrid';
 import DraggablePlant from './DraggablePlant';
 import GardenCanvas from './GardenCanvas';
 import PlantCelebrationModal from './modals/PlantCelebrationModal';
@@ -24,17 +26,16 @@ interface PlantInGarden {
   _id: string;
   plantTypeId: string;
   earnedFromActivityId?: string;
-  gardenPosition: { x: number; y: number };
+  gridPosition?: { row: number; col: number };
   currentStage: number;
   waterLevel: number;
   isWilted: boolean;
-  plantSize?: number;
-  zIndex?: number;
 
   plantType: {
     name: string;
     emoji: string;
     imagePath?: string;
+    distanceRequired?: number;
     growthStages: Array<{ stage: number; name: string; emoji: string }>;
     rarity: 'common' | 'uncommon' | 'rare' | 'epic';
   };
@@ -50,13 +51,24 @@ interface PlantInventoryItem {
   };
 }
 
+interface PlantStashItem {
+  _id: string;
+  name: string;
+  emoji: string;
+  distanceRequired: number;
+  rarity: 'common' | 'uncommon' | 'rare' | 'epic';
+  category: string;
+  description: string;
+  isUnlocked: boolean;
+  totalCount: number;
+  unplantedCount: number;
+  distanceToUnlock: number;
+}
+
 
 
 export default function GardenView() {
-  const [selectedPlant, setSelectedPlant] = useState<PlantInventoryItem | null>(null);
-  const [plantInGestureMode, setPlantInGestureMode] = useState<string | null>(null); // Track which plant is in gesture mode
-  const [optimisticPlants, setOptimisticPlants] = useState<{ [plantId: string]: Partial<PlantInGarden> }>({}); // Optimistic updates
-  const [showInventory, setShowInventory] = useState(false);
+  const [selectedPlant, setSelectedPlant] = useState<PlantStashItem | null>(null);
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState(false);
   const [errorModal, setErrorModal] = useState<{
@@ -70,38 +82,44 @@ export default function GardenView() {
     message: '',
   });
 
-  const [resetConfirmModal, setResetConfirmModal] = useState({
-    show: false,
-  });
+  const [selectedPlantDetails, setSelectedPlantDetails] = useState<PlantInGarden | null>(null);
 
   // Screen dimensions
   const screen = Dimensions.get('window');
 
   // Queries
   const gardenLayout = useQuery(api.garden.getGardenLayout);
-  const baseGardenPlants = useQuery(api.garden.getGardenPlants);
+  const gardenPlants = useQuery(api.garden.getGardenPlants);
   const plantInventory = useQuery(api.garden.getPlantInventory);
 
-  // Merge base plants with optimistic updates
-  const gardenPlants = baseGardenPlants?.map(plant => {
-    const optimisticUpdate = optimisticPlants[plant._id];
-    return optimisticUpdate ? { ...plant, ...optimisticUpdate } : plant;
-  });
+  // Get user profile for metric system preference
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
+
+  // Get activity data for selected plant
+  const selectedPlantActivity = useQuery(
+    api.activities.getActivityById,
+    selectedPlantDetails?.earnedFromActivityId
+      ? { activityId: selectedPlantDetails.earnedFromActivityId as any }
+      : 'skip'
+  );
 
   // Mutations
   const initializeGarden = useMutation(api.garden.initializeGarden);
   const plantInGarden = useMutation(api.garden.plantInGarden);
+  const autoPlantInGarden = useMutation(api.garden.autoPlantInGarden);
   const updatePlantInGarden = useMutation(api.garden.updatePlantInGarden);
-  const migratePlantsToCanvas = useMutation(api.garden.migratePlantsToCanvas);
-  const cleanupRotationField = useMutation(api.garden.cleanupRotationField);
-  const waterPlant = useMutation(api.garden.waterPlant);
-  const resetGarden = useMutation(api.garden.resetGarden);
-  const removeFromGarden = useMutation(api.garden.removeFromGarden);
 
   // Debug mutations - temporarily use the sync function directly
   const syncActivitiesFromHealthKit = useMutation(api.activities.syncActivitiesFromHealthKit);
+  const resetAllData = useMutation(api.migration.resetAllData);
+  const resetPlants = useMutation(api.migration.resetPlants);
+  const resetActivities = useMutation(api.migration.resetActivities);
+  const resetGardensAndPlantTypes = useMutation(api.migration.resetGardensAndPlantTypes);
+  const resetUserProfiles = useMutation(api.migration.resetUserProfiles);
+  const getDataCounts = useQuery(api.migration.getDataCounts);
 
-  // Initialize garden on first load and migrate old plants
+  // Initialize garden on first load
   useEffect(() => {
     if (gardenLayout === null || gardenLayout === undefined) {
       // No garden exists, initialize one
@@ -109,137 +127,66 @@ export default function GardenView() {
     }
   }, [gardenLayout, initializeGarden]);
 
-  // Run migration for existing plants once
-  useEffect(() => {
-    if (baseGardenPlants && baseGardenPlants.length > 0) {
-      // Check if any plants need migration
-      const needsMigration = baseGardenPlants.some(plant =>
-        plant.gardenPosition &&
-        (plant.plantSize === undefined || plant.zIndex === undefined ||
-          (Number.isInteger(plant.gardenPosition.x) && Number.isInteger(plant.gardenPosition.y) &&
-            plant.gardenPosition.x < 50 && plant.gardenPosition.y < 50))
-      );
-
-      if (needsMigration) {
-        console.log('Migrating old plants to new canvas system...');
-        Promise.all([
-          migratePlantsToCanvas(),
-          cleanupRotationField()
-        ])
-          .then(([migrationResult, cleanupResult]) => {
-            console.log(`Migrated ${migrationResult.migratedCount} plants to canvas system`);
-            console.log(`Cleaned up ${cleanupResult.cleanedCount} rotation fields`);
-            if (migrationResult.migratedCount > 0 || cleanupResult.cleanedCount > 0) {
-              showErrorModal(
-                '🔄 Plants Updated!',
-                `Successfully migrated ${migrationResult.migratedCount} plants and cleaned up ${cleanupResult.cleanedCount} deprecated fields.`,
-                'Awesome!'
-              );
-            }
-          })
-          .catch(console.error);
-      }
-    }
-  }, [baseGardenPlants, migratePlantsToCanvas]);
-
-  // Clear optimistic updates when backend data changes (to prevent stale state)
-  useEffect(() => {
-    if (baseGardenPlants) {
-      setOptimisticPlants(prev => {
-        // Only keep optimistic updates for plants that still exist in the backend
-        const existingPlantIds = new Set(baseGardenPlants.map(p => p._id));
-        const filtered: { [plantId: string]: Partial<PlantInGarden> } = {};
-
-        Object.keys(prev).forEach(plantId => {
-          if (existingPlantIds.has(plantId as any)) {
-            filtered[plantId] = prev[plantId];
-          }
-        });
-
-        return filtered;
-      });
-    }
-  }, [baseGardenPlants]);
-
-  // Handle canvas tap for planting
-  const handleCanvasTap = (event: any) => {
-    // For TapGestureHandler, we need to check the state and get coordinates differently
-    if (event.nativeEvent.state === State.END) {
-      // If a plant is in gesture mode, exit it
-      if (plantInGestureMode) {
-        setPlantInGestureMode(null);
-        return;
-      }
-
-      // If user has selected a plant to plant
-      if (selectedPlant) {
-        const { x, y } = event.nativeEvent;
-        // Plant at tapped position
-        handlePlantAtPosition({ x, y });
-      }
+  // Handle grid tap for planting
+  const handleGridTap = (gridPosition: GridPosition) => {
+    // If user has selected a plant to plant
+    if (selectedPlant) {
+      handlePlantAtGridPosition(gridPosition);
     }
   };
 
-  // Handle long press - show run details
-  const handlePlantLongPress = (plant: PlantInGarden) => {
+  // Handle plant tap - show plant details modal
+  const handlePlantTap = (plant: PlantInGarden) => {
     try {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
-      if (!plant.earnedFromActivityId) {
-        showErrorModal(
-          '🏃‍♂️ No Run Associated',
-          'This plant doesn\'t have an associated run. It might be from an older version of the app or a test plant.',
-          'Got it!'
-        );
-        return;
-      }
-
-      // Navigate to the activity detail screen using the plant's earnedFromActivityId
-      router.push({
-        pathname: '/activity-detail',
-        params: {
-          id: plant.earnedFromActivityId
-        }
-      });
+      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+      setSelectedPlantDetails(plant);
     } catch (error) {
-      console.error('Error navigating to activity detail:', error);
-      showErrorModal(
-        '❌ Navigation Error',
-        'Could not open the run details. Please try again.',
-        'OK'
-      );
+      console.error('Error showing plant details:', error);
     }
   };
 
-  const handlePlantSelection = async (inventoryPlant: PlantInventoryItem) => {
-    setSelectedPlant(inventoryPlant);
-    setShowInventory(false);
+  const handlePlantSelection = async (stashPlant: PlantStashItem) => {
+    setSelectedPlant(stashPlant);
     showErrorModal(
       '🌱 Plant Selected!',
-      `Tap anywhere on the canvas to plant your ${inventoryPlant.plantType?.name || 'plant'}. You can drag, resize, and rotate it after planting.`,
+      `Tap any empty tile in your garden to plant your ${stashPlant.name || 'plant'}. All tiles are available for planting.`,
       'Got it!'
     );
   };
 
-  const handlePlantAtPosition = async (position: { x: number; y: number }) => {
-    if (!selectedPlant) {
+  const handlePlantAtGridPosition = async (gridPosition: GridPosition) => {
+    if (!selectedPlant || !gardenLayout) {
       return;
     }
 
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
 
+      // In simplified grid, all positions are available
+      // Find a plant from inventory that matches the selected stash plant
+      const matchingInventoryPlant = plantInventory?.find(
+        (invPlant) => invPlant.plantTypeId === selectedPlant._id
+      );
+
+      if (!matchingInventoryPlant) {
+        showErrorModal(
+          '❌ Plant Not Available',
+          'This plant is not available in your inventory.',
+          'OK'
+        );
+        return;
+      }
+
       await plantInGarden({
-        plantId: selectedPlant._id as any,
-        position,
-        plantSize: 1.0,
+        plantId: matchingInventoryPlant._id as any,
+        gridPosition,
       });
 
       // Success feedback
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showErrorModal(
         '🌱 Successfully Planted!',
-        `Your ${selectedPlant.plantType?.name || 'plant'} has been planted! You can now drag it around, resize it by pinching, rotate it, and change its layer.`,
+        `Your ${selectedPlant.name || 'plant'} has been planted in your garden!`,
         'Awesome!'
       );
       setSelectedPlant(null);
@@ -254,169 +201,32 @@ export default function GardenView() {
     }
   };
 
-  const handleWaterPlant = async (plantId: string) => {
+
+
+
+  // Grid plant interaction handlers
+  const handlePlantGridPositionChange = async (plantId: string, gridPosition: GridPosition) => {
+    if (!gardenLayout) return;
+
     try {
-      const result = await waterPlant({ plantId: plantId as any });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showErrorModal(
-        '💧 Plant Watered!',
-        `Your plant is happy and refreshed! Water level is now ${result.waterLevel}%. Keep caring for your plants to help them grow.`,
-        'Great!'
-      );
-    } catch (error: any) {
-      console.log('Water error:', error);
-      showErrorModal(
-        '💧 Watering Failed',
-        error?.message || 'Could not water your plant right now. Please try again in a moment.',
-        'Try Again'
-      );
-    }
-  };
-
-
-
-  // Canvas plant interaction handlers
-  const handlePlantPositionChange = async (plantId: string, position: { x: number; y: number }) => {
-    try {
-      // Fire and forget for smoother interaction - don't wait for response
-      updatePlantInGarden({
-        plantId: plantId as any,
-        position,
-      }).catch((error) => {
-        console.log('Position update error:', error);
-        // Could show a toast here if needed, but don't block the UI
-      });
-    } catch (error) {
-      console.log('Position update error:', error);
-    }
-  };
-
-  const handlePlantSizeChange = async (plantId: string, size: number) => {
-    try {
-      // Fire and forget for smoother interaction
-      updatePlantInGarden({
-        plantId: plantId as any,
-        plantSize: size,
-      }).catch((error) => {
-        console.log('Size update error:', error);
-      });
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (error) {
-      console.log('Size update error:', error);
-    }
-  };
-
-  const handlePlantLayerChange = async (plantId: string, direction: 'front' | 'back') => {
-    try {
-      const plantedPlants = gardenPlants || [];
-      const currentPlant = plantedPlants.find(p => p._id === plantId);
-
-      if (!currentPlant) return;
-
-      let newZIndex = currentPlant.zIndex || 0;
-
-      if (direction === 'front') {
-        // Move to front: get max z-index and add 1
-        const maxZIndex = Math.max(0, ...plantedPlants.map(p => p.zIndex || 0));
-        newZIndex = maxZIndex + 1;
-      } else {
-        // Move to back: get min z-index and subtract 1 (or set to 0)
-        const minZIndex = Math.min(0, ...plantedPlants.map(p => p.zIndex || 0));
-        newZIndex = Math.max(0, minZIndex - 1);
-      }
-
+      // In simplified grid, all positions are available
       await updatePlantInGarden({
         plantId: plantId as any,
-        zIndex: newZIndex,
+        gridPosition,
       });
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    } catch (error) {
-      console.log('Layer update error:', error);
-    }
-  };
-
-  const handleEnterGestureMode = (plantId: string) => {
-    // Exit current gesture mode if another plant is selected
-    if (plantInGestureMode && plantInGestureMode !== plantId) {
-      setPlantInGestureMode(null);
-    }
-    // Set this plant as the one in gesture mode
-    setPlantInGestureMode(plantId);
-  };
-
-  const handleExitGestureMode = () => {
-    setPlantInGestureMode(null);
-  };
-
-  const handleDeletePlant = async (plantId: string) => {
-    try {
-      await removeFromGarden({ plantId: plantId as any });
-      setPlantInGestureMode(null); // Exit gesture mode after deletion
-      // Clear optimistic state for this plant
-      setOptimisticPlants(prev => {
-        const { [plantId]: removed, ...rest } = prev;
-        return rest;
-      });
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showErrorModal(
-        '🗑️ Plant Removed!',
-        'Your plant has been removed from the garden and moved back to your inventory.',
-        'Got it!'
-      );
     } catch (error: any) {
-      console.log('Remove error:', error);
+      console.log('Grid position update error:', error);
       showErrorModal(
-        '🗑️ Remove Failed',
-        error?.message || 'Could not remove your plant right now. Please try again in a moment.',
+        '❌ Move Failed',
+        error?.message || 'Could not move your plant to that position.',
         'Try Again'
       );
     }
   };
 
-  const handleResetGarden = () => {
-    setResetConfirmModal({ show: true });
-  };
 
-  const confirmResetGarden = async () => {
-    try {
-      setResetConfirmModal({ show: false });
-
-      const result = await resetGarden();
-
-      // Clear all optimistic updates
-      setOptimisticPlants({});
-
-      // Exit gesture mode
-      setPlantInGestureMode(null);
-
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      showErrorModal(
-        '🗑️ Garden Reset Complete!',
-        `${result.removedCount} plants returned to inventory.`,
-        'Continue'
-      );
-    } catch (error) {
-      console.log('Reset garden error:', error);
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-      showErrorModal(
-        '❌ Reset Failed',
-        'Failed to reset garden. Please try again.',
-        'Try Again'
-      );
-    }
-  };
-
-  // Handle optimistic updates with throttling
-  const handleOptimisticUpdate = (plantId: string, updates: Partial<PlantInGarden>) => {
-    setOptimisticPlants(prev => ({
-      ...prev,
-      [plantId]: {
-        ...prev[plantId],
-        ...updates
-      }
-    }));
-  };
 
   const showErrorModal = (title: string, message: string, action?: string) => {
     setErrorModal({
@@ -437,11 +247,98 @@ export default function GardenView() {
 
 
 
-  const toggleInventory = () => {
-    setShowInventory(!showInventory);
+  const openStash = () => {
+    // Set up callback for plant selection
+    (global as any).onPlantSelected = handlePlantSelection;
+    router.push('/stash');
   };
 
 
+
+  // Reset all data function
+  const handleResetAllData = async () => {
+    try {
+      setShowDebugModal(false);
+
+      showErrorModal(
+        '⚠️ Confirm Reset',
+        'This will permanently delete ALL plants, activities, and gardens for ALL users. This cannot be undone. Are you sure?',
+        'Cancel'
+      );
+
+      // We'll handle the actual reset in a separate confirmation
+    } catch (error) {
+      console.error('Reset preparation failed:', error);
+    }
+  };
+
+  const confirmResetAllData = async () => {
+    try {
+      showErrorModal(
+        '🔄 Resetting Data...',
+        'Starting reset process. This may take a moment...',
+        'Please Wait'
+      );
+
+      let totalDeleted = 0;
+      let totalProfilesReset = 0;
+      let totalGardensDeleted = 0;
+      let totalPlantTypesDeleted = 0;
+
+      // Step 1: Reset plants in batches
+      let hasMorePlants = true;
+      let plantsDeleted = 0;
+      while (hasMorePlants) {
+        const result = await resetPlants({});
+        plantsDeleted += result.deleted;
+        totalDeleted += result.deleted;
+        hasMorePlants = result.hasMore;
+
+        if (hasMorePlants) {
+          // Small delay to prevent overwhelming the system
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      // Step 2: Reset activities in batches
+      let hasMoreActivities = true;
+      let activitiesDeleted = 0;
+      while (hasMoreActivities) {
+        const result = await resetActivities({});
+        activitiesDeleted += result.deleted;
+        totalDeleted += result.deleted;
+        hasMoreActivities = result.hasMore;
+
+        if (hasMoreActivities) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      }
+
+      // Step 3: Reset gardens and plant types
+      const gardensResult = await resetGardensAndPlantTypes({});
+      totalGardensDeleted = gardensResult.gardensDeleted;
+      totalPlantTypesDeleted = gardensResult.plantTypesDeleted;
+      totalDeleted += gardensResult.gardensDeleted + gardensResult.plantTypesDeleted;
+
+      // Step 4: Reset user profiles
+      const profilesResult = await resetUserProfiles({});
+      totalProfilesReset = profilesResult.profilesReset;
+
+      showErrorModal(
+        '✅ Reset Complete!',
+        `Successfully reset all data:\n• ${plantsDeleted} plants deleted\n• ${activitiesDeleted} activities deleted\n• ${totalGardensDeleted} gardens deleted\n• ${totalPlantTypesDeleted} plant types deleted\n• ${totalProfilesReset} profiles reset\n\nTotal: ${totalDeleted} items deleted`,
+        'Done'
+      );
+
+    } catch (error) {
+      console.error('Reset failed:', error);
+      showErrorModal(
+        '❌ Reset Failed',
+        `Reset failed: ${error}`,
+        'OK'
+      );
+    }
+  };
 
   // Debug functions for testing
   const createFakeActivity = async (distance: number) => {
@@ -500,17 +397,11 @@ export default function GardenView() {
         </TouchableOpacity>
         <View style={styles.headerButtons}>
           <TouchableOpacity
-            style={styles.resetButton}
-            onPress={handleResetGarden}
-          >
-            <Text style={styles.resetButtonText}>reset</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
             style={styles.inventoryButton}
-            onPress={toggleInventory}
+            onPress={openStash}
           >
             <Text style={styles.inventoryButtonText}>
-              stash ({plantInventory?.length || 0})
+              Plant Collection
             </Text>
           </TouchableOpacity>
         </View>
@@ -522,95 +413,31 @@ export default function GardenView() {
         selectedPlant && styles.instructionActive
       ]}>
         {selectedPlant
-          ? `Tap anywhere to plant your ${selectedPlant.plantType?.name}`
+          ? `Tap anywhere to plant your ${selectedPlant.name}`
           : 'Select a plant from stash, then tap to plant it'
         }
       </Text> */}
 
       {/* Garden Canvas */}
-      <GardenCanvas backgroundColor="#F8F9FA" onCanvasTap={handleCanvasTap}>
+      <GardenCanvas
+        backgroundColor={Theme.colors.background.primary}
+        onGridTap={handleGridTap}
+        unlockedTiles={[]} // All tiles are available in simplified grid
+        showGrid={true}
+      >
         {/* Render planted plants */}
         {gardenPlants?.map((plant) => (
           <DraggablePlant
             key={plant._id}
             plant={plant as PlantInGarden}
-            onPositionChange={handlePlantPositionChange}
-            onSizeChange={handlePlantSizeChange}
-            onLayerChange={handlePlantLayerChange}
-            onPlantLongPress={handlePlantLongPress}
-            onDeletePlant={handleDeletePlant}
-            onEnterGestureMode={handleEnterGestureMode}
-            onExitGestureMode={handleExitGestureMode}
-            onOptimisticUpdate={handleOptimisticUpdate}
-            isInGestureMode={plantInGestureMode === plant._id}
+            onGridPositionChange={handlePlantGridPositionChange}
+            onPlantTap={handlePlantTap}
+            unlockedTiles={[]} // All tiles are available in simplified grid
           />
         ))}
       </GardenCanvas>
 
-      {/* Plant Inventory Modal */}
-      {showInventory && (
-        <View style={styles.inventoryOverlay}>
-          <View style={styles.inventoryModal}>
-            <View style={styles.inventoryHeader}>
-              <Text style={styles.inventoryTitle}>🎒 Plant Inventory</Text>
-              <TouchableOpacity onPress={() => setShowInventory(false)}>
-                <Text style={styles.closeButton}>✕</Text>
-              </TouchableOpacity>
-            </View>
 
-            <ScrollView style={styles.inventoryList}>
-              {plantInventory?.length === 0 ? (
-                <Text style={styles.emptyInventoryText}>
-                  🏃‍♂️ Go for a run to earn your first plant!
-                </Text>
-              ) : (
-                <>
-                  <Text style={styles.inventorySubtitle}>
-                    Tap to select a plant for planting
-                  </Text>
-
-                  {Object.entries(
-                    plantInventory?.reduce((acc, item) => {
-                      const key = item.plantType?.name || 'unknown';
-                      if (!acc[key]) {
-                        acc[key] = { ...item, count: 0 };
-                      }
-                      acc[key].count++;
-                      return acc;
-                    }, {} as Record<string, any>) || {}
-                  ).map(([name, item]) => (
-                    <TouchableOpacity
-                      key={name}
-                      style={[
-                        styles.inventoryItem,
-                        selectedPlant === item && styles.selectedPlantItem
-                      ]}
-                      onPress={() => {
-                        if (selectedPlant === item) {
-                          setSelectedPlant(null);
-                        } else {
-                          handlePlantSelection(item);
-                        }
-                      }}
-                    >
-                      <Text style={styles.inventoryPlantEmoji}>
-                        {item.plantType?.emoji || '🌱'}
-                      </Text>
-                      <View style={styles.plantInfo}>
-                        <Text style={styles.plantName}>{item.count}k {item.plantType?.name || 'plant'}</Text>
-                        <Text style={styles.plantCount}>x{item.count}</Text>
-                      </View>
-                      {selectedPlant === item && (
-                        <Text style={styles.selectedIndicator}>✓</Text>
-                      )}
-                    </TouchableOpacity>
-                  ))}
-                </>
-              )}
-            </ScrollView>
-          </View>
-        </View>
-      )}
 
       {/* Error Modal */}
       {errorModal.show && (
@@ -622,8 +449,8 @@ export default function GardenView() {
               style={styles.errorButton}
               onPress={() => {
                 hideErrorModal();
-                if (errorModal.action === 'Open Inventory') {
-                  setShowInventory(true);
+                if (errorModal.action === 'Open Stash') {
+                  router.push('/stash');
                 }
               }}
             >
@@ -635,27 +462,50 @@ export default function GardenView() {
         </View>
       )}
 
-      {/* Reset Confirmation Modal */}
-      {resetConfirmModal.show && (
+      {/* Plant Details Modal */}
+      {selectedPlantDetails && (
         <View style={styles.errorOverlay}>
-          <View style={styles.errorModal}>
-            <Text style={styles.errorTitle}>🗑️ Reset Garden</Text>
-            <Text style={styles.errorMessage}>
-              Are you sure you want to reset your entire garden? All plants will be removed and returned to your inventory. This action cannot be undone.
-            </Text>
+          <View style={styles.plantModal}>
+            <Text style={styles.plantEmoji}>{selectedPlantDetails.plantType?.emoji || '🌱'}</Text>
+            <Text style={styles.plantName}>{selectedPlantDetails.plantType?.name || 'Unknown Plant'}</Text>
+
+            {/* Distance Required */}
+            {selectedPlantDetails.plantType?.distanceRequired && (
+              <Text style={styles.plantDistance}>
+                Distance required: {formatDistance(selectedPlantDetails.plantType.distanceRequired, metricSystem)}
+              </Text>
+            )}
+
+            {/* Run Date */}
+            {selectedPlantDetails.earnedFromActivityId && selectedPlantActivity && (
+              <Text style={styles.plantDate}>
+                Planted on {formatDate(selectedPlantActivity.startDate)}
+              </Text>
+            )}
+
             <View style={styles.modalButtonsContainer}>
               <TouchableOpacity
                 style={[styles.errorButton, styles.cancelButton]}
-                onPress={() => setResetConfirmModal({ show: false })}
+                onPress={() => setSelectedPlantDetails(null)}
               >
-                <Text style={styles.errorButtonText}>Cancel</Text>
+                <Text style={styles.errorButtonText}>Close</Text>
               </TouchableOpacity>
-              <TouchableOpacity
-                style={[styles.errorButton, styles.resetConfirmButton]}
-                onPress={confirmResetGarden}
-              >
-                <Text style={[styles.errorButtonText, styles.resetConfirmButtonText]}>Reset Garden</Text>
-              </TouchableOpacity>
+              {selectedPlantDetails.earnedFromActivityId && (
+                <TouchableOpacity
+                  style={[styles.errorButton, styles.viewRunButton]}
+                  onPress={() => {
+                    setSelectedPlantDetails(null);
+                    router.push({
+                      pathname: '/activity-detail',
+                      params: {
+                        id: selectedPlantDetails.earnedFromActivityId
+                      }
+                    });
+                  }}
+                >
+                  <Text style={styles.errorButtonText}>View Run</Text>
+                </TouchableOpacity>
+              )}
             </View>
           </View>
         </View>
@@ -667,7 +517,7 @@ export default function GardenView() {
           <View style={styles.errorModal}>
             <Text style={styles.errorTitle}>🧪 Debug Mode</Text>
             <Text style={styles.errorMessage}>
-              Simulate different run distances to test plant unlocking:
+              Current data: {getDataCounts?.plants || 0} plants, {getDataCounts?.activities || 0} activities, {getDataCounts?.gardens || 0} gardens
             </Text>
             <View style={styles.debugButtonsContainer}>
               <TouchableOpacity
@@ -705,6 +555,26 @@ export default function GardenView() {
               >
                 <Text style={styles.debugButtonText}>Show Celebration</Text>
               </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.debugButton, styles.resetAllButton]}
+                onPress={() => {
+                  setShowDebugModal(false);
+                  Alert.alert(
+                    '⚠️ DANGER: Reset All Data',
+                    'This will permanently delete ALL plants, activities, and gardens for ALL users. This cannot be undone.',
+                    [
+                      { text: 'Cancel', style: 'cancel' },
+                      {
+                        text: 'RESET ALL',
+                        style: 'destructive',
+                        onPress: confirmResetAllData
+                      }
+                    ]
+                  );
+                }}
+              >
+                <Text style={styles.debugButtonText}>⚠️ RESET ALL DATA</Text>
+              </TouchableOpacity>
             </View>
             <TouchableOpacity
               style={styles.errorButton}
@@ -716,17 +586,6 @@ export default function GardenView() {
         </View>
       )}
 
-      {/* Floating Record Run Button */}
-      <TouchableOpacity
-        style={styles.floatingButton}
-        onPress={() => {
-          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-          router.push('/run');
-        }}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.floatingButtonText}>Record Run</Text>
-      </TouchableOpacity>
 
       {/* Plant Celebration Modal */}
       <PlantCelebrationModal
@@ -742,7 +601,7 @@ export default function GardenView() {
           name: 'Sunflower',
         }}
         onClose={() => setShowCelebrationModal(false)}
-        metricSystem="metric"
+        metricSystem={metricSystem}
         streakInfo={{
           currentStreak: 3,
           longestStreak: 5,
@@ -778,33 +637,24 @@ const styles = StyleSheet.create({
   },
   title: {
     fontSize: 32,
-    fontFamily: 'Times',
-    color: Theme.colors.accent.primary,
+    fontFamily: 'SF-Pro-Rounded-Black',
+    fontWeight: 'black',
+    color: Theme.colors.text.primary,
   },
   headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
   },
-  resetButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-    minWidth: 40,
-    alignItems: 'center',
-    marginRight: 12,
-  },
-  resetButtonText: {
-    color: Theme.colors.accent.primary,
-    fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-  },
   inventoryButton: {
+    backgroundColor: Theme.colors.accent.primary,
+    alignItems: 'center',
+    justifyContent: 'center',
     paddingHorizontal: 12,
     paddingVertical: 6,
     borderRadius: 16,
   },
   inventoryButtonText: {
-    color: Theme.colors.accent.primary,
+    color: '#FFFFFF',
     fontSize: 14,
     fontFamily: 'SF-Pro-Rounded-Medium',
   },
@@ -824,100 +674,7 @@ const styles = StyleSheet.create({
     marginHorizontal: 16,
   },
 
-  // Inventory modal styles
-  inventoryOverlay: {
-    position: 'absolute',
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: 'rgba(0, 0, 0, 0.5)',
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  inventoryModal: {
-    backgroundColor: '#FFFFFF',
-    borderRadius: 16,
-    margin: 20,
-    maxHeight: '80%',
-    minWidth: '80%',
-  },
-  inventoryHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-    padding: 20,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  closeButton: {
-    fontSize: 20,
-    color: '#666666',
-    padding: 5,
-  },
-  inventoryList: {
-    maxHeight: 400,
-  },
-  inventorySubtitle: {
-    fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Medium',
-    color: '#666666',
-    padding: 15,
-    paddingBottom: 5,
-  },
-  inventoryItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 15,
-    borderBottomWidth: 1,
-    borderBottomColor: '#E0E0E0',
-  },
-  selectedPlantItem: {
-    borderColor: '#22c55e',
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-  },
-  selectedIndicator: {
-    fontSize: 20,
-    color: '#22c55e',
-    fontWeight: 'bold',
-  },
-  // Missing styles
-  inventoryTitle: {
-    fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
-  },
-  inventoryPlantEmoji: {
-    fontSize: 32,
-    width: 48,
-    height: 48,
-    textAlign: 'center',
-    lineHeight: 48,
-    marginRight: 16,
-  },
-  plantInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'center',
-  },
-  plantName: {
-    fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: '#000000',
-  },
-  plantCount: {
-    fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#666666',
-  },
-  emptyInventoryText: {
-    textAlign: 'center',
-    color: '#666666',
-    fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    padding: 40,
-  },
+
 
   // Error modal styles
   errorOverlay: {
@@ -986,12 +743,53 @@ const styles = StyleSheet.create({
     backgroundColor: '#6b7280',
     marginRight: 6,
   },
-  resetConfirmButton: {
-    backgroundColor: '#ef4444',
+  viewRunButton: {
+    backgroundColor: '#22c55e',
     marginLeft: 6,
   },
-  resetConfirmButtonText: {
-    color: '#FFFFFF',
+
+  // Plant Details Modal styles
+  plantModal: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 32,
+    margin: 20,
+    maxWidth: '85%',
+    minWidth: '75%',
+    alignItems: 'center',
+    shadowColor: '#000',
+    shadowOffset: {
+      width: 0,
+      height: 4,
+    },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 8,
+  },
+  plantEmoji: {
+    fontSize: 64,
+    marginBottom: 16,
+  },
+  plantName: {
+    fontSize: 24,
+    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: '#000000',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  plantDistance: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 8,
+  },
+  plantDate: {
+    fontSize: 16,
+    fontFamily: 'SF-Pro-Rounded-Regular',
+    color: '#666666',
+    textAlign: 'center',
+    marginBottom: 24,
   },
 
   // Debug modal styles
@@ -1014,25 +812,9 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     textAlign: 'center',
   },
+  resetAllButton: {
+    backgroundColor: '#ef4444',
+  },
 
-  // Floating button styles
-  floatingButton: {
-    position: 'absolute',
-    bottom: 100,
-    left: '50%',
-    transform: [{ translateX: -75 }],
-    width: 150,
-    height: 50,
-    backgroundColor: Theme.colors.accent.primary,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
-    zIndex: 1000,
-  },
-  floatingButtonText: {
-    fontSize: 20,
-    fontFamily: 'Times',
-    color: Theme.colors.background.primary,
-  },
 
 });

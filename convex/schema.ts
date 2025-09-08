@@ -21,6 +21,9 @@ const schema = defineSchema({
     
     // Garden preferences
     gardenTheme: v.optional(v.string()), // Future: different garden themes
+    
+    // Plant unlocking tracking
+    unlockedPlantTypes: v.optional(v.array(v.id("plantTypes"))), // List of unlocked plant type IDs
 
     // Sync toggles & metadata
     healthKitSyncEnabled: v.optional(v.boolean()),
@@ -119,14 +122,16 @@ const schema = defineSchema({
       v.literal("common"),
       v.literal("uncommon"), 
       v.literal("rare"),
-      v.literal("epic")
+      v.literal("epic"),
+      v.literal("legendary"),
+      v.literal("mythical")
     ),
     category: v.union(                   // visual category
-      v.literal("vegetable"),
-      v.literal("fruit"),
       v.literal("flower"),
+      v.literal("bush"),
       v.literal("tree"),
-      v.literal("herb")
+      v.literal("desert"),
+      v.literal("mushroom")
     ),
     description: v.string(),             // "A quick-growing root vegetable"
     growthStages: v.array(v.object({     // different visual states as plant grows
@@ -146,14 +151,20 @@ const schema = defineSchema({
     // Planting status
     isPlanted: v.boolean(),                    // has user planted this in garden?
     plantedAt: v.optional(v.string()),         // when planted in garden
-    gardenPosition: v.optional(v.object({      // absolute position in canvas
+    
+    // Grid-based garden position
+    gridPosition: v.optional(v.object({        // position in 10x10 isometric grid
+      row: v.number(),                         // grid row (0-9)
+      col: v.number(),                         // grid column (0-9)
+    })),
+    
+    // Legacy canvas properties (for migration compatibility)
+    gardenPosition: v.optional(v.object({      // absolute position in canvas (deprecated)
       x: v.float64(),                          // pixel position from left
       y: v.float64(),                          // pixel position from top
     })),
-    
-    // Canvas properties for free-form garden
-    plantSize: v.optional(v.float64()),        // scale factor (0.5 to 2.0, default 1.0)
-    zIndex: v.optional(v.number()),            // layer order (higher = front)
+    plantSize: v.optional(v.float64()),        // scale factor (deprecated, will be removed)
+    zIndex: v.optional(v.number()),            // layer order (deprecated, will be removed)
     rotation: v.optional(v.float64()),         // rotation in degrees (deprecated, will be removed)
     
     // Growth system
@@ -171,7 +182,8 @@ const schema = defineSchema({
     .index("by_user", ["userId"])
     .index("by_user_planted", ["userId", "isPlanted"])
     .index("by_activity", ["earnedFromActivityId"])
-    .index("by_garden_position", ["userId", "gardenPosition.x", "gardenPosition.y"]),
+    .index("by_grid_position", ["userId", "gridPosition.row", "gridPosition.col"])
+    .index("by_garden_position", ["userId", "gardenPosition.x", "gardenPosition.y"]), // Legacy index
 
   /* ────────────────────────────── garden layout */
   gardenLayout: defineTable({

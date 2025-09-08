@@ -18,34 +18,27 @@ export const initializeGarden = mutation({
       .first();
 
     if (existingGarden) {
-      // Check if existing garden needs to be upgraded to 10x10 with center 5x5 unlocked
+      // Check if existing garden needs to be upgraded to 10x10 with all tiles unlocked
       const needsUpgrade = existingGarden.gridSize.width < 10 || existingGarden.gridSize.height < 10;
       
       if (needsUpgrade) {
         const totalGridSize = 10;
-        const initialUnlockedSize = 5;
-        const startOffset = Math.floor((totalGridSize - initialUnlockedSize) / 2);
         
-        // Migrate existing unlocked tiles and add center 5x5 area
-        const upgradedTiles = [...existingGarden.unlockedTiles];
-        
-        // Ensure center 5x5 is unlocked
-        for (let x = startOffset; x < startOffset + initialUnlockedSize; x++) {
-          for (let y = startOffset; y < startOffset + initialUnlockedSize; y++) {
-            const existing = upgradedTiles.find(tile => tile.x === x && tile.y === y);
-            if (!existing) {
-              upgradedTiles.push({ 
-                x, 
-                y, 
-                unlockedAt: new Date().toISOString() 
-              });
-            }
+        // Create all tiles as unlocked for 10x10 grid
+        const allUnlockedTiles = [];
+        for (let x = 0; x < totalGridSize; x++) {
+          for (let y = 0; y < totalGridSize; y++) {
+            allUnlockedTiles.push({ 
+              x, 
+              y, 
+              unlockedAt: new Date().toISOString() 
+            });
           }
         }
         
         await ctx.db.patch(existingGarden._id, {
           gridSize: { width: totalGridSize, height: totalGridSize },
-          unlockedTiles: upgradedTiles,
+          unlockedTiles: allUnlockedTiles,
           updatedAt: new Date().toISOString(),
         });
         
@@ -54,15 +47,13 @@ export const initializeGarden = mutation({
       return existingGarden;
     }
 
-    // Create initial garden with a 10x10 total grid, with center 5x5 unlocked
+    // Create initial garden with a 10x10 total grid, with all tiles unlocked
     const totalGridSize = 10;
-    const initialUnlockedSize = 5;
-    const startOffset = Math.floor((totalGridSize - initialUnlockedSize) / 2); // Center the 5x5 area
     
-    const initialUnlockedTiles = [];
-    for (let x = startOffset; x < startOffset + initialUnlockedSize; x++) {
-      for (let y = startOffset; y < startOffset + initialUnlockedSize; y++) {
-        initialUnlockedTiles.push({ 
+    const allUnlockedTiles = [];
+    for (let x = 0; x < totalGridSize; x++) {
+      for (let y = 0; y < totalGridSize; y++) {
+        allUnlockedTiles.push({ 
           x, 
           y, 
           unlockedAt: new Date().toISOString() 
@@ -73,7 +64,7 @@ export const initializeGarden = mutation({
     const gardenId = await ctx.db.insert("gardenLayout", {
       userId,
       gridSize: { width: totalGridSize, height: totalGridSize },
-      unlockedTiles: initialUnlockedTiles,
+      unlockedTiles: allUnlockedTiles,
       theme: "default",
       lastTended: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -159,15 +150,13 @@ export const getPlantInventory = query({
   },
 });
 
-// Plant a plant from inventory to garden canvas position
+// Plant a plant from inventory to a specific grid position
 export const plantInGarden = mutation({
   args: {
     plantId: v.id("plants"),
-    position: v.object({ x: v.float64(), y: v.float64() }),
-    plantSize: v.optional(v.float64()),
-    zIndex: v.optional(v.number()),
+    gridPosition: v.object({ row: v.number(), col: v.number() }),
   },
-  handler: async (ctx, { plantId, position, plantSize = 1.0, zIndex }) => {
+  handler: async (ctx, { plantId, gridPosition }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError("Not authenticated");
@@ -183,30 +172,31 @@ export const plantInGarden = mutation({
       throw new ConvexError("Plant is already planted");
     }
 
-    // Validate canvas properties
-    if (plantSize < 0.5 || plantSize > 2.0) {
-      throw new ConvexError("Plant size must be between 0.5 and 2.0");
+    // Validate grid bounds
+    if (gridPosition.row < 0 || gridPosition.row >= 10 || 
+        gridPosition.col < 0 || gridPosition.col >= 10) {
+      throw new ConvexError("Grid position must be within 10x10 bounds");
     }
 
-    // Get the next z-index if not provided
-    let finalZIndex = zIndex;
-    if (finalZIndex === undefined) {
-      const plantedPlants = await ctx.db
-        .query("plants")
-        .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", true))
-        .collect();
-      
-      const maxZIndex = Math.max(0, ...plantedPlants.map(p => p.zIndex || 0));
-      finalZIndex = maxZIndex + 1;
+    // Check if position is already occupied
+    const existingPlant = await ctx.db
+      .query("plants")
+      .withIndex("by_grid_position", (q) => 
+        q.eq("userId", userId)
+         .eq("gridPosition.row", gridPosition.row)
+         .eq("gridPosition.col", gridPosition.col)
+      )
+      .first();
+
+    if (existingPlant) {
+      throw new ConvexError("This grid position is already occupied");
     }
 
-    // Plant the plant with canvas properties
+    // Plant the plant at the specified position
     await ctx.db.patch(plantId, {
       isPlanted: true,
       plantedAt: new Date().toISOString(),
-      gardenPosition: position,
-      plantSize,
-      zIndex: finalZIndex,
+      gridPosition,
       updatedAt: new Date().toISOString(),
     });
 
@@ -216,6 +206,87 @@ export const plantInGarden = mutation({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
+    if (garden) {
+      await ctx.db.patch(garden._id, {
+        lastTended: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    return { success: true };
+  },
+});
+
+// Auto-plant a plant from inventory to next available grid position
+export const autoPlantInGarden = mutation({
+  args: {
+    plantId: v.id("plants"),
+  },
+  handler: async (ctx, { plantId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError("Not authenticated");
+    }
+
+    // Verify the plant belongs to the user and is not already planted
+    const plant = await ctx.db.get(plantId);
+    if (!plant || plant.userId !== userId) {
+      throw new ConvexError("Plant not found or not owned by user");
+    }
+
+    if (plant.isPlanted) {
+      throw new ConvexError("Plant is already planted");
+    }
+
+    // Get garden and find next available position
+    const garden = await ctx.db
+      .query("gardenLayout")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (!garden) {
+      throw new ConvexError("Garden not found");
+    }
+
+    // Get all planted plants to see which positions are occupied
+    const plantedPlants = await ctx.db
+      .query("plants")
+      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", true))
+      .collect();
+
+    // Create a set of occupied positions
+    const occupiedPositions = new Set(
+      plantedPlants
+        .filter(p => p.gridPosition)
+        .map(p => `${p.gridPosition!.row}-${p.gridPosition!.col}`)
+    );
+
+    // Find next available position (row by row, left to right) in 10x10 grid
+    let gridPosition = null;
+    for (let row = 0; row < 10; row++) {
+      for (let col = 0; col < 10; col++) {
+        const positionKey = `${row}-${col}`;
+        if (!occupiedPositions.has(positionKey)) {
+          gridPosition = { row, col };
+          break;
+        }
+      }
+      if (gridPosition) break;
+    }
+
+    if (!gridPosition) {
+      throw new ConvexError("No available positions in garden");
+    }
+
+    // Auto-plant the plant at the found position
+    await ctx.db.patch(plantId, {
+      isPlanted: true,
+      plantedAt: new Date().toISOString(),
+      gridPosition,
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Update garden last tended time
     if (garden) {
       await ctx.db.patch(garden._id, {
         lastTended: new Date().toISOString(),
@@ -260,15 +331,13 @@ export const removeFromGarden = mutation({
   },
 });
 
-// Update plant canvas properties (position, size, layer)
+// Update plant position in garden grid
 export const updatePlantInGarden = mutation({
   args: {
     plantId: v.id("plants"),
-    position: v.optional(v.object({ x: v.float64(), y: v.float64() })),
-    plantSize: v.optional(v.float64()),
-    zIndex: v.optional(v.number()),
+    gridPosition: v.optional(v.object({ row: v.number(), col: v.number() })),
   },
-  handler: async (ctx, { plantId, position, plantSize, zIndex }) => {
+  handler: async (ctx, { plantId, gridPosition }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError("Not authenticated");
@@ -284,153 +353,44 @@ export const updatePlantInGarden = mutation({
       throw new ConvexError("Plant is not planted in garden");
     }
 
-    // Validate properties
-    if (plantSize !== undefined && (plantSize < 0.5 || plantSize > 2.0)) {
-      throw new ConvexError("Plant size must be between 0.5 and 2.0");
+    // If moving to a new grid position, validate it
+    if (gridPosition !== undefined) {
+      // Validate grid bounds
+      if (gridPosition.row < 0 || gridPosition.row >= 10 || 
+          gridPosition.col < 0 || gridPosition.col >= 10) {
+        throw new ConvexError("Grid position must be within 10x10 bounds");
+      }
+
+      // In simplified grid, all positions are available - no need to check unlocked tiles
+
+      // Check if position is already occupied (by a different plant)
+      const existingPlant = await ctx.db
+        .query("plants")
+        .withIndex("by_grid_position", (q) => 
+          q.eq("userId", userId)
+           .eq("gridPosition.row", gridPosition.row)
+           .eq("gridPosition.col", gridPosition.col)
+        )
+        .first();
+
+      if (existingPlant && existingPlant._id !== plantId) {
+        throw new ConvexError("This grid position is already occupied");
+      }
     }
 
-    // Build update object with only provided properties
+    // Build update object
     const updateData: any = {
       updatedAt: new Date().toISOString(),
     };
 
-    if (position !== undefined) {
-      updateData.gardenPosition = position;
-    }
-    if (plantSize !== undefined) {
-      updateData.plantSize = plantSize;
-    }
-    if (zIndex !== undefined) {
-      updateData.zIndex = zIndex;
+    if (gridPosition !== undefined) {
+      updateData.gridPosition = gridPosition;
     }
 
     // Update the plant
     await ctx.db.patch(plantId, updateData);
 
     return { success: true };
-  },
-});
-
-// Migration function to convert old grid-based positions to canvas positions
-export const migratePlantsToCanvas = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new ConvexError("Not authenticated");
-    }
-
-    // Get all planted plants for this user
-    const plants = await ctx.db
-      .query("plants")
-      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", true))
-      .collect();
-
-    let migratedCount = 0;
-
-    for (const plant of plants) {
-      // Check if plant needs migration (has integer coordinates or no canvas properties)
-      if (plant.gardenPosition && 
-          (plant.plantSize === undefined || plant.zIndex === undefined ||
-           (Number.isInteger(plant.gardenPosition.x) && Number.isInteger(plant.gardenPosition.y) && 
-            plant.gardenPosition.x < 50 && plant.gardenPosition.y < 50))) {
-        
-        // Convert old grid coordinates to canvas coordinates
-        // Old system: grid positions 0-9, new system: pixel positions
-        const canvasX = (plant.gardenPosition.x * 100) + 300; // Spread out and offset
-        const canvasY = (plant.gardenPosition.y * 100) + 300;
-        
-        await ctx.db.patch(plant._id, {
-          gardenPosition: { x: canvasX, y: canvasY },
-          plantSize: 1.0,
-          zIndex: migratedCount, // Give each plant a unique layer
-          updatedAt: new Date().toISOString(),
-        });
-        
-        migratedCount++;
-      }
-    }
-
-    return { migratedCount };
-  },
-});
-
-// Water a plant (care action)
-export const waterPlant = mutation({
-  args: { plantId: v.id("plants") },
-  handler: async (ctx, { plantId }) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new ConvexError("Not authenticated");
-    }
-
-    const plant = await ctx.db.get(plantId);
-    if (!plant || plant.userId !== userId) {
-      throw new ConvexError("Plant not found or not owned by user");
-    }
-
-    if (!plant.isPlanted) {
-      throw new ConvexError("Plant must be planted to be watered");
-    }
-
-    // Update water level and last watered time
-    const newWaterLevel = Math.min(100, plant.waterLevel + 25); // +25 water points
-    const experienceGained = 5; // Small XP for caring
-
-    await ctx.db.patch(plantId, {
-      waterLevel: newWaterLevel,
-      lastWatered: new Date().toISOString(),
-      experiencePoints: plant.experiencePoints + experienceGained,
-      isWilted: false,
-      updatedAt: new Date().toISOString(),
-    });
-
-    // Log the care action
-    await ctx.db.insert("plantCareLog", {
-      userId,
-      plantId,
-      action: "water",
-      timestamp: new Date().toISOString(),
-      experienceGained,
-    });
-
-    return { success: true, waterLevel: newWaterLevel, experienceGained };
-  },
-});
-
-// Expand garden (unlock new tiles) - could be based on achievements
-export const expandGarden = mutation({
-  args: {
-    newTiles: v.array(v.object({ x: v.number(), y: v.number() })),
-  },
-  handler: async (ctx, { newTiles }) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new ConvexError("Not authenticated");
-    }
-
-    const garden = await ctx.db
-      .query("gardenLayout")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
-    if (!garden) {
-      throw new ConvexError("Garden not found");
-    }
-
-    // Add new tiles to unlocked tiles
-    const now = new Date().toISOString();
-    const updatedTiles = [
-      ...garden.unlockedTiles,
-      ...newTiles.map(tile => ({ ...tile, unlockedAt: now })),
-    ];
-
-    await ctx.db.patch(garden._id, {
-      unlockedTiles: updatedTiles,
-      updatedAt: now,
-    });
-
-    return { success: true, newTilesCount: newTiles.length };
   },
 });
 
@@ -477,41 +437,6 @@ export const resetGarden = mutation({
     return { 
       success: true, 
       removedCount: plantedPlants.length 
-    };
-  },
-});
-
-// Clean up deprecated rotation field from all plants
-export const cleanupRotationField = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new ConvexError("Not authenticated");
-    }
-
-    // Get all plants for this user that have the rotation field
-    const plants = await ctx.db
-      .query("plants")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-
-    let cleanedCount = 0;
-
-    for (const plant of plants) {
-      // Check if plant has rotation field
-      if (plant.rotation !== undefined) {
-        await ctx.db.patch(plant._id, {
-          rotation: undefined,
-          updatedAt: new Date().toISOString(),
-        });
-        cleanedCount++;
-      }
-    }
-
-    return { 
-      success: true, 
-      cleanedCount 
     };
   },
 });

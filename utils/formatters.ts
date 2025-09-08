@@ -11,10 +11,10 @@ export const formatDistance = (meters: number, metricSystem: MetricSystem = 'met
 
   if (metricSystem === 'imperial') {
     const miles = meters * 0.000621371;
-    return `${miles.toFixed(1)} mi`;
+    return `${miles.toFixed(0)} mi`;
   } else {
     const kilometers = meters / 1000;
-    return `${kilometers.toFixed(1)} km`;
+    return `${kilometers.toFixed(0)} km`;
   }
 };
 

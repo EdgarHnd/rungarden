@@ -1,7 +1,7 @@
 export const Theme = {
   colors: {
     background: {
-      primary: '#FAF9F4',      // Light cream - main background (inspired by garden UI)
+      primary: '#FBF6F2',      // Light cream - main background (inspired by garden UI)
       secondary: '#EEEDE7',    // Slightly darker cream - secondary background
       tertiary: '#E6E4DD',     // Warm light gray - tertiary background
       disabled: '#E0DFDA',     // Disabled background
@@ -19,7 +19,7 @@ export const Theme = {
 
     // Accent colors (keeping the nature-inspired orange/brown theme)
     accent: {
-      primary: '#136227',      // Chocolate/saddle brown - main accent color
+      primary: '#4035F1',      // Chocolate/saddle brown - main accent color
       secondary: '#FB5603',    // Sienna brown - darker accent
       light: '#DEB887',        // Burlywood - light accent
     },

@@ -372,8 +372,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.lg,
   },
   activityItemWrapper: {
-    paddingHorizontal: Theme.spacing.xl,
-    paddingVertical: Theme.spacing.sm,
+    paddingHorizontal: Theme.spacing.lg,
+    paddingVertical: Theme.spacing.xs,
   },
   sectionBottomSpacing: {
     height: Theme.spacing.lg,

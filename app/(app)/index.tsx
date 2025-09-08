@@ -9,22 +9,22 @@ import { SafeAreaView, StyleSheet, View } from 'react-native';
 
 export default function HomeScreen() {
   const { isAuthenticated } = useConvexAuth();
-  
-  // Initialize plant types on app start
-  const initializePlantTypes = useMutation(api.plantTypes.initializePlantTypes);
-  
+
+  // Initialize plant types on app start (new system)
+  const initializeNewPlantTypes = useMutation(api.plantTypesNew.initializeNewPlantTypes);
+
   useEffect(() => {
     if (isAuthenticated) {
-      // Initialize plant types in database if needed
-      initializePlantTypes().catch(console.error);
+      // Initialize plant types in database if needed (new system)
+      initializeNewPlantTypes().catch(console.error);
     }
-  }, [isAuthenticated, initializePlantTypes]);
+  }, [isAuthenticated, initializeNewPlantTypes]);
 
   // Focus effect for when user returns to this screen
   useFocusEffect(
     React.useCallback(() => {
       // Could add analytics tracking here if needed
-    return () => {
+      return () => {
         // Cleanup if needed
       };
     }, [])
@@ -34,11 +34,11 @@ export default function HomeScreen() {
     return <LoadingScreen />;
   }
 
-    return (
-      <SafeAreaView style={styles.container}>
+  return (
+    <SafeAreaView style={styles.container}>
       <View style={styles.content}>
         <GardenView />
-          </View>
+      </View>
     </SafeAreaView>
   );
 }
