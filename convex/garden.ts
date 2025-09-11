@@ -150,13 +150,13 @@ export const getPlantInventory = query({
   },
 });
 
-// Plant a plant from inventory to a specific grid position
-export const plantInGarden = mutation({
+
+// Auto-plant a plant from inventory to next available grid position
+export const autoPlantInGarden = mutation({
   args: {
     plantId: v.id("plants"),
-    gridPosition: v.object({ row: v.number(), col: v.number() }),
   },
-  handler: async (ctx, { plantId, gridPosition }) => {
+  handler: async (ctx, { plantId }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError("Not authenticated");
@@ -172,27 +172,47 @@ export const plantInGarden = mutation({
       throw new ConvexError("Plant is already planted");
     }
 
-    // Validate grid bounds
-    if (gridPosition.row < 0 || gridPosition.row >= 10 || 
-        gridPosition.col < 0 || gridPosition.col >= 10) {
-      throw new ConvexError("Grid position must be within 10x10 bounds");
-    }
-
-    // Check if position is already occupied
-    const existingPlant = await ctx.db
-      .query("plants")
-      .withIndex("by_grid_position", (q) => 
-        q.eq("userId", userId)
-         .eq("gridPosition.row", gridPosition.row)
-         .eq("gridPosition.col", gridPosition.col)
-      )
+    // Get garden and find next available position
+    const garden = await ctx.db
+      .query("gardenLayout")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
-    if (existingPlant) {
-      throw new ConvexError("This grid position is already occupied");
+    if (!garden) {
+      throw new ConvexError("Garden not found");
     }
 
-    // Plant the plant at the specified position
+    // Get all planted plants to see which positions are occupied
+    const plantedPlants = await ctx.db
+      .query("plants")
+      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", true))
+      .collect();
+
+    // Create a set of occupied positions
+    const occupiedPositions = new Set(
+      plantedPlants
+        .filter(p => p.gridPosition)
+        .map(p => `${p.gridPosition!.row}-${p.gridPosition!.col}`)
+    );
+
+    // Find next available position (row by row, left to right) in 10x10 grid
+    let gridPosition = null;
+    for (let row = 0; row < 10; row++) {
+      for (let col = 0; col < 10; col++) {
+        const positionKey = `${row}-${col}`;
+        if (!occupiedPositions.has(positionKey)) {
+          gridPosition = { row, col };
+          break;
+        }
+      }
+      if (gridPosition) break;
+    }
+
+    if (!gridPosition) {
+      throw new ConvexError("No available positions in garden");
+    }
+
+    // Auto-plant the plant at the found position
     await ctx.db.patch(plantId, {
       isPlanted: true,
       plantedAt: new Date().toISOString(),
@@ -201,11 +221,6 @@ export const plantInGarden = mutation({
     });
 
     // Update garden last tended time
-    const garden = await ctx.db
-      .query("gardenLayout")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
-
     if (garden) {
       await ctx.db.patch(garden._id, {
         lastTended: new Date().toISOString(),
@@ -217,17 +232,116 @@ export const plantInGarden = mutation({
   },
 });
 
-// Auto-plant a plant from inventory to next available grid position
-export const autoPlantInGarden = mutation({
-  args: {
-    plantId: v.id("plants"),
-  },
-  handler: async (ctx, { plantId }) => {
+// Plant all inventory plants at once (for initial sync)
+export const plantAllInventoryPlants = mutation({
+  args: {},
+  handler: async (ctx) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError("Not authenticated");
     }
 
+    // Get all unplanted plants in inventory
+    const inventoryPlants = await ctx.db
+      .query("plants")
+      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", false))
+      .collect();
+
+    if (inventoryPlants.length === 0) {
+      return { success: true, plantsPlanted: 0 };
+    }
+
+    console.log(`[plantAllInventoryPlants] Found ${inventoryPlants.length} plants to plant for user ${userId}`);
+
+    // Get garden and find all occupied positions
+    const garden = await ctx.db
+      .query("gardenLayout")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (!garden) {
+      throw new ConvexError("Garden not found");
+    }
+
+    // Get all planted plants to see which positions are occupied
+    const plantedPlants = await ctx.db
+      .query("plants")
+      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", true))
+      .collect();
+
+    // Create a set of occupied positions
+    const occupiedPositions = new Set(
+      plantedPlants
+        .filter(p => p.gridPosition)
+        .map(p => `${p.gridPosition!.row}-${p.gridPosition!.col}`)
+    );
+
+    let plantsPlanted = 0;
+    let currentRow = 0;
+    let currentCol = 0;
+
+    // Plant each inventory plant
+    for (const plant of inventoryPlants) {
+      // Find next available position (row by row, left to right) in 10x10 grid
+      let gridPosition = null;
+      let found = false;
+
+      for (let row = currentRow; row < 10 && !found; row++) {
+        for (let col = (row === currentRow ? currentCol : 0); col < 10; col++) {
+          const positionKey = `${row}-${col}`;
+          if (!occupiedPositions.has(positionKey)) {
+            gridPosition = { row, col };
+            occupiedPositions.add(positionKey); // Mark as occupied for next iteration
+            currentRow = row;
+            currentCol = col + 1; // Start next search from next position
+            if (currentCol >= 10) {
+              currentRow++;
+              currentCol = 0;
+            }
+            found = true;
+            break;
+          }
+        }
+      }
+
+      if (!gridPosition) {
+        console.warn(`[plantAllInventoryPlants] No more available positions in garden after planting ${plantsPlanted} plants`);
+        break; // No more space in garden
+      }
+
+      // Plant the plant at the found position
+      await ctx.db.patch(plant._id, {
+        isPlanted: true,
+        plantedAt: new Date().toISOString(),
+        gridPosition,
+        updatedAt: new Date().toISOString(),
+      });
+
+      plantsPlanted++;
+      console.log(`[plantAllInventoryPlants] Planted plant ${plant._id} at position ${gridPosition.row},${gridPosition.col}`);
+    }
+
+    // Update garden last tended time
+    if (plantsPlanted > 0) {
+      await ctx.db.patch(garden._id, {
+        lastTended: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      });
+    }
+
+    console.log(`[plantAllInventoryPlants] Successfully planted ${plantsPlanted} plants for user ${userId}`);
+
+    return { success: true, plantsPlanted };
+  },
+});
+
+// Server-side auto-plant function (bypasses authentication for webhooks)
+export const autoPlantInGardenServer = mutation({
+  args: {
+    userId: v.id("users"),
+    plantId: v.id("plants"),
+  },
+  handler: async (ctx, { userId, plantId }) => {
     // Verify the plant belongs to the user and is not already planted
     const plant = await ctx.db.get(plantId);
     if (!plant || plant.userId !== userId) {

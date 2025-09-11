@@ -75,8 +75,9 @@ async function handleActivityEvent(ctx: any, event: StravaWebhookEvent) {
       // Send notification after a short delay to allow sync to complete
       try {
         console.log(`[StravaWebhooks] Scheduling push notification for userId: ${userId}`);
-        await ctx.scheduler.runAfter(5000, api.pushNotifications.sendActivityNotification, {
+        await ctx.scheduler.runAfter(8000, api.pushNotifications.sendActivityNotificationWithData, {
           userId,
+          stravaActivityId: event.object_id,
         });
         console.log(`[StravaWebhooks] Scheduled push notification for user ${userId}, activity ${event.object_id}`);
       } catch (error) {
@@ -139,6 +140,16 @@ async function deleteActivityByStravaId(ctx: any, stravaId: number) {
     .first();
 
   if (activity) {
+    // Delete any plants earned from this activity
+    const plantsFromActivity = await ctx.db
+      .query("plants")
+      .withIndex("by_activity", (q: any) => q.eq("earnedFromActivityId", activity._id))
+      .collect();
+
+    for (const plant of plantsFromActivity) {
+      await ctx.db.delete(plant._id);
+    }
+
     await ctx.db.delete(activity._id);
     console.log("[StravaWebhooks] Deleted activity:", stravaId);
     
@@ -212,7 +223,7 @@ export const ensureWebhook = action({
   handler: async (ctx) => {
     const clientId = process.env.STRAVA_CLIENT_ID;
     const clientSecret = process.env.STRAVA_CLIENT_SECRET;
-    const verifyToken = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || "blaze-webhook-token";
+    const verifyToken = process.env.STRAVA_WEBHOOK_VERIFY_TOKEN || "rungarden-webhook-token";
     const callbackUrl = process.env.CONVEX_SITE_URL + "/strava/webhooks";
 
     if (!clientId || !clientSecret) {

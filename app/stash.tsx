@@ -5,7 +5,7 @@ import { FontAwesome5 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { router, useNavigation } from 'expo-router';
-import React, { useEffect, useState } from 'react';
+import React, { useEffect } from 'react';
 import {
   Dimensions,
   FlatList,
@@ -36,7 +36,6 @@ interface PlantStashItem {
 
 export default function StashScreen() {
   const navigation = useNavigation();
-  const [selectedPlant, setSelectedPlant] = useState<PlantStashItem | null>(null);
 
   // Get comprehensive plant stash data
   const stashData = useQuery(api.plants.getPlantStashData);
@@ -64,18 +63,6 @@ export default function StashScreen() {
     }
   };
 
-  const handleSelectPlant = () => {
-    if (selectedPlant) {
-      Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      // Navigate back to garden with selected plant data
-      router.back();
-      // Use a simple global state or event system for now
-      // In a production app, you'd use a proper state management solution
-      if ((global as any).onPlantSelected) {
-        (global as any).onPlantSelected(selectedPlant);
-      }
-    }
-  };
 
   // Helper function to check if a plant is a milestone
   const isMilestone = (distanceRequired: number) => {
@@ -86,7 +73,6 @@ export default function StashScreen() {
   const renderPlantItem = ({ item, index }: { item: PlantStashItem; index: number }) => {
     const isLocked = !item.isUnlocked;
     const hasPlants = item.unplantedCount > 0;
-    const isSelected = selectedPlant?._id === item._id;
     const isHeroPlant = isMilestone(item.distanceRequired);
 
     return (
@@ -95,7 +81,6 @@ export default function StashScreen() {
           styles.plantItem,
           isLocked && styles.lockedItem,
           hasPlants && item.isUnlocked && styles.availableItem,
-          isSelected && styles.selectedItem
         ]}
         onPress={() => handlePlantPress(item)}
         activeOpacity={0.7}
@@ -114,11 +99,6 @@ export default function StashScreen() {
             {formatDistance(item.distanceRequired, metricSystem)}
           </Text>
         </View>
-        {isSelected && (
-          <View style={styles.selectedIndicator}>
-            <Text style={styles.selectedIndicatorText}>✓</Text>
-          </View>
-        )}
       </TouchableOpacity>
     );
   };
@@ -146,11 +126,7 @@ export default function StashScreen() {
         </View>
 
         <View style={styles.headerRight}>
-          {selectedPlant && (
-            <TouchableOpacity onPress={handleSelectPlant} style={styles.selectButton}>
-              <Text style={styles.selectButtonText}>Select</Text>
-            </TouchableOpacity>
-          )}
+          {/* Manual plant selection removed - plants auto-planted */}
         </View>
       </View>
 
@@ -165,23 +141,6 @@ export default function StashScreen() {
         columnWrapperStyle={styles.row}
       />
 
-      {/* Bottom Action Bar */}
-      {selectedPlant && (
-        <View style={styles.bottomActionBar}>
-          <View style={styles.selectedPlantInfo}>
-            <Text style={styles.selectedPlantEmoji}>{selectedPlant.emoji}</Text>
-            <View style={styles.selectedPlantDetails}>
-              <Text style={styles.selectedPlantName}>{selectedPlant.name}</Text>
-              <Text style={styles.selectedPlantMeta}>
-                {selectedPlant.rarity} • {selectedPlant.unplantedCount} available
-              </Text>
-            </View>
-          </View>
-          <TouchableOpacity onPress={handleSelectPlant} style={styles.plantButton}>
-            <Text style={styles.plantButtonText}>Plant</Text>
-          </TouchableOpacity>
-        </View>
-      )}
     </SafeAreaView>
   );
 }
@@ -227,17 +186,6 @@ const styles = StyleSheet.create({
     width: 40,
     alignItems: 'flex-end',
   },
-  selectButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 12,
-  },
-  selectButtonText: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.background.primary,
-  },
   instructionsContainer: {
     paddingHorizontal: 24,
     paddingBottom: 16,
@@ -252,7 +200,7 @@ const styles = StyleSheet.create({
   plantGrid: {
     paddingHorizontal: 8,
     paddingVertical: 8,
-    paddingBottom: 120, // Extra padding for bottom action bar
+    paddingBottom: 20, // Reduced padding since no bottom action bar
   },
   row: {
     justifyContent: 'space-around',
@@ -273,10 +221,6 @@ const styles = StyleSheet.create({
   },
   availableItem: {
     // Available plants can have subtle highlighting if needed
-  },
-  selectedItem: {
-    backgroundColor: 'rgba(34, 197, 94, 0.1)',
-    borderRadius: 8,
   },
   plantContainer: {
     alignItems: 'center',
@@ -308,70 +252,6 @@ const styles = StyleSheet.create({
   },
   lockedText: {
     color: '#9CA3AF',
-  },
-  selectedIndicator: {
-    position: 'absolute',
-    top: 2,
-    right: 2,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    backgroundColor: Theme.colors.accent.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
-  },
-  selectedIndicatorText: {
-    fontSize: 10,
-    color: '#FFFFFF',
-    fontFamily: Theme.fonts.bold,
-  },
-  bottomActionBar: {
-    position: 'absolute',
-    bottom: 0,
-    left: 0,
-    right: 0,
-    backgroundColor: Theme.colors.background.primary,
-    borderTopWidth: 1,
-    borderTopColor: '#E5E7EB',
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-    paddingBottom: 34, // Safe area padding
-  },
-  selectedPlantInfo: {
-    flex: 1,
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  selectedPlantEmoji: {
-    fontSize: 32,
-    marginRight: 12,
-  },
-  selectedPlantDetails: {
-    flex: 1,
-  },
-  selectedPlantName: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.text.primary,
-  },
-  selectedPlantMeta: {
-    fontSize: 12,
-    fontFamily: Theme.fonts.regular,
-    color: Theme.colors.text.secondary,
-    textTransform: 'capitalize',
-  },
-  plantButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 20,
-  },
-  plantButtonText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.background.primary,
   },
   // Milestone styling
   heroEmojiText: {

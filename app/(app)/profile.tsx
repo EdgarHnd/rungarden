@@ -192,7 +192,9 @@ export default function ProfileScreen() {
     return `${km.toFixed(1)} km`;
   };
 
-  const userName = currentUser?.name || profile?.firstName || 'Gardener';
+  const userName = profile?.firstName
+    ? `${profile.firstName}${profile.lastName ? ' ' + profile.lastName : ''}`
+    : currentUser?.name || 'Gardener';
   const totalDistance = profileStats?.totalDistance || 0;
   const totalWorkouts = profileStats?.totalWorkouts || 0;
   const totalCalories = profileStats?.totalCalories || 0;
@@ -217,6 +219,16 @@ export default function ProfileScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
+          <TouchableOpacity
+            style={styles.supportButton}
+            onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+              router.push('/support');
+            }}
+          >
+            <FontAwesome5 name="headset" size={20} color={Theme.colors.background.primary} />
+            <Text style={styles.supportButtonText}>Support</Text>
+          </TouchableOpacity>
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => {
@@ -256,7 +268,7 @@ export default function ProfileScreen() {
               style={styles.actionButton}
               onPress={() => {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-                // TODO: Navigate to edit profile screen
+                router.push('/edit-profile');
               }}
               activeOpacity={0.7}
             >
@@ -441,15 +453,28 @@ const styles = StyleSheet.create({
   },
   header: {
     flexDirection: 'row',
-    justifyContent: 'flex-end',
+    justifyContent: 'space-between',
     alignItems: 'center',
     paddingHorizontal: 20,
     paddingTop: 10,
     paddingBottom: 0,
   },
+  supportButton: {
+    padding: 12,
+    borderRadius: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: Theme.colors.accent.primary,
+  },
   settingsButton: {
     padding: 12,
     borderRadius: 8,
+  },
+  supportButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+    color: Theme.colors.background.primary,
   },
   profileSection: {
     alignItems: 'center',

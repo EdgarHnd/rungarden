@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
+import { api } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 
 /*──────────────────────── send friend request */
@@ -45,6 +46,21 @@ export const sendFriendRequest = mutation({
       createdAt: now,
     });
 
+    // Get sender's profile to include name in notification
+    const fromUser = await ctx.db.get(fromUserId as any);
+    const fromName = (fromUser as any)?.name || (fromUser as any)?.firstName || "Someone";
+
+    // Send push notification to recipient
+    try {
+      await ctx.scheduler.runAfter(0, api.pushNotifications.sendFriendRequestNotification, {
+        toUserId: args.toUserId,
+        fromName: fromName,
+      });
+    } catch (error) {
+      console.error("Failed to send friend request notification:", error);
+      // Don't fail the request if notification fails
+    }
+
     return id;
   },
 });
@@ -79,6 +95,23 @@ export const respondToFriendRequest = mutation({
       status,
       respondedAt: new Date().toISOString(),
     });
+
+    // Send push notification if request was accepted
+    if (args.accept) {
+      try {
+        // Get current user's profile to include name in notification
+        const currentUser = await ctx.db.get(userId as any);
+        const currentUserName = (currentUser as any)?.name || (currentUser as any)?.firstName || "Someone";
+
+        await ctx.scheduler.runAfter(0, api.pushNotifications.sendFriendAcceptNotification, {
+          toUserId: request.fromUserId,
+          friendName: currentUserName,
+        });
+      } catch (error) {
+        console.error("Failed to send friend accept notification:", error);
+        // Don't fail the request if notification fails
+      }
+    }
 
     return { success: true };
   },
@@ -189,5 +222,120 @@ export const getSentFriendRequests = query({
       userId: request.toUserId,
       status: request.status,
     }));
+  },
+});
+
+/*──────────────────────── get friends with their gardens */
+export const getFriendsWithGardens = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return [];
+
+    // Get friends list
+    const sent = await ctx.db
+      .query("friendRequests")
+      .withIndex("by_from", q => q.eq("fromUserId", userId))
+      .filter(q => q.eq(q.field("status"), "accepted"))
+      .collect();
+
+    const received = await ctx.db
+      .query("friendRequests")
+      .withIndex("by_to", q => q.eq("toUserId", userId))
+      .filter(q => q.eq(q.field("status"), "accepted"))
+      .collect();
+
+    const friendUserIds = [
+      ...sent.map(r => r.toUserId),
+      ...received.map(r => r.fromUserId)
+    ];
+
+    // Get friends with their garden data
+    const friendsWithGardens = await Promise.all(
+      friendUserIds.map(async (friendId) => {
+        const friend = await ctx.db.get(friendId as any);
+        if (!friend) return null;
+
+        // Get friend's planted plants
+        const plants = await ctx.db
+          .query("plants")
+          .withIndex("by_user_planted", (q) => q.eq("userId", friendId as any).eq("isPlanted", true))
+          .collect();
+
+        // Fetch plant type details for each plant
+        const plantsWithTypes = await Promise.all(
+          plants.map(async (plant) => {
+            const plantType = await ctx.db.get(plant.plantTypeId);
+            return {
+              ...plant,
+              plantType,
+            };
+          })
+        );
+
+        return {
+          user: friend,
+          plants: plantsWithTypes,
+        };
+      })
+    );
+
+    return friendsWithGardens.filter(Boolean);
+  },
+});
+
+/*──────────────────────── get specific friend's garden */
+export const getFriendGarden = query({
+  args: {
+    friendId: v.id("users"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) return null;
+
+    // Verify friendship exists
+    const friendshipExists = await ctx.db
+      .query("friendRequests")
+      .withIndex("by_users", q => q.eq("fromUserId", userId).eq("toUserId", args.friendId))
+      .filter(q => q.eq(q.field("status"), "accepted"))
+      .first();
+
+    const reverseFriendshipExists = await ctx.db
+      .query("friendRequests")
+      .withIndex("by_users", q => q.eq("fromUserId", args.friendId).eq("toUserId", userId))
+      .filter(q => q.eq(q.field("status"), "accepted"))
+      .first();
+
+    if (!friendshipExists && !reverseFriendshipExists) {
+      return null;
+    }
+
+    // Get friend's user data
+    const friend = await ctx.db.get(args.friendId);
+    if (!friend) {
+      return null;
+    }
+
+    // Get friend's planted plants
+    const plants = await ctx.db
+      .query("plants")
+      .withIndex("by_user_planted", (q) => q.eq("userId", args.friendId as any).eq("isPlanted", true))
+      .collect();
+
+    // Fetch plant type details for each plant
+    const plantsWithTypes = await Promise.all(
+      plants.map(async (plant) => {
+        const plantType = await ctx.db.get(plant.plantTypeId);
+        return {
+          ...plant,
+          plantType,
+        };
+      })
+    );
+
+    return {
+      user: friend,
+      plants: plantsWithTypes,
+    };
   },
 });

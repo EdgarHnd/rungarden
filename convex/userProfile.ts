@@ -62,9 +62,11 @@ export const createProfile = mutation({
       lastName: currentUser?.name?.split(' ').slice(1).join(' ') ?? undefined,
       // Default preferences
       metricSystem: "metric",
+      weekStartDay: 1, // Default to Monday
+      pushNotificationsEnabled: false,
       healthKitSyncEnabled: false,
-      stravaSyncEnabled: false,
       autoSyncEnabled: false,
+      stravaSyncEnabled: false,
       updatedAt: now,
     });
 
@@ -75,13 +77,22 @@ export const createProfile = mutation({
 // Update user profile (creates if doesn't exist)
 export const updateProfile = mutation({
   args: {
+    username: v.optional(v.string()),
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+    region: v.optional(v.string()),
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
+    weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
+    pushNotificationsEnabled: v.optional(v.boolean()),
     healthKitSyncEnabled: v.optional(v.boolean()),
-    stravaSyncEnabled: v.optional(v.boolean()),
     autoSyncEnabled: v.optional(v.boolean()),
+    stravaSyncEnabled: v.optional(v.boolean()),
     gardenTheme: v.optional(v.string()),
+    hasSeenInitialSyncModal: v.optional(v.boolean()),
+    hasSeenWelcomeModal: v.optional(v.boolean()),
+    healthKitInitialSyncCompleted: v.optional(v.boolean()),
+    stravaInitialSyncCompleted: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -115,10 +126,13 @@ export const updateProfile = mutation({
         firstName: args.firstName,
         lastName: args.lastName,
         metricSystem: args.metricSystem ?? "metric",
+        weekStartDay: args.weekStartDay ?? 1,
+        pushNotificationsEnabled: args.pushNotificationsEnabled ?? false,
         healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
-        stravaSyncEnabled: args.stravaSyncEnabled ?? false,
         autoSyncEnabled: args.autoSyncEnabled ?? false,
+        stravaSyncEnabled: args.stravaSyncEnabled ?? false,
         gardenTheme: args.gardenTheme,
+        hasSeenInitialSyncModal: args.hasSeenInitialSyncModal ?? false,
         updatedAt: now,
       });
     }
@@ -131,6 +145,7 @@ export const updateSyncPreferences = mutation({
     // HealthKit fields
     healthKitSyncEnabled: v.optional(v.boolean()),
     lastHealthKitSync: v.optional(v.string()),
+    healthKitSyncAnchor: v.optional(v.string()),
     healthKitInitialSyncCompleted: v.optional(v.boolean()),
     // Strava fields  
     stravaAccessToken: v.optional(v.string()),
@@ -141,6 +156,7 @@ export const updateSyncPreferences = mutation({
     lastStravaSync: v.optional(v.string()),
     autoSyncEnabled: v.optional(v.boolean()),
     stravaInitialSyncCompleted: v.optional(v.boolean()),
+    stravaAccessRevoked: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -158,6 +174,39 @@ export const updateSyncPreferences = mutation({
         ...args,
         updatedAt: new Date().toISOString(),
       });
+    }
+  },
+});
+
+// Update push notification settings
+export const updatePushNotificationSettings = mutation({
+  args: {
+    token: v.optional(v.string()),
+    enabled: v.boolean(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const existingProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    if (existingProfile) {
+      const updateData: any = {
+        pushNotificationsEnabled: args.enabled,
+        updatedAt: new Date().toISOString(),
+      };
+
+      // Only update token if provided
+      if (args.token !== undefined) {
+        updateData.pushNotificationToken = args.token;
+      }
+
+      await ctx.db.patch(existingProfile._id, updateData);
     }
   },
 });

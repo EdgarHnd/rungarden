@@ -3,18 +3,199 @@ import { ConvexError, v } from "convex/values";
 import { api } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 
-// Award a plant to user based on run distance
-export const awardPlantForActivity = mutation({
+// Efficient batch plant awarding for initial sync performance
+export const awardPlantsForActivitiesBatch = mutation({
   args: {
-    activityId: v.id("activities"),
-    distance: v.number(), // distance in meters
+    activityIds: v.array(v.id("activities")),
   },
-  handler: async (ctx, { activityId, distance }) => {
+  handler: async (ctx, { activityIds }) => {
     const userId = await getAuthUserId(ctx);
     if (!userId) {
       throw new ConvexError("Not authenticated");
     }
 
+    console.log(`[awardPlantsForActivitiesBatch] Processing ${activityIds.length} activities in batch`);
+    let plantsAwarded = 0;
+    const now = new Date().toISOString();
+
+    // Get all activities at once
+    const activities = await Promise.all(
+      activityIds.map(async (id) => {
+        const activity = await ctx.db.get(id);
+        return activity;
+      })
+    );
+
+    // Filter out activities that already have plants or don't meet criteria
+    const activitiesNeedingPlants = activities.filter(activity => 
+      activity && 
+      !activity.plantEarned && 
+      activity.distance && 
+      activity.distance >= 1000 // At least 1km
+    );
+
+    console.log(`[awardPlantsForActivitiesBatch] ${activitiesNeedingPlants.length} activities need plants`);
+
+    // Get all plant types at once to reduce queries
+    const plantTypes = await ctx.db.query("plantTypes").collect();
+    const plantTypesByDistance = new Map(
+      plantTypes.map(pt => [pt.distanceRequired, pt])
+    );
+
+    // Process activities in batch
+    for (const activity of activitiesNeedingPlants) {
+      if (!activity) continue;
+
+      try {
+        const distanceKm = Math.floor(activity.distance / 1000);
+        const cappedDistanceKm = Math.min(distanceKm, 100);
+        const requiredDistance = cappedDistanceKm * 1000;
+        
+        const eligiblePlant = plantTypesByDistance.get(requiredDistance);
+        if (!eligiblePlant) continue;
+
+        // Create the plant
+        const plantId = await ctx.db.insert("plants", {
+          userId,
+          plantTypeId: eligiblePlant._id,
+          earnedFromActivityId: activity._id,
+          earnedAt: now,
+          isPlanted: false,
+          currentStage: 3,
+          experiencePoints: 0,
+          nextStageRequirement: 0,
+          waterLevel: 100,
+          updatedAt: now,
+        });
+
+        // Update activity
+        await ctx.db.patch(activity._id, {
+          plantEarned: plantId,
+        });
+
+        plantsAwarded++;
+      } catch (error) {
+        console.error(`[awardPlantsForActivitiesBatch] Failed to award plant for activity ${activity._id}:`, error);
+      }
+    }
+
+    console.log(`[awardPlantsForActivitiesBatch] Awarded ${plantsAwarded} plants`);
+    return { plantsAwarded };
+  },
+});
+
+// Legacy version for backwards compatibility
+export const awardPlantsForActivities = mutation({
+  args: {
+    activityIds: v.array(v.id("activities")),
+  },
+  handler: async (ctx, { activityIds }) => {
+    console.log(`[awardPlantsForActivities] Processing ${activityIds.length} activities in batch`);
+    let plantsAwarded = 0;
+    
+    for (const activityId of activityIds) {
+      try {
+        const result = await ctx.runMutation(api.plants.awardPlantForActivity, { activityId });
+        if (result) {
+          plantsAwarded++;
+        }
+      } catch (error) {
+        console.error(`[awardPlantsForActivities] Failed to award plant for activity ${activityId}:`, error);
+      }
+    }
+    
+    console.log(`[awardPlantsForActivities] Awarded ${plantsAwarded} plants out of ${activityIds.length} activities`);
+    return { plantsAwarded };
+  },
+});
+
+// Award a plant to user based on run distance
+export const awardPlantForActivity = mutation({
+  args: {
+    activityId: v.id("activities"),
+  },
+  handler: async (ctx, { activityId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError("Not authenticated");
+    }
+        // Check if activity already has a plant awarded
+    const activity = await ctx.db.get(activityId);
+    if (activity?.plantEarned) {
+      return null; // Plant already awarded
+    }
+    const distance = activity?.distance;
+
+    if (!distance) {
+      console.error(`[awardPlantForActivity] No distance found for activity ${activityId}`);
+      return null; // No distance found
+    }
+
+    // Convert distance to km and find the exact plant type
+    const distanceKm = Math.floor(distance / 1000);
+    
+    // Cap at 100km max
+    const cappedDistanceKm = Math.min(distanceKm, 100);
+    
+    if (cappedDistanceKm < 1) {
+      console.error(`[awardPlantForActivity] No plant for distances under 1km for activity ${activityId}`);
+      return null; // No plant for distances under 1km
+    }
+
+    // Get the exact plant type for this distance (1km = 1000m, 2km = 2000m, etc.)
+    const requiredDistance = cappedDistanceKm * 1000;
+    const eligiblePlant = await ctx.db
+      .query("plantTypes")
+      .withIndex("by_distance", (q) => q.eq("distanceRequired", requiredDistance))
+      .first();
+    
+    if (!eligiblePlant) {
+      // No plant earned for this distance
+      console.error(`[awardPlantForActivity] No plant earned for this distance for activity ${activityId}`);
+      return null;
+    }
+
+    // Create the plant in user's inventory
+    const plantId = await ctx.db.insert("plants", {
+      userId,
+      plantTypeId: eligiblePlant._id,
+      earnedFromActivityId: activityId,
+      earnedAt: new Date().toISOString(),
+      isPlanted: false,
+      currentStage: 3, // Start at mature stage (no growth needed)
+      experiencePoints: 0,
+      nextStageRequirement: 0, // No more growth needed
+      waterLevel: 100, // Start fully watered
+      updatedAt: new Date().toISOString(),
+    });
+
+    // Plant will be auto-planted when user completes celebration modal
+    // (no immediate auto-planting needed)
+
+    // Update activity to reference the earned plant
+    await ctx.db.patch(activityId, {
+      plantEarned: plantId,
+    });
+
+    // Get the created plant
+    const createdPlant = await ctx.db.get(plantId);
+
+    return {
+      plant: createdPlant,
+      plantType: eligiblePlant,
+      isNewType: await isFirstTimeEarningPlantType(ctx, userId, eligiblePlant._id),
+    };
+  },
+});
+
+// Server-side version for webhook calls (bypasses authentication)
+export const awardPlantForActivityServer = mutation({
+  args: {
+    userId: v.id("users"),
+    activityId: v.id("activities"),
+    distance: v.number(), // distance in meters
+  },
+  handler: async (ctx, { userId, activityId, distance }) => {
     // Convert distance to km and find the exact plant type
     const distanceKm = Math.floor(distance / 1000);
     
@@ -57,15 +238,8 @@ export const awardPlantForActivity = mutation({
       updatedAt: new Date().toISOString(),
     });
 
-    // Auto-plant the plant immediately
-    try {
-      await ctx.runMutation(api.garden.autoPlantInGarden, {
-        plantId: plantId,
-      });
-    } catch (error) {
-      console.log("Could not auto-plant, keeping in inventory:", error);
-      // Plant stays in inventory if auto-planting fails
-    }
+    // Plant will be auto-planted when user completes celebration modal
+    // (no server-side auto-planting needed)
 
     // Update activity to reference the earned plant
     await ctx.db.patch(activityId, {
@@ -80,11 +254,27 @@ export const awardPlantForActivity = mutation({
       plantType: eligiblePlant,
       isNewType: await isFirstTimeEarningPlantType(ctx, userId, eligiblePlant._id),
     };
-  },
+  }
 });
 
-// Note: Growth stages and XP system removed in new plant system
-// All plants now start at mature stage (stage 3)
+// Get plant by ID with plant type data
+export const getPlantById = query({
+  args: {
+    plantId: v.id("plants"),
+  },
+  handler: async (ctx, args) => {
+    const plant = await ctx.db.get(args.plantId);
+    if (!plant) return null;
+
+    // Get the plant type data
+    const plantType = await ctx.db.get(plant.plantTypeId);
+    
+    return {
+      ...plant,
+      plantType,
+    };
+  },
+});
 
 // Check if this is the first time user earns this plant type and update profile
 async function isFirstTimeEarningPlantType(ctx: any, userId: string, plantTypeId: any): Promise<boolean> {
@@ -190,127 +380,6 @@ export const getPlantByActivityId = query({
   },
 });
 
-// DEPRECATED: Growth system removed in new plant system
-// Plants now start at mature stage and don't require growth
-export const growPlant = mutation({
-  args: {
-    plantId: v.id("plants"),
-    experiencePoints: v.number(),
-  },
-  handler: async (ctx, { plantId, experiencePoints }) => {
-    // This function is deprecated but kept for backward compatibility
-    // New plants start at mature stage and don't need growth
-    return {
-      success: true,
-      leveledUp: false,
-      newStage: 3,
-      newXP: 0,
-      deprecated: true,
-      message: "Growth system has been simplified. All plants start mature.",
-    };
-  },
-});
-
-// DEPRECATED: Plant health/watering system simplified
-// Plants no longer require maintenance in the new system
-export const updatePlantHealth = mutation({
-  args: { plantId: v.id("plants") },
-  handler: async (ctx, { plantId }) => {
-    // This function is deprecated but kept for backward compatibility
-    // Plants no longer decay or require watering in the simplified system
-    return { 
-      waterLevel: 100, 
-      isWilted: false,
-      deprecated: true,
-      message: "Plant health system has been simplified. Plants no longer require maintenance.",
-    };
-  },
-});
-
-// DEPRECATED: Plant care system removed
-export const getPlantsNeedingCare = query({
-  args: {},
-  handler: async (ctx) => {
-    // No plants need care in the simplified system
-    return [];
-  },
-});
-
-// Get user's plant collection stats
-export const getPlantCollectionStats = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      return null;
-    }
-
-    const userPlants = await ctx.db
-      .query("plants")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-
-    const allPlantTypes = await ctx.db.query("plantTypes").collect();
-
-    // Count unique plant types owned
-    const ownedTypes = new Set(userPlants.map(p => p.plantTypeId));
-    const totalPossibleTypes = allPlantTypes.length;
-
-    // Count plants by rarity
-    const rarityCount: Record<string, number> = { common: 0, uncommon: 0, rare: 0, epic: 0 };
-    
-    for (const plant of userPlants) {
-      const plantType = allPlantTypes.find(pt => pt._id === plant.plantTypeId);
-      if (plantType) {
-        rarityCount[plantType.rarity]++;
-      }
-    }
-
-    // Count plants by stage
-    const stageCount = { seed: 0, sprout: 0, growing: 0, mature: 0 };
-    const stageNames = ['seed', 'sprout', 'growing', 'mature'];
-    for (const plant of userPlants) {
-      const stageName = stageNames[plant.currentStage] || 'seed';
-      stageCount[stageName as keyof typeof stageCount]++;
-    }
-
-    return {
-      totalPlants: userPlants.length,
-      uniqueTypes: ownedTypes.size,
-      totalPossibleTypes,
-      collectionPercentage: Math.round((ownedTypes.size / totalPossibleTypes) * 100),
-      planted: userPlants.filter(p => p.isPlanted).length,
-      unplanted: userPlants.filter(p => !p.isPlanted).length,
-      rarityCount,
-      stageCount,
-    };
-  },
-});
-
-// Get user's maximum distance achieved (for unlocking plants)
-export const getUserMaxDistance = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      return 0;
-    }
-
-    const activities = await ctx.db
-      .query("activities")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .collect();
-
-    if (activities.length === 0) {
-      return 0;
-    }
-
-    // Find the maximum distance from all activities
-    const maxDistance = Math.max(...activities.map(activity => activity.distance));
-    return maxDistance;
-  },
-});
-
 // Debug function to check plant ID mismatches
 export const debugPlantStashData = query({
   args: {},
@@ -340,6 +409,81 @@ export const debugPlantStashData = query({
         return acc;
       }, {} as Record<string, number>)
     };
+  },
+});
+
+// Get plants earned from multiple activities (for initial sync modal)
+export const getPlantsEarnedFromActivities = query({
+  args: {
+    activityIds: v.array(v.id("activities")),
+  },
+  handler: async (ctx, { activityIds }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      return [];
+    }
+
+    // Get all plants earned from the specified activities
+    const plants = await ctx.db
+      .query("plants")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => 
+        q.and(
+          q.neq(q.field("earnedFromActivityId"), undefined),
+          // We'll filter by activity IDs in the application code since Convex doesn't support "in" queries on indexes
+        )
+      )
+      .collect();
+
+    // Filter to only plants from the specified activities and get plant types
+    const activityIdSet = new Set(activityIds);
+    const relevantPlants = plants.filter(plant => 
+      plant.earnedFromActivityId && activityIdSet.has(plant.earnedFromActivityId)
+    );
+
+    // Get plant types for all relevant plants
+    const plantsWithTypes = await Promise.all(
+      relevantPlants.map(async (plant) => {
+        const plantType = await ctx.db.get(plant.plantTypeId);
+        return {
+          ...plant,
+          plantType,
+        };
+      })
+    );
+
+    // Group by plant type and count quantities
+    const plantCounts: Record<string, { count: number; plantType: any }> = {};
+    
+    for (const plant of plantsWithTypes) {
+      if (plant.plantType) {
+        const typeKey = plant.plantType._id;
+        if (plantCounts[typeKey]) {
+          plantCounts[typeKey].count += 1;
+        } else {
+          plantCounts[typeKey] = {
+            count: 1,
+            plantType: plant.plantType
+          };
+        }
+      }
+    }
+
+    // Convert to array and sort by distance required
+    const result = Object.values(plantCounts)
+      .sort((a, b) => a.plantType.distanceRequired - b.plantType.distanceRequired);
+    
+    console.log('[getPlantsEarnedFromActivities] Returning', result.length, 'plant types');
+    result.forEach((plant, index) => {
+      console.log(`[getPlantsEarnedFromActivities] Plant ${index + 1}:`, {
+        count: plant.count,
+        name: plant.plantType?.name,
+        emoji: plant.plantType?.emoji,
+        distance: plant.plantType?.distanceRequired
+      });
+    });
+    
+    return result;
   },
 });
 
@@ -400,110 +544,3 @@ export const getPlantStashData = query({
   },
 });
 
-// Fix plants with invalid plantTypeId references
-export const fixInvalidPlantReferences = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      throw new ConvexError("Not authenticated");
-    }
-
-    const [allPlantTypes, userPlants] = await Promise.all([
-      ctx.db.query("plantTypes").collect(),
-      ctx.db.query("plants").withIndex("by_user", (q) => q.eq("userId", userId)).collect(),
-    ]);
-
-    const validPlantTypeIds = new Set([
-      ...allPlantTypes.map(pt => pt._id),
-      ...allPlantTypes.map(pt => String(pt._id)),
-      "ultra_mushroom" // Special case for ultra mushrooms
-    ]);
-
-    let fixedCount = 0;
-    let deletedCount = 0;
-
-    for (const plant of userPlants) {
-      const plantTypeId = plant.plantTypeId;
-      
-      // Skip ultra mushrooms and other special plants
-      if (plantTypeId === "ultra_mushroom" || typeof plantTypeId === "string") {
-        continue;
-      }
-
-      // Check if the plant type ID is valid
-      if (!validPlantTypeIds.has(plantTypeId) && !validPlantTypeIds.has(String(plantTypeId))) {
-        // Try to find a matching plant type by distance
-        const activity = await ctx.db.get(plant.earnedFromActivityId);
-        if (activity) {
-          const distance = activity.distance;
-          const matchingPlantType = allPlantTypes
-            .sort((a, b) => b.distanceRequired - a.distanceRequired)
-            .find(pt => distance >= pt.distanceRequired);
-          
-          if (matchingPlantType) {
-            // Fix the plant by updating its plantTypeId
-            await ctx.db.patch(plant._id, {
-              plantTypeId: matchingPlantType._id,
-              updatedAt: new Date().toISOString(),
-            });
-            fixedCount++;
-          } else {
-            // Delete plants that can't be fixed
-            await ctx.db.delete(plant._id);
-            deletedCount++;
-          }
-        } else {
-          // Delete plants without valid activity references
-          await ctx.db.delete(plant._id);
-          deletedCount++;
-        }
-      }
-    }
-
-    return {
-      success: true,
-      fixedCount,
-      deletedCount,
-      message: `Fixed ${fixedCount} plants, deleted ${deletedCount} invalid plants`,
-    };
-  },
-});
-
-// Simple debug query to check user's plants
-export const debugUserPlants = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) {
-      return { error: "Not authenticated" };
-    }
-
-    const userPlants = await ctx.db
-      .query("plants")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .take(10);
-
-    const plantTypes = await ctx.db
-      .query("plantTypes")
-      .take(10);
-
-    return {
-      userId,
-      totalUserPlants: userPlants.length,
-      totalPlantTypes: plantTypes.length,
-      sampleUserPlants: userPlants.map(p => ({
-        id: p._id,
-        plantTypeId: p.plantTypeId,
-        isPlanted: p.isPlanted,
-        earnedAt: p.earnedAt,
-      })),
-      samplePlantTypes: plantTypes.map(pt => ({
-        id: pt._id,
-        name: pt.name,
-        emoji: pt.emoji,
-        distanceRequired: pt.distanceRequired,
-      })),
-    };
-  }
-});

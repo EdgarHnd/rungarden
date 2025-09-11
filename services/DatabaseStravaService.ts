@@ -8,6 +8,7 @@ export interface SyncResult {
   skipped: number;
   lastSyncDate: string;
   distanceGained?: number;
+  plantsAwarded?: number;
   coinsGained?: number;
   leveledUp?: boolean;
   newLevel?: number;
@@ -110,7 +111,7 @@ class DatabaseStravaService {
     try {
       await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
         stravaSyncEnabled: false,
-        lastStravaSync: null,
+        lastStravaSync: undefined,
         stravaInitialSyncCompleted: false, // Reset so they can get initial sync modal again if they reconnect
         stravaAccessToken: undefined,
         stravaRefreshToken: undefined,
@@ -131,6 +132,22 @@ class DatabaseStravaService {
       return await StravaService.getAthlete();
     } catch (error) {
       console.error('Error fetching Strava athlete:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Initial sync from Strava with proper celebration marking for old activities
+   */
+  async initialSyncFromStrava(days: number = 365): Promise<SyncResult> {
+    try {
+      console.log('[DatabaseStravaService] Starting initial Strava sync...');
+      
+      // Call server-side initial sync that marks old activities properly
+      const result = await this.convexClient.action(api.activities.fullStravaInitialSyncServer, { days });
+      return result;
+    } catch (error) {
+      console.error('Error during initial Strava sync:', error);
       throw error;
     }
   }
@@ -468,6 +485,23 @@ class DatabaseStravaService {
     } catch (error) {
       console.error('[DatabaseStravaService] Error resetting authentication:', error);
       throw error;
+    }
+  }
+
+  /**
+   * Setup webhook subscription for real-time sync
+   */
+  async setupWebhook(): Promise<{ success: boolean; message: string; id?: number }> {
+    try {
+      console.log('[DatabaseStravaService] Setting up Strava webhook...');
+      const result = await this.convexClient.action(api.stravaWebhooks.ensureWebhook);
+      return result;
+    } catch (error) {
+      console.error('[DatabaseStravaService] Error setting up webhook:', error);
+      return { 
+        success: false, 
+        message: `Failed to setup webhook: ${(error as Error).message}` 
+      };
     }
   }
 }

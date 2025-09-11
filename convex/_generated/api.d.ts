@@ -15,6 +15,7 @@ import type {
 } from "convex/server";
 import type * as activities from "../activities.js";
 import type * as auth from "../auth.js";
+import type * as deduplication from "../deduplication.js";
 import type * as friends from "../friends.js";
 import type * as garden from "../garden.js";
 import type * as http from "../http.js";
@@ -25,6 +26,7 @@ import type * as plants from "../plants.js";
 import type * as pushNotifications from "../pushNotifications.js";
 import type * as stravaAuth from "../stravaAuth.js";
 import type * as stravaWebhooks from "../stravaWebhooks.js";
+import type * as support from "../support.js";
 import type * as userProfile from "../userProfile.js";
 
 /**
@@ -38,6 +40,7 @@ import type * as userProfile from "../userProfile.js";
 declare const fullApi: ApiFromModules<{
   activities: typeof activities;
   auth: typeof auth;
+  deduplication: typeof deduplication;
   friends: typeof friends;
   garden: typeof garden;
   http: typeof http;
@@ -48,6 +51,7 @@ declare const fullApi: ApiFromModules<{
   pushNotifications: typeof pushNotifications;
   stravaAuth: typeof stravaAuth;
   stravaWebhooks: typeof stravaWebhooks;
+  support: typeof support;
   userProfile: typeof userProfile;
 }>;
 export declare const api: FilterApi<

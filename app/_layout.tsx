@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AnalyticsProviderComponent } from '../provider/AnalyticsProvider';
+import SyncProvider from '../provider/SyncProvider';
 // Temporarily disabled RevenueCat for testing
 
 import OnboardingScreen from './onboarding';
@@ -123,7 +124,9 @@ export default function RootLayout() {
             <OnboardingScreen />
           </Unauthenticated>
           <Authenticated>
-            <AuthenticatedApp />
+            <SyncProvider>
+              <AuthenticatedApp />
+            </SyncProvider>
           </Authenticated>
         </ConvexAuthProvider>
       </AnalyticsProviderComponent>

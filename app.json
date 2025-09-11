@@ -63,11 +63,11 @@
         }
       ],
       [
-        "react-native-health",
+        "@kingstinct/react-native-healthkit",
         {
-          "isClinicalDataEnabled": false,
-          "healthSharePermission": "Run Garden needs access to health data to track your running activities and grow plants in your garden.",
-          "healthUpdatePermission": "Run Garden needs permission to write workout data to Apple Health to keep your fitness data synchronized."
+          "NSHealthShareUsageDescription": "Run Garden needs access to health data to track your running activities and grow plants in your garden.",
+          "NSHealthUpdateUsageDescription": "Run Garden needs permission to write workout data to Apple Health to keep your fitness data synchronized.",
+          "background": true
         }
       ],
       [

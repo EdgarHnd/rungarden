@@ -1,4 +1,5 @@
-import React, { ReactNode } from 'react';
+import Theme from '@/constants/theme';
+import React, { ReactNode, useRef } from 'react';
 import {
   Dimensions,
   ScrollView,
@@ -23,40 +24,75 @@ interface GardenCanvasProps {
   backgroundColor?: string;
   onCanvasTap?: (event: any) => void;
   onGridTap?: (gridPos: GridPosition) => void;
+  onDoubleTap?: () => void;
   unlockedTiles?: Array<{ x: number; y: number; unlockedAt: string }>;
   gridConfig?: IsometricGridConfig;
   showGrid?: boolean;
+  // Optional: allow disabling zoom cleanly
+  enableZoom?: boolean;
 }
 
 export default function GardenCanvas({
   children,
-  backgroundColor = '#F8F9FA',
+  backgroundColor = Theme.colors.background.primary,
   onCanvasTap,
   onGridTap,
+  onDoubleTap,
   unlockedTiles = [],
   gridConfig = DEFAULT_GRID_CONFIG,
   showGrid = true,
+  enableZoom = true,
 }: GardenCanvasProps) {
 
-  // Canvas size to fit the isometric grid with padding
-  const canvasWidth = screenWidth * 2;
-  const canvasHeight = screenHeight * 2;
+  // Canvas size matches screen dimensions
+  const canvasWidth = screenWidth;
+  const canvasHeight = screenHeight;
 
-  // Handle tap gestures - convert to grid coordinates
+  // Double-tap detection
+  const lastTapRef = useRef<number>(0);
+  const tapCountRef = useRef<number>(0);
+
+  // Handle tap gestures - convert to grid coordinates and detect double-tap
   const handleTap = (event: any) => {
     if (event.nativeEvent.state === 4) { // State.END
+      const now = Date.now();
       const { x, y } = event.nativeEvent;
 
-      // Call original canvas tap handler if provided
-      if (onCanvasTap) {
-        onCanvasTap(event);
+      // Double-tap detection logic
+      const timeSinceLastTap = now - lastTapRef.current;
+
+      if (timeSinceLastTap < 300) { // 300ms window for double-tap
+        tapCountRef.current += 1;
+
+        if (tapCountRef.current === 2) {
+          // Double-tap detected!
+          if (onDoubleTap) {
+            onDoubleTap();
+          }
+          tapCountRef.current = 0; // Reset counter
+          return; // Don't process as single tap
+        }
+      } else {
+        tapCountRef.current = 1; // First tap or reset
       }
 
-      // Call grid tap handler if provided
-      if (onGridTap) {
-        const gridPos = snapToGrid({ x, y }, gridConfig);
-        onGridTap(gridPos);
-      }
+      lastTapRef.current = now;
+
+      // Delay single-tap actions to allow for potential double-tap
+      setTimeout(() => {
+        if (tapCountRef.current === 1) {
+          // Process as single tap after delay
+          if (onCanvasTap) {
+            onCanvasTap(event);
+          }
+
+          if (onGridTap) {
+            const gridPos = snapToGrid({ x, y }, gridConfig);
+            onGridTap(gridPos);
+          }
+          tapCountRef.current = 0; // Reset counter
+        }
+      }, 300);
     }
   };
 
@@ -103,18 +139,12 @@ export default function GardenCanvas({
           backgroundColor,
         }
       ]}
-      maximumZoomScale={3}
-      minimumZoomScale={0.4}
-      zoomScale={0.5}
+      maximumZoomScale={enableZoom ? 8 : 1}
+      minimumZoomScale={1}
       showsVerticalScrollIndicator={false}
       showsHorizontalScrollIndicator={false}
       bounces={true}
       bouncesZoom={true}
-      // Start in center of canvas where the grid is
-      contentOffset={{
-        x: (canvasWidth - screenWidth) / 2,
-        y: (canvasHeight - screenHeight) / 4,
-      }}
     >
       <TapGestureHandler onHandlerStateChange={handleTap}>
         <View style={styles.canvasContent}>
@@ -136,11 +166,12 @@ const styles = StyleSheet.create({
   canvas: {
     position: 'relative',
     // Light background with subtle pattern
-    backgroundColor: '#F8F9FA',
   },
   canvasContent: {
     flex: 1,
     width: '100%',
     height: '100%',
+    minHeight: '100%',
+    minWidth: '100%',
   },
 });

@@ -11,6 +11,9 @@ const schema = defineSchema({
     userId: v.id("users"),
     firstName: v.optional(v.string()),
     lastName: v.optional(v.string()),
+    username: v.optional(v.string()),
+    phoneNumber: v.optional(v.string()),
+    region: v.optional(v.string()),
 
     totalDistance: v.number(),       // metres
     totalWorkouts: v.number(),
@@ -18,6 +21,7 @@ const schema = defineSchema({
 
     // Basic preferences
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
+    weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))), // 0 = Sunday, 1 = Monday
     
     // Garden preferences
     gardenTheme: v.optional(v.string()), // Future: different garden themes
@@ -31,6 +35,7 @@ const schema = defineSchema({
     autoSyncEnabled: v.optional(v.boolean()),
 
     lastHealthKitSync: v.optional(v.string()),
+    healthKitSyncAnchor: v.optional(v.string()), // For efficient HealthKit syncing
     lastStravaSync: v.optional(v.string()),
 
     // Strava tokens
@@ -46,6 +51,8 @@ const schema = defineSchema({
     pushNotificationsEnabled: v.optional(v.boolean()),
 
     healthKitInitialSyncCompleted: v.optional(v.boolean()),
+    hasSeenInitialSyncModal: v.optional(v.boolean()),
+    hasSeenWelcomeModal: v.optional(v.boolean()),
 
     updatedAt: v.string()
   }).index("by_user", ["userId"]),
@@ -105,6 +112,7 @@ const schema = defineSchema({
 
     // Garden integration - plant earned from this run
     plantEarned: v.optional(v.id("plants")),
+    celebrationShown: v.optional(v.boolean()), // Whether celebration modal was shown for this activity
   })
     .index("by_user", ["userId"])
     .index("by_user_and_date", ["userId", "startDate"])
@@ -245,6 +253,17 @@ const schema = defineSchema({
     .index("by_user", ["userId"])
     .index("by_status", ["status"])
     .index("by_type", ["type"]),
+
+  /* ────────────────────────────── support chat */
+  supportMessages: defineTable({
+    userId: v.id("users"),
+    message: v.string(),
+    isFromSupport: v.boolean(),
+    createdAt: v.string(),
+    updatedAt: v.string(),
+  })
+    .index("by_user", ["userId"])
+    .index("by_user_date", ["userId", "createdAt"]),
 });
 
 export default schema;

@@ -1,7 +1,6 @@
 import { ConvexReactClient } from 'convex/react';
 import * as SecureStore from 'expo-secure-store';
 import { openAuthSessionAsync } from 'expo-web-browser';
-import { Linking } from 'react-native';
 import { api } from '../convex/_generated/api';
 
 export interface StravaAthlete {
@@ -41,7 +40,7 @@ class StravaService {
   private static readonly AUTH_URL = 'https://www.strava.com/oauth/authorize';
   private static readonly MOBILE_AUTH_URL = 'https://www.strava.com/oauth/mobile/authorize';
   private static readonly TOKEN_URL = 'https://www.strava.com/oauth/token';
-  private static readonly APP_DOMAIN = 'www.blaze.run';
+  private static readonly APP_DOMAIN = 'www.rungarden.app';
   
   private static readonly SECURE_STORE_KEYS = {
     ACCESS_TOKEN: 'strava_access_token',
@@ -74,96 +73,39 @@ class StravaService {
   }
 
   /**
-   * Authenticate with Strava using OAuth 2.0 Mobile Flow (similar to iOS implementation)
+   * Authenticate with Strava using OAuth 2.0 Web Flow
    */
   static async authenticate(convexClient: ConvexReactClient): Promise<boolean> {
     try {
-      const redirectUri = 'blaze://' + this.APP_DOMAIN;
+      const redirectUri = 'rungarden://' + this.APP_DOMAIN;
       const scope = 'read,activity:read_all';
       
       // Save convex client so handleOAuthCallback can use it
       this._convex = convexClient;
       
-      // Try to open Strava app first (like the iOS implementation)
-      const appOAuthUrl = `strava://oauth/mobile/authorize?client_id=${this.CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&approval_prompt=auto&scope=${scope}`;
+      console.log('[StravaService] Starting web OAuth authentication...');
       
-      console.log('[StravaService] Trying to open Strava app...');
-      console.log('[StravaService] App OAuth URL:', appOAuthUrl);
+      // Use web OAuth for reliable authentication
+      const webOAuthUrl = `${this.AUTH_URL}?client_id=${this.CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&approval_prompt=auto&scope=${scope}`;
       
-      // Try to check if Strava app is available
-      let canOpenStravaApp = false;
-      try {
-        canOpenStravaApp = await Linking.canOpenURL('strava://');
-        console.log('[StravaService] Can open Strava app:', canOpenStravaApp);
-      } catch (error) {
-        console.log('[StravaService] Error checking Strava app availability:', error);
-        canOpenStravaApp = false;
+      console.log('[StravaService] Web OAuth URL:', webOAuthUrl);
+      
+      const result = await openAuthSessionAsync(webOAuthUrl, redirectUri);
+      
+      console.log('[StravaService] Web auth result:', result);
+      
+      if (result.type === 'success' && result.url) {
+        return await this.handleOAuthCallback(result.url);
       }
-      // TODO: Remove this
-      canOpenStravaApp = false;
-
       
-      if (canOpenStravaApp) {
-        console.log('[StravaService] Strava app is available, opening app...');
-        
-        // Listen for the redirect back to our app
-        const handleUrl = (event: { url: string }) => {
-          console.log('[StravaService] Received URL from Strava app:', event.url);
-          this.handleOAuthCallback(event.url);
-        };
-        
-        const subscription = Linking.addEventListener('url', handleUrl);
-        
-        try {
-          await Linking.openURL(appOAuthUrl);
-          
-          // Return a promise that resolves when we get the callback
-          return new Promise((resolve) => {
-            const timeout = setTimeout(() => {
-              subscription?.remove();
-              console.log('[StravaService] Timeout waiting for Strava app callback');
-              resolve(false);
-            }, 60000); // 60 second timeout
-            
-            // Store the resolve function to call it when we get the callback
-            this.authPromiseResolve = (success: boolean) => {
-              clearTimeout(timeout);
-              subscription?.remove();
-              resolve(success);
-            };
-          });
-          
-        } catch (error) {
-          subscription?.remove();
-          throw error;
-        }
-        
-      } else {
-        console.log('[StravaService] Strava app not available, using web OAuth...');
-        
-        // Fall back to web OAuth using SFAuthenticationSession equivalent
-        const webOAuthUrl = `${this.MOBILE_AUTH_URL}?client_id=${this.CLIENT_ID}&redirect_uri=${encodeURIComponent(redirectUri)}&response_type=code&approval_prompt=auto&scope=${scope}`;
-        
-        console.log('[StravaService] Web OAuth URL:', webOAuthUrl);
-        
-        const result = await openAuthSessionAsync(webOAuthUrl, redirectUri);
-        
-        console.log('[StravaService] Web auth result:', result);
-        
-        if (result.type === 'success' && result.url) {
-          return await this.handleOAuthCallback(result.url);
-        }
-        
-        return false;
-      }
+      console.log('[StravaService] Authentication cancelled or failed');
+      return false;
       
     } catch (error) {
       console.error('[StravaService] Error during authentication:', error);
       return false;
     }
   }
-  
-  private static authPromiseResolve: ((success: boolean) => void) | null = null;
   
   /**
    * Handle OAuth callback URL and extract authorization code
@@ -178,10 +120,6 @@ class StravaService {
       
       if (error) {
         console.error('[StravaService] OAuth error:', error);
-        if (this.authPromiseResolve) {
-          this.authPromiseResolve(false);
-          this.authPromiseResolve = null;
-        }
         return false;
       }
       
@@ -194,18 +132,10 @@ class StravaService {
       }
       
       console.log('[StravaService] No code received in callback');
-      if (this.authPromiseResolve) {
-        this.authPromiseResolve(false);
-        this.authPromiseResolve = null;
-      }
       return false;
       
     } catch (error) {
       console.error('[StravaService] Error processing OAuth callback:', error);
-      if (this.authPromiseResolve) {
-        this.authPromiseResolve(false);
-        this.authPromiseResolve = null;
-      }
       return false;
     }
   }

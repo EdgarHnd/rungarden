@@ -38,7 +38,7 @@ export default function PlantCelebrationModal({
   metricSystem = 'metric',
   streakInfo
 }: PlantCelebrationModalProps) {
-  const [currentStep, setCurrentStep] = useState<'plant-stats' | 'streak'>('plant-stats');
+  const [currentStep, setCurrentStep] = useState<'plant-stats' | 'streak'>('streak');
 
   // Reanimated values for animations
   const stepScale = useSharedValue(0);
@@ -141,14 +141,10 @@ export default function PlantCelebrationModal({
   };
 
   const handleContinue = () => {
-    if (currentStep === 'plant-stats') {
+    if (currentStep === 'streak') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      if (streakInfo && streakInfo.currentStreak > 0) {
-        setCurrentStep('streak');
-      } else {
-        handleClose();
-      }
-    } else if (currentStep === 'streak') {
+      setCurrentStep('plant-stats');
+    } else if (currentStep === 'plant-stats') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
       handleClose();
     }
@@ -264,9 +260,7 @@ export default function PlantCelebrationModal({
         onPress={handleContinue}
         activeOpacity={0.8}
       >
-        <Text style={styles.actionButtonText}>
-          {streakInfo && streakInfo.currentStreak > 0 ? 'CLAIM' : 'CLAIM'}
-        </Text>
+        <Text style={styles.actionButtonText}>Plant in Garden</Text>
       </TouchableOpacity>
     </Animated.View>
   );

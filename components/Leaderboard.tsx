@@ -60,7 +60,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
 
   const profile = useQuery(api.userProfile.getOrCreateProfile);
 
-  const incomingRequests = useQuery(api.friends.getPendingFriendRequests);
+  const incomingRequests = useQuery(api.friends.getIncomingFriendRequests);
   const respondRequest = useMutation(api.friends.respondToFriendRequest);
 
   const isLoading = leaderboard === undefined || userRank === undefined;
@@ -204,7 +204,7 @@ export default function Leaderboard({ onError }: LeaderboardProps) {
               keyExtractor={(item) => item._id as string}
               renderItem={({ item }) => (
                 <View style={styles.requestRow}>
-                  <Text style={styles.requestName}>{item.name}</Text>
+                  <Text style={styles.requestName}>{item.fromUser?.name || item.fromUser?.firstName || 'Unknown User'}</Text>
                   <View style={styles.requestActions}>
                     <TouchableOpacity
                       style={[styles.acceptButton, styles.requestButton]}

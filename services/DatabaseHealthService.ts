@@ -11,6 +11,7 @@ export interface SyncResult {
   created: number;
   updated: number;
   skipped: number;
+  deleted?: number; // Number of deleted activities
   lastSyncDate: string;
   distanceGained?: number;
   coinsGained?: number; // Coins gained from new activities
@@ -18,10 +19,12 @@ export interface SyncResult {
   newLevel?: number;
   oldLevel?: number;
   plantsAwarded?: number; // Plants awarded during sync
+  newAnchor?: string; // For efficient syncing
 }
 
 class DatabaseHealthService {
   private convexClient: ConvexReactClient;
+  private backgroundSubscription: (() => void) | string | null = null;
 
   constructor(convexClient: ConvexReactClient) {
     this.convexClient = convexClient;
@@ -35,44 +38,61 @@ class DatabaseHealthService {
   }
 
   /**
-   * Get activities from database (cached)
+   * Check if we have the required HealthKit permissions
    */
-  async getActivitiesFromDatabase(days: number = 30, limit: number = 30): Promise<DatabaseActivity[]> {
-    try {
-      console.log(`[DatabaseHealthService] Fetching activities for ${days} days with limit ${limit}`);
-      const activities = await this.convexClient.query(api.activities.getUserActivities, {
-        days,
-        limit,
-      });
-      console.log(`[DatabaseHealthService] Fetched ${activities.length} activities from database`);
-      return activities as DatabaseActivity[];
-    } catch (error) {
-      console.error('Error fetching activities from database:', error);
-      throw error;
-    }
+  async hasRequiredPermissions(): Promise<boolean> {
+    return HealthService.hasRequiredPermissions();
   }
 
   /**
-   * Sync activities from HealthKit to database
+   * Initial sync from HealthKit with proper celebration marking for old activities
    */
-  async syncActivitiesFromHealthKit(days: number = 30): Promise<SyncResult> {
+  async initialSyncFromHealthKit(days: number = 365): Promise<SyncResult> {
     try {
-      // Get fresh data from HealthKit
-      const healthKitActivities = await HealthService.getRunningActivities(days);
+      console.log('[DatabaseHealthService] Starting initial HealthKit sync...');
       
-      if (healthKitActivities.length === 0) {
+      // Determine if this is the initial sync
+      const profile = await this.getUserProfile();
+      const initialSync = !(profile && (profile as any).healthKitInitialSyncCompleted);
+      console.log(`[DatabaseHealthService] Initial sync detected: ${initialSync}`);
+      
+      // Get activities for current year only
+      const currentYear = new Date().getFullYear();
+      const startOfYear = new Date(currentYear, 0, 1);
+      const endOfYear = new Date(currentYear, 11, 31, 23, 59, 59);
+      
+      const { activities, newAnchor, deletedActivities } = await HealthService.getRunningActivitiesWithAnchor(days);
+      
+      // Filter activities to current year only
+      const currentYearActivities = activities.filter(activity => {
+        const activityDate = new Date(activity.startDate);
+        return activityDate >= startOfYear && activityDate <= endOfYear;
+      });
+      
+      console.log(`[DatabaseHealthService] Retrieved ${currentYearActivities.length} activities from ${currentYear}, ${deletedActivities.length} deleted`);
+      
+      if (currentYearActivities.length === 0) {
+        // Mark initial sync as completed even if no activities
+        if (initialSync) {
+          await this.convexClient.mutation(api.userProfile.updateProfile, {
+            healthKitInitialSyncCompleted: true,
+          });
+          console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed (no activities)');
+        }
+        
         return {
           created: 0,
           updated: 0,
           skipped: 0,
           lastSyncDate: new Date().toISOString(),
           distanceGained: 0,
-          leveledUp: false,
+          plantsAwarded: 0,
+          newAnchor
         };
       }
 
       // Transform to database format
-      const activitiesForDb = healthKitActivities.map((activity: RunningActivity) => ({
+      const activitiesForDb = currentYearActivities.map((activity: RunningActivity) => ({
         healthKitUuid: activity.uuid,
         startDate: activity.startDate,
         endDate: activity.endDate,
@@ -83,20 +103,109 @@ class DatabaseHealthService {
         workoutName: activity.workoutName,
       }));
 
+      console.log(`[DatabaseHealthService] Initial syncing ${activitiesForDb.length} activities to database`);
+
+      // Use the plant-awarding mutation for initial sync
+      const syncResult = await this.convexClient.mutation(api.activities.syncActivitiesFromHealthKitWithPlants, {
+        activities: activitiesForDb,
+        deletedUuids: deletedActivities,
+      });
+
+      // Mark initial sync as completed (only if we actually had activities to sync)
+      if (initialSync && syncResult.created > 0) {
+        await this.convexClient.mutation(api.userProfile.updateProfile, {
+          healthKitInitialSyncCompleted: true,
+        });
+        console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed (with activities)');
+      }
+
+      console.log(`[DatabaseHealthService] Initial sync completed:`, syncResult);
+
+      return {
+        ...syncResult,
+        lastSyncDate: new Date().toISOString(),
+        newAnchor,
+      };
+
+    } catch (error) {
+      console.error('[DatabaseHealthService] Error during initial sync:', error);
+      throw error;
+    }
+  }
+
+  /**
+   * Sync activities from HealthKit to database with plant awarding
+   */
+  async syncActivitiesFromHealthKit(days: number = 30, anchor?: string): Promise<SyncResult> {
+    try {
+      console.log('[DatabaseHealthService] Starting HealthKit sync...');
+      
       // Determine if this is the initial sync
       const profile = await this.getUserProfile();
-      const initialSync = !(profile && (profile as any).healthKitInitialSyncCompleted);
+      const initialSync = !(profile?.healthKitInitialSyncCompleted);
+      console.log(`[DatabaseHealthService] Initial sync detected: ${initialSync}`);
+      
+      // Get activities with anchor for efficient syncing
+      const { activities, newAnchor, deletedActivities } = await HealthService.getRunningActivitiesWithAnchor(days, anchor);
+      
+      console.log(`[DatabaseHealthService] Retrieved ${activities.length} activities, ${deletedActivities.length} deleted`);
+      
+      // Log first few activities for debugging
+      if (activities.length > 0) {
+        console.log('[DatabaseHealthService] Sample activities:', activities.slice(0, 3).map(a => ({
+          uuid: a.uuid.substring(0, 8),
+          distance: a.distance,
+          duration: a.duration,
+          workoutName: a.workoutName
+        })));
+      }
+      
+      if (activities.length === 0 && deletedActivities.length === 0) {
+        console.log('[DatabaseHealthService] No new or deleted activities found');
+        return {
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          lastSyncDate: new Date().toISOString(),
+          distanceGained: 0,
+          leveledUp: false,
+          newAnchor
+        };
+      }
 
-      // Sync to database
-      const syncResult = await this.convexClient.mutation(
-        api.activities.syncActivitiesFromHealthKit,
-        { activities: activitiesForDb, initialSync }
-      );
+      // Transform to database format
+      const activitiesForDb = activities.map((activity: RunningActivity) => ({
+        healthKitUuid: activity.uuid,
+        startDate: activity.startDate,
+        endDate: activity.endDate,
+        duration: activity.duration,
+        distance: activity.distance,
+        calories: activity.calories,
+        averageHeartRate: activity.averageHeartRate,
+        workoutName: activity.workoutName,
+      }));
+
+      console.log(`[DatabaseHealthService] Syncing ${activitiesForDb.length} activities to database`);
+
+      // Use the plant-awarding mutation for initial sync
+      const syncResult = await this.convexClient.mutation(api.activities.syncActivitiesFromHealthKitWithPlants, {
+        activities: activitiesForDb,
+        deletedUuids: deletedActivities,
+      });
+
+      // Mark initial sync as completed if this was initial sync
+      if (initialSync) {
+        await this.convexClient.mutation(api.userProfile.updateProfile, {
+          healthKitInitialSyncCompleted: true,
+        });
+        console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed');
+      }
 
       console.log('[DatabaseHealthService] Sync completed:', syncResult);
       return {
         ...syncResult,
         lastSyncDate: new Date().toISOString(),
+        newAnchor
       };
     } catch (error) {
       console.error('Error syncing activities from HealthKit:', error);
@@ -105,72 +214,86 @@ class DatabaseHealthService {
   }
 
   /**
-   * Force sync - useful for manual refresh
+   * Force sync from HealthKit with plant awarding (for manual sync button)
    */
-  async forceSyncFromHealthKit(days: number = 30): Promise<SyncResult> {
-    console.log('[DatabaseHealthService] Force syncing from HealthKit...');
+  async forceSyncFromHealthKitWithPlants(days: number = 30): Promise<SyncResult> {
     return this.syncActivitiesFromHealthKit(days);
   }
 
   /**
-   * Force sync with plant awarding - useful for testing
-   * This method will award plants even for existing activities
+   * Enable auto-sync by subscribing to HealthKit changes
    */
-  async forceSyncFromHealthKitWithPlants(days: number = 30): Promise<SyncResult> {
+  async enableAutoSync(): Promise<boolean> {
     try {
-      console.log('[DatabaseHealthService] Force syncing from HealthKit with plant awarding...');
+      console.log('[DatabaseHealthService] Enabling auto-sync...');
       
-      // Get fresh data from HealthKit
-      const healthKitActivities = await HealthService.getRunningActivities(days);
-      
-      if (healthKitActivities.length === 0) {
-        console.log('[DatabaseHealthService] No HealthKit activities found');
-        return {
-          created: 0,
-          updated: 0,
-          skipped: 0,
-          lastSyncDate: new Date().toISOString(),
-          distanceGained: 0,
-          leveledUp: false,
-        };
+      // First ensure we have permissions
+      const hasPermissions = await this.hasRequiredPermissions();
+      if (!hasPermissions) {
+        console.log('[DatabaseHealthService] Auto-sync requires HealthKit permissions');
+        return false;
       }
 
-      // Transform to database format
-      const activitiesForDb = healthKitActivities.map((activity: RunningActivity) => ({
-        healthKitUuid: activity.uuid,
-        startDate: activity.startDate,
-        endDate: activity.endDate,
-        duration: activity.duration,
-        distance: activity.distance,
-        calories: activity.calories,
-        averageHeartRate: activity.averageHeartRate,
-        workoutName: activity.workoutName,
-      }));
+      // For now, let's try a simpler approach - just log that auto-sync is enabled
+      // The background subscription might not work properly with the new HealthKit library
+      console.log('[DatabaseHealthService] Auto-sync enabled - will sync when app becomes active');
+      
+      // Try to set up background subscription, but don't fail if it doesn't work
+      try {
+        this.backgroundSubscription = HealthService.subscribeToWorkoutChanges(async () => {
+          console.log('[DatabaseHealthService] Auto-sync triggered by HealthKit change');
+          try {
+            // Get the user's stored anchor for efficient syncing
+            const profile = await this.getUserProfile();
+            const anchor = profile?.healthKitSyncAnchor;
+            
+            // Sync new data
+            const syncResult = await this.syncActivitiesFromHealthKit(30, anchor);
+            
+            // Update the stored anchor
+            if (syncResult.newAnchor) {
+              await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
+                healthKitSyncAnchor: syncResult.newAnchor,
+                lastHealthKitSync: new Date().toISOString()
+              });
+            }
 
-      // Force plant awarding mode (never treat as initial sync)
-      const syncResult = await this.convexClient.mutation(
-        api.activities.syncActivitiesFromHealthKitWithPlants,
-        { activities: activitiesForDb }
-      );
+            console.log('[DatabaseHealthService] Auto-sync completed:', syncResult);
+          } catch (error) {
+            console.error('[DatabaseHealthService] Auto-sync error:', error);
+          }
+        });
+        console.log('[DatabaseHealthService] Background subscription set up successfully');
+      } catch (subscriptionError) {
+        console.warn('[DatabaseHealthService] Background subscription failed, but auto-sync is still enabled:', subscriptionError);
+      }
 
-      console.log('[DatabaseHealthService] Sync with plants completed:', syncResult);
-      return {
-        ...syncResult,
-        lastSyncDate: new Date().toISOString(),
-      };
+      return true;
     } catch (error) {
-      console.error('Error syncing activities from HealthKit with plants:', error);
-      throw error;
+      console.error('[DatabaseHealthService] Error enabling auto-sync:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Disable auto-sync
+   */
+  disableAutoSync(): void {
+    if (this.backgroundSubscription) {
+      console.log('[DatabaseHealthService] Disabling auto-sync...');
+      if (typeof this.backgroundSubscription === 'function') {
+        this.backgroundSubscription();
+      }
+      this.backgroundSubscription = null;
     }
   }
 
   /**
    * Get user profile from database
    */
-  async getUserProfile(): Promise<UserProfile> {
+  async getUserProfile(): Promise<UserProfile | null> {
     try {
-      const profile = await this.convexClient.query(api.userProfile.getOrCreateProfile);
-      return profile as UserProfile;
+      return await this.convexClient.query(api.userProfile.getOrCreateProfile);
     } catch (error) {
       console.error('Error fetching user profile:', error);
       throw error;
@@ -178,54 +301,49 @@ class DatabaseHealthService {
   }
 
   /**
-   * Check if HealthKit sync is enabled for the user
+   * Get activities from database
    */
-  async isHealthKitSyncEnabled(): Promise<boolean> {
+  async getActivitiesFromDatabase(days: number = 30, limit: number = 100): Promise<DatabaseActivity[]> {
     try {
-      const profile = await this.getUserProfile();
-      return profile.healthKitSyncEnabled ?? false;
-    } catch (error) {
-      console.error('Error checking HealthKit sync status:', error);
-      return false;
-    }
-  }
-
-  /**
-   * Enable or disable HealthKit sync
-   */
-  async setHealthKitSyncEnabled(enabled: boolean): Promise<void> {
-    try {
-      await this.convexClient.mutation(api.userProfile.updateSyncPreferences, {
-        healthKitSyncEnabled: enabled,
-        lastHealthKitSync: enabled ? undefined : null, // Clear sync timestamp when disabling
+      const year = new Date().getFullYear();
+      return await this.convexClient.query(api.activities.getUserActivitiesForYear, {
+        year,
+        limit
       });
-      console.log(`[DatabaseHealthService] HealthKit sync ${enabled ? 'enabled' : 'disabled'}`);
     } catch (error) {
-      console.error('Error updating HealthKit sync preference:', error);
+      console.error('Error fetching activities from database:', error);
       throw error;
     }
   }
 
   /**
-   * Sync activities only if HealthKit sync is enabled
+   * Sync activities if enabled (for app lifecycle events)
    */
   async syncActivitiesIfEnabled(days: number = 30): Promise<SyncResult | null> {
-    const isEnabled = await this.isHealthKitSyncEnabled();
-    if (!isEnabled) {
-      console.log('[DatabaseHealthService] HealthKit sync is disabled, skipping sync');
-      return null;
+    const profile = await this.getUserProfile();
+    
+    if (profile?.healthKitSyncEnabled) {
+      return this.syncActivitiesFromHealthKit(days, profile.healthKitSyncAnchor);
     }
     
-    return this.syncActivitiesFromHealthKit(days);
+    return null;
   }
 
   /**
-   * Get activities from database (auto-sync is now handled via webhooks for Strava)
+   * Get activities with optional sync (for display purposes)
    */
   async getActivitiesWithOptionalSync(days: number = 30): Promise<DatabaseActivity[]> {
-    // Simply return activities from database since webhooks handle real-time sync
+    // Simply return activities from database since auto-sync handles real-time updates
     return this.getActivitiesFromDatabase(days, 100);
+  }
+
+  /**
+   * Clean up resources
+   */
+  cleanup(): void {
+    this.disableAutoSync();
+    HealthService.cleanup();
   }
 }
 
-export default DatabaseHealthService; 
+export default DatabaseHealthService;

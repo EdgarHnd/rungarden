@@ -52,6 +52,14 @@ export const logNotification = internalMutation({
 export const sendActivityNotification = action({
   args: {
     userId: v.string(),
+    activityData: v.optional(v.object({
+      distance: v.number(),
+      duration: v.number(),
+      calories: v.number(),
+      startDate: v.string(),
+      plantEmoji: v.optional(v.string()),
+      plantName: v.optional(v.string()),
+    })),
   },
   handler: async (ctx, args) => {
     try {
@@ -85,6 +93,7 @@ export const sendActivityNotification = action({
         data: {
           type: 'new_activity',
           action: 'open_celebration',
+          activityData: args.activityData,
         },
         badge: 1,
         channelId: 'activities',
@@ -423,6 +432,72 @@ async function sendExpoPushNotification(messages: ExpoPushMessage[]): Promise<{
     return { success: false, error: (error as Error).message };
   }
 }
+
+// Send push notification with activity data for celebration modal
+export const sendActivityNotificationWithData = action({
+  args: {
+    userId: v.string(),
+    stravaActivityId: v.number(),
+  },
+  handler: async (ctx, args): Promise<any> => {
+    try {
+      console.log(`[PushNotifications] Fetching activity data for notification: ${args.stravaActivityId}`);
+      
+      // Get the activity from database
+      const activity: any = await ctx.runQuery(api.activities.getActivityByStravaId, {
+        stravaId: args.stravaActivityId,
+      });
+
+      if (!activity) {
+        console.log(`[PushNotifications] Activity not found: ${args.stravaActivityId}`);
+        // Fallback to simple notification
+        return ctx.runAction(api.pushNotifications.sendActivityNotification, {
+          userId: args.userId,
+        });
+      }
+
+      let plantData: any = null;
+      
+      // Get plant data if activity has a plant
+      if (activity.plantEarned) {
+        try {
+          const plant: any = await ctx.runQuery(api.plants.getPlantById, {
+            plantId: activity.plantEarned,
+          });
+          
+          if (plant && plant.plantType) {
+            plantData = {
+              plantEmoji: plant.plantType.emoji,
+              plantName: plant.plantType.name,
+            };
+          }
+        } catch (error) {
+          console.warn(`[PushNotifications] Could not fetch plant data:`, error);
+        }
+      }
+
+      // Send notification with activity data
+      return ctx.runAction(api.pushNotifications.sendActivityNotification, {
+        userId: args.userId,
+        activityData: {
+          distance: activity.distance,
+          duration: activity.duration,
+          calories: activity.calories,
+          startDate: activity.startDate,
+          plantEmoji: plantData?.plantEmoji,
+          plantName: plantData?.plantName,
+        },
+      });
+
+    } catch (error) {
+      console.error(`[PushNotifications] Error sending activity notification with data:`, error);
+      // Fallback to simple notification
+      return ctx.runAction(api.pushNotifications.sendActivityNotification, {
+        userId: args.userId,
+      });
+    }
+  }
+});
 
 // Test push notification
 export const sendTestNotification = action({

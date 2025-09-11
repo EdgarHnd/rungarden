@@ -214,6 +214,16 @@ export const resetActivities = mutation({
     const activities = await ctx.db.query("activities").take(50);
     
     for (const activity of activities) {
+      // Delete plants earned from this activity
+      const plantsFromActivity = await ctx.db
+        .query("plants")
+        .withIndex("by_activity", (q: any) => q.eq("earnedFromActivityId", activity._id))
+        .collect();
+
+      for (const plant of plantsFromActivity) {
+        await ctx.db.delete(plant._id);
+      }
+
       await ctx.db.delete(activity._id);
     }
     
@@ -261,6 +271,16 @@ export const resetUserProfiles = mutation({
         totalWorkouts: 0,
         totalCalories: 0,
         unlockedPlantTypes: [],
+        // Reset sync-related fields
+        healthKitSyncEnabled: false,
+        stravaSyncEnabled: false,
+        lastHealthKitSync: undefined,
+        lastStravaSync: undefined,
+        healthKitInitialSyncCompleted: false,
+        hasSeenInitialSyncModal: false,
+        stravaInitialSyncCompleted: false,
+        autoSyncEnabled: false,
+        hasSeenWelcomeModal: false,
         updatedAt: new Date().toISOString(),
       });
     }

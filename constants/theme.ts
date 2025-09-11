@@ -20,7 +20,7 @@ export const Theme = {
     // Accent colors (keeping the nature-inspired orange/brown theme)
     accent: {
       primary: '#4035F1',      // Chocolate/saddle brown - main accent color
-      secondary: '#FB5603',    // Sienna brown - darker accent
+      secondary: '#4035F1',    // Sienna brown - darker accent
       light: '#DEB887',        // Burlywood - light accent
     },
 

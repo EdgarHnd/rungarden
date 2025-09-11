@@ -11,10 +11,24 @@ interface SyncResult {
   skipped: number;
   lastSyncDate: string;
   distanceGained?: number;
+  plantsAwarded?: number;
   newRuns?: any[];
 }
 
 // Gamification functions moved to ./utils/gamification.ts
+
+// Get activity by Strava ID
+export const getActivityByStravaId = query({
+  args: {
+    stravaId: v.number(),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("activities")
+      .withIndex("by_strava_id", (q) => q.eq("stravaId", args.stravaId))
+      .first();
+  },
+});
 
 export const getUserActivitiesForYear = query({
   args: {
@@ -161,6 +175,7 @@ export const syncActivitiesFromHealthKit = mutation({
       averageHeartRate: v.optional(v.number()),
       workoutName: v.optional(v.string()),
     })),
+    deletedUuids: v.optional(v.array(v.string())),
     initialSync: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
@@ -261,11 +276,10 @@ export const syncActivitiesFromHealthKit = mutation({
         totalDistanceGained += activity.distance;
 
         // Award plant for this run distance (if distance meets criteria)
-        if (!initialSync && activity.distance > 0) {
+        if (activity.distance > 0) {
           try {
             await ctx.runMutation(api.plants.awardPlantForActivity, {
               activityId: newActivityId,
-              distance: activity.distance,
             });
           } catch (error) {
             console.error(`[syncActivitiesFromHealthKit] Failed to award plant for activity ${newActivityId}:`, error);
@@ -284,6 +298,36 @@ export const syncActivitiesFromHealthKit = mutation({
       syncResults.distanceGained = totalDistanceGained;
     }
     
+    // Handle deleted activities
+    let deletedCount = 0;
+    if (args.deletedUuids && args.deletedUuids.length > 0) {
+      console.log(`[syncActivitiesFromHealthKit] Processing ${args.deletedUuids.length} deleted activities`);
+      
+      for (const deletedUuid of args.deletedUuids) {
+        // Find the activity by HealthKit UUID
+        const activityToDelete = await ctx.db
+          .query("activities")
+          .withIndex("by_healthkit_uuid", (q) => q.eq("healthKitUuid", deletedUuid))
+          .first();
+
+        if (activityToDelete && activityToDelete.userId === userId) {
+          // Delete associated plant if it exists
+          if (activityToDelete.plantEarned) {
+            const plant = await ctx.db.get(activityToDelete.plantEarned);
+            if (plant) {
+              await ctx.db.delete(plant._id);
+              console.log(`[syncActivitiesFromHealthKit] Deleted plant from deleted activity:`, plant._id);
+            }
+          }
+
+          // Delete the activity
+          await ctx.db.delete(activityToDelete._id);
+          deletedCount++;
+          console.log(`[syncActivitiesFromHealthKit] Deleted activity: ${deletedUuid}`);
+        }
+      }
+    }
+    
     // Update last sync date and mark initial sync completed if applicable
     const userProfile = await ctx.db
       .query("userProfiles")
@@ -297,7 +341,182 @@ export const syncActivitiesFromHealthKit = mutation({
       });
     }
 
-    return syncResults;
+    return {
+      ...syncResults,
+      deleted: deletedCount,
+    };
+  },
+});
+
+/*──────────────────────── sync activities from HealthKit with initial sync support */
+export const syncActivitiesFromHealthKitInitial = mutation({
+  args: {
+    activities: v.array(v.object({
+      healthKitUuid: v.string(),
+      startDate: v.string(),
+      endDate: v.string(),
+      duration: v.number(),
+      distance: v.number(),
+      calories: v.number(),
+      averageHeartRate: v.optional(v.number()),
+      workoutName: v.optional(v.string()),
+    })),
+    deletedUuids: v.optional(v.array(v.string())),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const now = new Date().toISOString();
+    
+    const syncResults = {
+      created: 0,
+      updated: 0,
+      skipped: 0,
+      distanceGained: 0,
+      newRuns: [] as any[],
+    };
+
+    let totalDistanceGained = 0;
+    let plantsAwarded = 0;
+
+    for (const activity of args.activities) {
+      // Check if activity already exists
+      const existingActivity = await ctx.db
+        .query("activities")
+        .withIndex("by_healthkit_uuid", (q) => 
+          q.eq("healthKitUuid", activity.healthKitUuid)
+        )
+        .first();
+
+      // Calculate pace (min/km)
+      const pace = activity.distance > 0 ? 
+        (activity.duration / (activity.distance / 1000)) : undefined;
+
+      console.log(`[syncActivitiesFromHealthKitInitial] Processing activity: ${activity.workoutName} on ${activity.startDate}, distance: ${activity.distance}m`);
+
+      if (existingActivity) {
+        // Update existing activity
+        await ctx.db.patch(existingActivity._id, {
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          duration: activity.duration,
+          distance: activity.distance,
+          calories: activity.calories,
+          averageHeartRate: activity.averageHeartRate,
+          workoutName: activity.workoutName,
+          pace,
+          // Don't mark as celebrated yet - will be marked after InitialSyncModal is shown
+          celebrationShown: existingActivity.celebrationShown,
+        });
+        
+        syncResults.updated++;
+        console.log(`[syncActivitiesFromHealthKitInitial] Updated existing activity: ${activity.healthKitUuid}`);
+
+        // Store existing activity for batch plant awarding
+        if (activity.distance > 0 && !existingActivity.plantEarned) {
+          syncResults.newRuns.push({ id: existingActivity._id, distance: activity.distance });
+        }
+      } else {
+        // Create new activity
+        const newActivityId = await ctx.db.insert("activities", {
+          userId,
+          healthKitUuid: activity.healthKitUuid,
+          startDate: activity.startDate,
+          endDate: activity.endDate,
+          duration: activity.duration,
+          distance: activity.distance,
+          calories: activity.calories,
+          averageHeartRate: activity.averageHeartRate,
+          workoutName: activity.workoutName,
+          pace,
+          source: "healthkit",
+          syncedAt: now,
+          // Don't mark as celebrated yet - will be marked after InitialSyncModal is shown
+          celebrationShown: false,
+        });
+        
+        totalDistanceGained += activity.distance;
+        syncResults.created++;
+        syncResults.newRuns.push({ id: newActivityId, distance: activity.distance });
+        console.log(`[syncActivitiesFromHealthKitInitial] Created new activity: ${activity.healthKitUuid}, ID: ${newActivityId}`);
+      }
+    }
+
+    // Award plants in batch for better performance
+    if (syncResults.newRuns.length > 0) {
+      try {
+        const activityIds = syncResults.newRuns.map(run => run.id);
+        const plantResult = await ctx.runMutation(api.plants.awardPlantsForActivitiesBatch, {
+          activityIds
+        });
+        plantsAwarded = plantResult.plantsAwarded;
+        console.log(`[syncActivitiesFromHealthKitInitial] Batch awarded ${plantsAwarded} plants for ${activityIds.length} activities`);
+      } catch (error) {
+        console.error(`[syncActivitiesFromHealthKitInitial] Failed to batch award plants:`, error);
+      }
+    }
+
+    // Update user profile totals after sync
+    await updateUserProfileTotalsInternal(ctx, userId);
+    
+    // Simple distance tracking for garden app
+    if (totalDistanceGained > 0) {
+      syncResults.distanceGained = totalDistanceGained;
+    }
+    
+    // Update last sync date
+    const userProfile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q: any) => q.eq("userId", userId))
+      .first();
+
+    if (userProfile) {
+      await ctx.db.patch(userProfile._id, {
+        lastHealthKitSync: now,
+        updatedAt: now,
+      });
+    }
+
+    // Handle deleted activities if provided
+    let deletedCount = 0;
+    if (args.deletedUuids && args.deletedUuids.length > 0) {
+      console.log(`[syncActivitiesFromHealthKitInitial] Processing ${args.deletedUuids.length} deleted activities`);
+      
+      for (const deletedUuid of args.deletedUuids) {
+        const existingActivity = await ctx.db
+          .query("activities")
+          .withIndex("by_healthkit_uuid", (q: any) => q.eq("healthKitUuid", deletedUuid))
+          .first();
+        
+        if (existingActivity) {
+          // Delete any plants earned from this activity
+          const plantsFromActivity = await ctx.db
+            .query("plants")
+            .withIndex("by_activity", (q: any) => q.eq("earnedFromActivityId", existingActivity._id))
+            .collect();
+
+          for (const plant of plantsFromActivity) {
+            await ctx.db.delete(plant._id);
+            console.log(`[syncActivitiesFromHealthKitInitial] Deleted plant from deleted activity:`, plant._id);
+          }
+
+          await ctx.db.delete(existingActivity._id);
+          deletedCount++;
+          console.log(`[syncActivitiesFromHealthKitInitial] Deleted activity: ${deletedUuid}`);
+        }
+      }
+    }
+
+    console.log(`[syncActivitiesFromHealthKitInitial] Sync completed: ${syncResults.created} created, ${syncResults.updated} updated, ${deletedCount} deleted, ${plantsAwarded} plants awarded`);
+
+    return {
+      ...syncResults,
+      deleted: deletedCount,
+      plantsAwarded, // Add plants awarded to result
+    };
   },
 });
 
@@ -314,6 +533,7 @@ export const syncActivitiesFromHealthKitWithPlants = mutation({
       averageHeartRate: v.optional(v.number()),
       workoutName: v.optional(v.string()),
     })),
+    deletedUuids: v.optional(v.array(v.string())),
   },
   handler: async (ctx, args) => {
     const userId = await getAuthUserId(ctx);
@@ -369,7 +589,6 @@ export const syncActivitiesFromHealthKitWithPlants = mutation({
           try {
             await ctx.runMutation(api.plants.awardPlantForActivity, {
               activityId: existingActivity._id,
-              distance: activity.distance,
             });
             plantsAwarded++;
             console.log(`[syncActivitiesFromHealthKitWithPlants] Awarded plant for existing activity: ${activity.distance}m`);
@@ -404,7 +623,6 @@ export const syncActivitiesFromHealthKitWithPlants = mutation({
           try {
             await ctx.runMutation(api.plants.awardPlantForActivity, {
               activityId: newActivityId,
-              distance: activity.distance,
             });
             plantsAwarded++;
             console.log(`[syncActivitiesFromHealthKitWithPlants] Awarded plant for new activity: ${activity.distance}m`);
@@ -436,12 +654,254 @@ export const syncActivitiesFromHealthKitWithPlants = mutation({
       });
     }
 
-    console.log(`[syncActivitiesFromHealthKitWithPlants] Sync completed: ${syncResults.created} created, ${syncResults.updated} updated, ${plantsAwarded} plants awarded`);
+    // Handle deleted activities if provided
+    let deletedCount = 0;
+    if (args.deletedUuids && args.deletedUuids.length > 0) {
+      console.log(`[syncActivitiesFromHealthKitWithPlants] Processing ${args.deletedUuids.length} deleted activities`);
+      
+      for (const deletedUuid of args.deletedUuids) {
+        const existingActivity = await ctx.db
+          .query("activities")
+          .withIndex("by_healthkit_uuid", (q: any) => q.eq("healthKitUuid", deletedUuid))
+          .first();
+        
+        if (existingActivity) {
+          // Delete any plants earned from this activity
+          const plantsFromActivity = await ctx.db
+            .query("plants")
+            .withIndex("by_activity", (q: any) => q.eq("earnedFromActivityId", existingActivity._id))
+            .collect();
+
+          for (const plant of plantsFromActivity) {
+            await ctx.db.delete(plant._id);
+            console.log(`[syncActivitiesFromHealthKitWithPlants] Deleted plant from deleted activity:`, plant._id);
+          }
+
+          await ctx.db.delete(existingActivity._id);
+          deletedCount++;
+          console.log(`[syncActivitiesFromHealthKitWithPlants] Deleted activity: ${deletedUuid}`);
+        }
+      }
+    }
+
+    console.log(`[syncActivitiesFromHealthKitWithPlants] Sync completed: ${syncResults.created} created, ${syncResults.updated} updated, ${deletedCount} deleted, ${plantsAwarded} plants awarded`);
 
     return {
       ...syncResults,
+      deleted: deletedCount,
       plantsAwarded, // Add plants awarded to result
     };
+  },
+});
+
+// Sync activities from Strava (initial sync version with celebration marking)
+export const syncActivitiesFromStravaInitial = mutation({
+  args: {
+    userId: v.id("users"),
+    activities: v.array(v.object({
+      stravaId: v.number(),
+      startDate: v.string(),
+      endDate: v.string(),
+      duration: v.number(),
+      distance: v.number(),
+      calories: v.number(),
+      averageHeartRate: v.optional(v.number()),
+      workoutName: v.optional(v.string()),
+      totalElevationGain: v.optional(v.number()),
+      elevationHigh: v.optional(v.number()),
+      elevationLow: v.optional(v.number()),
+      averageTemp: v.optional(v.number()),
+      startLatLng: v.optional(v.array(v.number())),
+      endLatLng: v.optional(v.array(v.number())),
+      timezone: v.optional(v.string()),
+      isIndoor: v.optional(v.boolean()),
+      isCommute: v.optional(v.boolean()),
+      averageCadence: v.optional(v.number()),
+      averageWatts: v.optional(v.number()),
+      maxWatts: v.optional(v.number()),
+      kilojoules: v.optional(v.number()),
+      polyline: v.optional(v.string()),
+      maxSpeed: v.optional(v.number()),
+      averageSpeed: v.optional(v.number()),
+    })),
+    initialSync: v.optional(v.boolean()),
+  },
+  handler: async (ctx, args): Promise<SyncResult> => {
+    const { userId, activities, initialSync = true } = args;
+    const now = new Date().toISOString();
+
+    let created = 0;
+    let updated = 0;
+    let skipped = 0;
+    let totalDistanceGained = 0;
+    let plantsAwarded = 0;
+    const newRuns: any[] = [];
+
+    console.log(`[syncActivitiesFromStravaInitial] Starting sync for user ${userId} with ${activities.length} activities (initial: ${initialSync})`);
+
+    for (const activity of activities) {
+      try {
+        // Check if activity already exists
+        const existingActivity = await ctx.db
+          .query("activities")
+          .withIndex("by_strava_id", (q) => q.eq("stravaId", activity.stravaId))
+          .first();
+
+        console.log(`[syncActivitiesFromStravaInitial] Processing activity ${activity.stravaId}: ${activity.workoutName}, distance: ${activity.distance}m`);
+
+        if (existingActivity) {
+          // Update existing activity if it belongs to this user
+          if (existingActivity.userId === userId) {
+            const pace = activity.distance > 0 ? (activity.duration / (activity.distance / 1000)) : 0;
+            
+            await ctx.db.patch(existingActivity._id, {
+              startDate: activity.startDate,
+              endDate: activity.endDate,
+              duration: activity.duration,
+              distance: activity.distance,
+              calories: activity.calories,
+              averageHeartRate: activity.averageHeartRate,
+              workoutName: activity.workoutName,
+              totalElevationGain: activity.totalElevationGain,
+              elevationHigh: activity.elevationHigh,
+              elevationLow: activity.elevationLow,
+              averageTemp: activity.averageTemp,
+              startLatLng: activity.startLatLng,
+              endLatLng: activity.endLatLng,
+              timezone: activity.timezone,
+              isIndoor: activity.isIndoor,
+              isCommute: activity.isCommute,
+              averageCadence: activity.averageCadence,
+              averageWatts: activity.averageWatts,
+              maxWatts: activity.maxWatts,
+              kilojoules: activity.kilojoules,
+              polyline: activity.polyline,
+              maxSpeed: activity.maxSpeed,
+              averageSpeed: activity.averageSpeed,
+              pace,
+              // Don't mark as celebrated yet - will be marked after InitialSyncModal is shown
+              celebrationShown: existingActivity.celebrationShown,
+            });
+            
+            updated++;
+
+            // Award plant for existing activities only if they don't already have one
+            if (activity.distance > 0 && !existingActivity.plantEarned) {
+              try {
+                const plantResult = await ctx.runMutation(api.plants.awardPlantForActivityServer, {
+                  userId,
+                  activityId: existingActivity._id,
+                  distance: activity.distance,
+                });
+                if (plantResult) {
+                  plantsAwarded++;
+                  console.log(`[syncActivitiesFromStravaInitial] Awarded plant for existing activity: ${activity.distance}m`);
+                }
+              } catch (error) {
+                console.error(`[syncActivitiesFromStravaInitial] Failed to award plant for existing activity ${existingActivity._id}:`, error);
+              }
+            }
+          } else {
+            skipped++;
+          }
+        } else {
+          // Create new activity
+          const pace = activity.distance > 0 ? (activity.duration / (activity.distance / 1000)) : 0;
+          
+          const newActivityId = await ctx.db.insert("activities", {
+            userId,
+            source: "strava",
+            stravaId: activity.stravaId,
+            startDate: activity.startDate,
+            endDate: activity.endDate,
+            duration: activity.duration,
+            distance: activity.distance,
+            calories: activity.calories,
+            averageHeartRate: activity.averageHeartRate,
+            workoutName: activity.workoutName,
+            totalElevationGain: activity.totalElevationGain,
+            elevationHigh: activity.elevationHigh,
+            elevationLow: activity.elevationLow,
+            averageTemp: activity.averageTemp,
+            startLatLng: activity.startLatLng,
+            endLatLng: activity.endLatLng,
+            timezone: activity.timezone,
+            isIndoor: activity.isIndoor,
+            isCommute: activity.isCommute,
+            averageCadence: activity.averageCadence,
+            averageWatts: activity.averageWatts,
+            maxWatts: activity.maxWatts,
+            kilojoules: activity.kilojoules,
+            polyline: activity.polyline,
+            maxSpeed: activity.maxSpeed,
+            averageSpeed: activity.averageSpeed,
+            pace,
+            syncedAt: now,
+            // Don't mark as celebrated yet - will be marked after InitialSyncModal is shown
+            celebrationShown: false,
+          });
+
+          const newActivity = await ctx.db.get(newActivityId);
+          if (newActivity) {
+            newRuns.push(newActivity);
+          }
+          
+          created++;
+          totalDistanceGained += activity.distance;
+
+          // Award plant for this run distance (if distance meets criteria)
+          if (activity.distance > 0) {
+            try {
+              const plantResult = await ctx.runMutation(api.plants.awardPlantForActivityServer, {
+                userId,
+                activityId: newActivityId,
+                distance: activity.distance,
+              });
+              if (plantResult) {
+                plantsAwarded++;
+                console.log(`[syncActivitiesFromStravaInitial] Awarded plant for new activity: ${activity.distance}m`);
+              }
+            } catch (error) {
+              console.error(`[syncActivitiesFromStravaInitial] Failed to award plant for activity ${newActivityId}:`, error);
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`[syncActivitiesFromStravaInitial] Error processing activity ${activity.stravaId}:`, error);
+      }
+    }
+
+    // Update user profile totals if we created new activities
+    if (created > 0) {
+      await updateUserProfileTotalsServer(ctx, userId);
+      
+      // Update last sync time
+      const userProfile = await ctx.db
+        .query("userProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .first();
+
+      if (userProfile) {
+        await ctx.db.patch(userProfile._id, {
+          lastStravaSync: now,
+          updatedAt: now,
+        });
+      }
+    }
+
+    console.log(`[syncActivitiesFromStravaInitial] Sync completed: ${created} created, ${updated} updated, ${skipped} skipped, ${plantsAwarded} plants awarded`);
+
+    const result: SyncResult = {
+      created,
+      updated,
+      skipped,
+      lastSyncDate: now,
+      distanceGained: totalDistanceGained,
+      plantsAwarded,
+      newRuns,
+    };
+
+    return result;
   },
 });
 
@@ -485,6 +945,7 @@ export const syncActivitiesFromStravaServer = mutation({
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    let plantsAwarded = 0;
     const newRuns: any[] = [];
 
     for (const activity of activities) {
@@ -557,12 +1018,17 @@ export const syncActivitiesFromStravaServer = mutation({
           created++;
 
           // Award plant for this run distance (if distance meets criteria)
-          if (!initialSync && activity.distance > 0) {
+          if (activity.distance > 0) {
             try {
-              await ctx.runMutation(api.plants.awardPlantForActivity, {
+              const plantResult = await ctx.runMutation(api.plants.awardPlantForActivityServer, {
+                userId,
                 activityId: newActivityId,
                 distance: activity.distance,
               });
+              if (plantResult) {
+                plantsAwarded++;
+                console.log(`[syncActivitiesFromStravaServer] Awarded plant for new activity: ${activity.distance}m`);
+              }
             } catch (error) {
               console.error(`[syncActivitiesFromStravaServer] Failed to award plant for activity ${newActivityId}:`, error);
             }
@@ -598,6 +1064,7 @@ export const syncActivitiesFromStravaServer = mutation({
       updated,
       skipped,
       lastSyncDate: now,
+      plantsAwarded,
       newRuns,
     };
 
@@ -673,6 +1140,16 @@ export const deleteActivity = mutation({
     const activity = await ctx.db.get(args.activityId);
     if (!activity || activity.userId !== userId) {
       throw new Error("Activity not found or unauthorized");
+    }
+
+    // Delete any plants earned from this activity
+    const plantsFromActivity = await ctx.db
+      .query("plants")
+      .withIndex("by_activity", (q: any) => q.eq("earnedFromActivityId", args.activityId))
+      .collect();
+
+    for (const plant of plantsFromActivity) {
+      await ctx.db.delete(plant._id);
     }
 
     await ctx.db.delete(args.activityId);
@@ -787,6 +1264,267 @@ export const markCelebrationShown = mutation({
     });
 
     return { success: true };
+  },
+});
+
+// Full Strava initial sync server action - fetches and syncs all activities with proper celebration marking
+export const fullStravaInitialSyncServer = action({
+  args: {
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<SyncResult> => {
+    const { days = 365 } = args;
+    
+    try {
+      console.log(`[fullStravaInitialSyncServer] Starting initial sync for ${days} days`);
+
+      // Get user profile to check authentication
+      const userProfile = await ctx.runQuery(api.userProfile.getOrCreateProfile);
+      if (!userProfile || !userProfile.stravaSyncEnabled) {
+        throw new Error("Strava sync not enabled");
+      }
+
+      if (!userProfile.stravaAccessToken) {
+        throw new Error("No Strava access token stored");
+      }
+
+      // Check if token is expired and refresh if needed
+      let accessToken = userProfile.stravaAccessToken;
+      const now = Math.floor(Date.now() / 1000);
+      
+      if (userProfile.stravaTokenExpiresAt && userProfile.stravaTokenExpiresAt <= now) {
+        if (!userProfile.stravaRefreshToken) {
+          throw new Error("Access token expired and no refresh token available");
+        }
+
+        // Refresh the token
+        const refreshResult = await refreshStravaToken(userProfile.stravaRefreshToken);
+        if (!refreshResult.success) {
+          throw new Error("Failed to refresh Strava token");
+        }
+
+        accessToken = refreshResult.accessToken!;
+        
+        // Update the stored tokens
+        await ctx.runMutation(api.userProfile.updateStravaTokens, {
+          accessToken: refreshResult.accessToken!,
+          refreshToken: refreshResult.refreshToken!,
+          expiresAt: refreshResult.expiresAt!,
+        });
+      }
+
+      // Get current year activities only
+      const currentYear = new Date().getFullYear();
+      const startOfYear = Math.floor(new Date(currentYear, 0, 1).getTime() / 1000);
+      const endOfYear = Math.floor(new Date(currentYear, 11, 31, 23, 59, 59).getTime() / 1000);
+
+      // Fetch activities from Strava API
+      console.log(`[fullStravaInitialSyncServer] Fetching activities from ${new Date(startOfYear * 1000)} to ${new Date(endOfYear * 1000)}`);
+      
+      const stravaResponse = await fetch(`https://www.strava.com/api/v3/athlete/activities?after=${startOfYear}&before=${endOfYear}&per_page=200`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!stravaResponse.ok) {
+        const errorText = await stravaResponse.text();
+        throw new Error(`Strava API error: ${stravaResponse.status} ${errorText}`);
+      }
+
+      const stravaActivities = await stravaResponse.json();
+      
+      // Filter for running activities only
+      const runningActivities = stravaActivities.filter((activity: any) => 
+        ['Run', 'TrailRun', 'Treadmill'].includes(activity.type)
+      );
+
+      console.log(`[fullStravaInitialSyncServer] Found ${runningActivities.length} running activities from ${currentYear}`);
+
+      if (runningActivities.length === 0) {
+        return {
+          created: 0,
+          updated: 0,
+          skipped: 0,
+          lastSyncDate: new Date().toISOString(),
+          distanceGained: 0,
+          plantsAwarded: 0,
+          newRuns: [],
+        };
+      }
+
+      // Convert to our format
+      const activitiesForDb = runningActivities.map((activity: any) => ({
+        stravaId: activity.id,
+        startDate: new Date(activity.start_date).toISOString(),
+        endDate: new Date(new Date(activity.start_date).getTime() + activity.elapsed_time * 1000).toISOString(),
+        duration: Math.round(activity.moving_time / 60), // Convert seconds to minutes
+        distance: Math.round(activity.distance), // Already in meters
+        calories: Math.round(activity.calories || 0),
+        averageHeartRate: activity.average_heartrate,
+        workoutName: activity.name || 'Running',
+        totalElevationGain: activity.total_elevation_gain,
+        elevationHigh: activity.elev_high,
+        elevationLow: activity.elev_low,
+        averageTemp: activity.average_temp,
+        startLatLng: activity.start_latlng,
+        endLatLng: activity.end_latlng,
+        timezone: activity.timezone,
+        isIndoor: activity.trainer,
+        isCommute: activity.commute,
+        averageCadence: activity.average_cadence,
+        averageWatts: activity.average_watts,
+        maxWatts: activity.max_watts,
+        kilojoules: activity.kilojoules,
+        polyline: activity.map?.polyline,
+        maxSpeed: activity.max_speed,
+        averageSpeed: activity.average_speed,
+      }));
+
+      // Sync using initial sync mutation
+      const syncResult = await ctx.runMutation(api.activities.syncActivitiesFromStravaInitial, {
+        userId: userProfile.userId,
+        activities: activitiesForDb,
+        initialSync: true,
+      });
+
+      // Mark initial sync as completed (only if we actually had activities to sync)
+      if (syncResult.created > 0) {
+        await ctx.runMutation(api.userProfile.updateProfile, {
+          stravaInitialSyncCompleted: true,
+        });
+        console.log('[fullStravaInitialSyncServer] Marked Strava initial sync as completed (with activities)');
+      }
+
+      console.log(`[fullStravaInitialSyncServer] Initial sync complete:`, syncResult);
+      return syncResult;
+
+    } catch (error) {
+      console.error(`[fullStravaInitialSyncServer] Error:`, error);
+      throw error;
+    }
+  },
+});
+
+// Full Strava sync server action - fetches and syncs all activities
+export const fullStravaSyncServer = action({
+  args: {
+    days: v.optional(v.number()),
+  },
+  handler: async (ctx, args): Promise<SyncResult> => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const { days = 30 } = args;
+
+    try {
+      console.log(`[fullStravaSyncServer] Starting full sync for user ${userId}, days: ${days}`);
+
+      // Get user profile to get Strava tokens
+      const userProfile = await ctx.runQuery(api.userProfile.getOrCreateProfile);
+      
+      if (!userProfile?.stravaAccessToken) {
+        throw new Error("No Strava access token found");
+      }
+
+      // Calculate date range
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(startDate.getDate() - days);
+
+      const after = Math.floor(startDate.getTime() / 1000);
+      const before = Math.floor(endDate.getTime() / 1000);
+
+      console.log(`[fullStravaSyncServer] Fetching activities from ${startDate.toISOString()} to ${endDate.toISOString()}`);
+
+      // Fetch activities from Strava
+      let accessToken = userProfile.stravaAccessToken;
+      
+      // Check if token needs refresh
+      if (userProfile.stravaTokenExpiresAt && userProfile.stravaTokenExpiresAt < Math.floor(Date.now() / 1000)) {
+        console.log(`[fullStravaSyncServer] Access token expired, refreshing...`);
+        
+        if (!userProfile.stravaRefreshToken) {
+          throw new Error("No refresh token available");
+        }
+
+        const refreshResult = await refreshStravaToken(userProfile.stravaRefreshToken);
+        if (!refreshResult.success) {
+          throw new Error(`Token refresh failed: ${refreshResult.error}`);
+        }
+
+        // Update tokens in database
+        await ctx.runMutation(api.userProfile.updateSyncPreferences, {
+          stravaAccessToken: refreshResult.accessToken,
+          stravaRefreshToken: refreshResult.refreshToken,
+          stravaTokenExpiresAt: refreshResult.expiresAt,
+        });
+
+        accessToken = refreshResult.accessToken!;
+      }
+
+      // Fetch activities from Strava API
+      const stravaResponse = await fetch(`https://www.strava.com/api/v3/athlete/activities?after=${after}&before=${before}&per_page=200`, {
+        headers: {
+          'Authorization': `Bearer ${accessToken}`,
+        },
+      });
+
+      if (!stravaResponse.ok) {
+        const errorText = await stravaResponse.text();
+        throw new Error(`Strava API error: ${stravaResponse.status} ${errorText}`);
+      }
+
+      const stravaActivities = await stravaResponse.json();
+      console.log(`[fullStravaSyncServer] Fetched ${stravaActivities.length} activities from Strava`);
+
+      // Filter for running activities and convert to our format
+      const runningActivities = stravaActivities
+        .filter((activity: any) => activity.type === 'Run')
+        .map((activity: any) => ({
+          stravaId: activity.id,
+          startDate: activity.start_date,
+          endDate: new Date(new Date(activity.start_date).getTime() + (activity.elapsed_time * 1000)).toISOString(),
+          duration: Math.round(activity.elapsed_time / 60), // Convert to minutes
+          distance: Math.round(activity.distance), // Already in meters
+          calories: Math.round(activity.calories || 0),
+          averageHeartRate: activity.average_heartrate,
+          workoutName: activity.name || 'Running',
+          totalElevationGain: activity.total_elevation_gain,
+          elevationHigh: activity.elev_high,
+          elevationLow: activity.elev_low,
+          averageTemp: activity.average_temp,
+          startLatLng: activity.start_latlng,
+          endLatLng: activity.end_latlng,
+          timezone: activity.timezone,
+          isIndoor: activity.trainer || false,
+          isCommute: activity.commute || false,
+          averageCadence: activity.average_cadence,
+          averageWatts: activity.average_watts,
+          maxWatts: activity.max_watts,
+          kilojoules: activity.kilojoules,
+          polyline: activity.map?.summary_polyline,
+          maxSpeed: activity.max_speed,
+          averageSpeed: activity.average_speed,
+          isNewActivity: true,
+        }));
+
+      console.log(`[fullStravaSyncServer] Filtered to ${runningActivities.length} running activities`);
+
+      // Sync activities using the existing mutation
+      const syncResult = await ctx.runMutation(api.activities.syncActivitiesFromStrava, {
+        activities: runningActivities,
+      });
+
+      console.log(`[fullStravaSyncServer] Sync complete:`, syncResult);
+      return syncResult;
+
+    } catch (error) {
+      console.error(`[fullStravaSyncServer] Error:`, error);
+      throw error;
+    }
   },
 });
 
@@ -1013,6 +1751,7 @@ export const syncActivitiesFromStrava = mutation({
     let created = 0;
     let updated = 0;
     let skipped = 0;
+    let plantsAwarded = 0;
     const newRuns: any[] = [];
     let totalDistanceGained = 0;
 
@@ -1145,7 +1884,22 @@ export const syncActivitiesFromStrava = mutation({
           created++;
           totalDistanceGained += activity.distance;
 
-                  // No coins system in garden app
+          // Award plant for this run distance (if distance meets criteria and it's a new activity)
+          if (activity.isNewActivity && activity.distance > 0) {
+            try {
+              const plantResult = await ctx.runMutation(api.plants.awardPlantForActivity, {
+                activityId: newActivityId,
+              });
+              if (plantResult) {
+                plantsAwarded++;
+                console.log(`[syncActivitiesFromStrava] Awarded plant for new activity: ${activity.distance}m`);
+              }
+            } catch (error) {
+              console.error(`[syncActivitiesFromStrava] Failed to award plant for activity ${newActivityId}:`, error);
+            }
+          }
+
+          // No coins system in garden app
         }
       } catch (error) {
         console.error(`[syncActivitiesFromStrava] Error processing activity ${activity.stravaId}:`, error);
@@ -1181,9 +1935,187 @@ export const syncActivitiesFromStrava = mutation({
       skipped,
       lastSyncDate: now,
       distanceGained,
+      plantsAwarded,
       newRuns,
     };
 
     return result;
+  },
+});
+
+// Get activities that haven't been celebrated yet
+export const getUncelebratedActivities = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user has seen initial sync modal
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    // If user hasn't seen initial sync modal yet, don't show individual celebration modals
+    if (!profile?.hasSeenInitialSyncModal) {
+      console.log("[getUncelebratedActivities] User hasn't seen initial sync modal yet, skipping individual celebrations");
+      return [];
+    }
+
+    // Check if initial sync is still in progress (optimization)
+    const currentTime = Date.now();
+    const lastSyncTime = profile?.lastHealthKitSync || profile?.lastStravaSync;
+    if (lastSyncTime) {
+      const timeSinceSync = currentTime - new Date(lastSyncTime).getTime();
+      // If sync happened within last 30 seconds, throttle celebration queries
+      if (timeSinceSync < 30000) {
+        console.log("[getUncelebratedActivities] Recent sync detected, throttling celebration queries");
+        return [];
+      }
+    }
+
+    // Get activities with plants that haven't been celebrated (limit to 1 for performance)
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => 
+        q.and(
+          q.neq(q.field("plantEarned"), undefined),
+          q.or(
+            q.eq(q.field("celebrationShown"), undefined),
+            q.eq(q.field("celebrationShown"), false)
+          )
+        )
+      )
+      .order("desc")
+      .take(1); // Reduced from 5 to 1 for performance
+
+    if (activities.length === 0) {
+      return [];
+    }
+
+    // Enrich with plant data (only for the single activity)
+    const activity = activities[0];
+    let plantData = null;
+    if (activity.plantEarned) {
+      const plant = await ctx.db.get(activity.plantEarned);
+      if (plant?.plantTypeId) {
+        const plantType = await ctx.db.get(plant.plantTypeId);
+        if (plantType) {
+          plantData = {
+            emoji: plantType.emoji,
+            name: plantType.name,
+          };
+        }
+      }
+    }
+    
+    return [{
+      ...activity,
+      plantData,
+    }];
+  },
+});
+
+// Mark all current year activities as celebrated (used after InitialSyncModal)
+export const markCurrentYearActivitiesCelebrated = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Get current year date range
+    const currentYear = new Date().getFullYear();
+    const startOfYear = new Date(currentYear, 0, 1).toISOString();
+    const today = new Date().toISOString();
+
+    // Get all activities from current year that have plants but aren't celebrated
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => 
+        q.and(
+          q.gte(q.field("startDate"), startOfYear),
+          q.lte(q.field("startDate"), today),
+          q.neq(q.field("plantEarned"), undefined),
+          q.or(
+            q.eq(q.field("celebrationShown"), undefined),
+            q.eq(q.field("celebrationShown"), false)
+          )
+        )
+      )
+      .collect();
+
+    console.log(`[markCurrentYearActivitiesCelebrated] Marking ${activities.length} activities as celebrated for user ${userId}`);
+
+    // Mark all as celebrated
+    for (const activity of activities) {
+      if (activity.plantEarned) {
+        const plant = await ctx.db.get(activity.plantEarned);
+        console.log(`[markCurrentYearActivitiesCelebrated] Plant ${plant?._id} for activity ${activity._id}`);
+        if (plant && !plant.isPlanted) {
+          await ctx.runMutation(api.garden.autoPlantInGarden, {
+            plantId: plant._id,
+          });
+          console.log(`[markCurrentYearActivitiesCelebrated] Auto-planted plant ${plant._id} for activity ${activity._id}`);
+        }
+        
+        await ctx.db.patch(activity._id, {
+          celebrationShown: true,
+        });
+      }
+    }
+
+    return { success: true, activitiesMarked: activities.length };
+  },
+});
+
+// Note: Old shouldShowInitialSyncModal and getInitialSyncModalData queries removed
+// They have been replaced with completion flag-based logic in the frontend
+
+// Mark activity as celebrated and plant the earned plant in garden
+export const markActivityCelebrated = mutation({
+  args: {
+    activityId: v.id("activities"),
+  },
+  handler: async (ctx, { activityId }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Verify the activity belongs to the user
+    const activity = await ctx.db.get(activityId);
+    if (!activity || activity.userId !== userId) {
+      throw new Error("Activity not found or not owned by user");
+    }
+
+    // Mark as celebrated
+    await ctx.db.patch(activityId, {
+      celebrationShown: true,
+      // updatedAt: new Date().toISOString(),
+    });
+
+    // Plant the earned plant in the garden if it exists and isn't already planted
+    if (activity.plantEarned) {
+      const plant = await ctx.db.get(activity.plantEarned);
+      if (plant && !plant.isPlanted) {
+        try {
+          await ctx.runMutation(api.garden.autoPlantInGarden, {
+            plantId: plant._id,
+          });
+          console.log(`[markActivityCelebrated] Auto-planted plant ${plant._id} for activity ${activityId}`);
+        } catch (error) {
+          console.log(`[markActivityCelebrated] Could not auto-plant ${plant._id}, keeping in inventory:`, error);
+          // Plant stays in inventory if auto-planting fails (e.g., garden full)
+        }
+      }
+    }
+
+    return { success: true };
   },
 });
