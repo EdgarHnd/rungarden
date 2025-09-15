@@ -1,7 +1,8 @@
 import InitialSyncModal from '@/components/modals/InitialSyncModal';
 import PlantCelebrationModal from '@/components/modals/PlantCelebrationModal';
-import SyncLoadingModal from '@/components/modals/SyncLoadingModal';
+import SyncLoadingBadge from '@/components/modals/SyncLoadingBadge';
 import WelcomeModal from '@/components/modals/WelcomeModal';
+import PrimaryButton from '@/components/PrimaryButton';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useTrackNavigation } from '@/hooks/useTrackNavigation';
@@ -12,7 +13,7 @@ import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import { router, Tabs, usePathname } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
-import { AppState, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { AppState, StyleSheet, TouchableOpacity, View } from 'react-native';
 
 type CelebrationData = {
   runData: {
@@ -24,6 +25,9 @@ type CelebrationData = {
   plantData: {
     emoji: string;
     name: string;
+    imagePath?: string;
+    distanceRequired?: number;
+    isNewType?: boolean;
   } | null;
 }
 
@@ -40,20 +44,33 @@ export default function AppLayout() {
   // Welcome Modal state
   const [showWelcomeModal, setShowWelcomeModal] = useState(false);
 
+  // Celebration check trigger state
+  const [celebrationTrigger, setCelebrationTrigger] = useState(0);
+
+  // Track the activity being celebrated for proper marking
+  const [celebratingActivityId, setCelebratingActivityId] = useState<string | null>(null);
+
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const pathname = usePathname();
   const convex = useConvex();
 
   // Get sync states from SyncProvider
-  const { isHealthKitSyncing, isStravaSyncing } = useSyncProvider();
+  const { isHealthKitSyncing, isStravaSyncing, triggerCelebrationCheck, celebrationCheckTrigger } = useSyncProvider();
 
   // Query for activities that need celebration
   const uncelebratedActivities = useQuery(api.activities.getUncelebratedActivities);
+  // Forced query for celebration checks after sync (bypasses throttling)
+  const forcedUncelebratedActivities = useQuery(
+    api.activities.getUncelebratedActivitiesForced,
+    celebrationCheckTrigger > 0 ? { bypassThrottling: true } : "skip"
+  );
   const markActivityCelebrated = useMutation(api.activities.markActivityCelebrated);
 
   // Mutations for initial sync modal
   const updateProfile = useMutation(api.userProfile.updateProfile);
   const markCurrentYearActivitiesCelebrated = useMutation(api.activities.markCurrentYearActivitiesCelebrated);
+  const plantAllInventoryPlants = useMutation(api.garden.plantAllInventoryPlants);
+  const diagnosePlantTypeIssues = useMutation(api.garden.diagnosePlantTypeIssues);
 
   // Track previous completion flags to edge-trigger the initial sync modal
   const initialSyncPrevRef = useRef<{ hk: boolean; st: boolean }>({ hk: false, st: false });
@@ -71,7 +88,6 @@ export default function AppLayout() {
       !modalProcessingRef.current;
 
     if (shouldShowWelcome) {
-      console.log('[AppLayout] New user detected - showing welcome modal');
       setShowWelcomeModal(true);
     }
   }, [profile, showInitialSyncModal]);
@@ -85,14 +101,6 @@ export default function AppLayout() {
     const prev = initialSyncPrevRef.current;
     const becameCompleted = (!prev.hk && hkCompleted) || (!prev.st && stCompleted);
 
-    console.log('[AppLayout] Edge check:', {
-      prev,
-      current: { hk: hkCompleted, st: stCompleted },
-      becameCompleted,
-      alreadyProcessing: modalProcessingRef.current,
-      showingModal: showInitialSyncModal,
-      hasSeenModal: profile.hasSeenInitialSyncModal
-    });
 
     // Update previous snapshot immediately
     initialSyncPrevRef.current = { hk: hkCompleted, st: stCompleted };
@@ -102,7 +110,6 @@ export default function AppLayout() {
       return;
     }
 
-    console.log('[AppLayout] Initial sync needed - showing modal');
     modalProcessingRef.current = true;
 
     // Get activities from the past year to build celebration stats
@@ -119,10 +126,7 @@ export default function AppLayout() {
 
       const sourceActivities = recentActivities.filter(a => a.source === sourceFilter);
 
-      if (sourceActivities.length === 0) {
-        console.log('[AppLayout] No activities found for initial sync modal');
-        return;
-      }
+      // Always show modal regardless of activity count - handle zero state in modal
 
       const totalDistance = sourceActivities.reduce((sum, a) => sum + (a.distance || 0), 0);
       const createdRuns = sourceActivities.length;
@@ -138,7 +142,6 @@ export default function AppLayout() {
           plantsEarned = await convex.query(api.plants.getPlantsEarnedFromActivities, {
             activityIds
           });
-          console.log('[AppLayout] Fetched plant data for', activitiesWithPlants.length, 'activities, got', plantsEarned.length, 'plant types');
         } catch (error) {
           console.error('[AppLayout] Error fetching plants for activities:', error);
           plantsEarned = [];
@@ -155,7 +158,6 @@ export default function AppLayout() {
         plantsEarned: plantsEarned.length > 0 ? plantsEarned : undefined,
       });
       setShowInitialSyncModal(true);
-      console.log('[AppLayout] Showing initial sync modal for', sourceFilter, 'with', createdRuns, 'activities and', plantsEarned.length, 'plant types');
     } catch (error) {
       console.error('[AppLayout] Error checking initial sync modal:', error);
       modalProcessingRef.current = false;
@@ -166,12 +168,14 @@ export default function AppLayout() {
     checkInitialSyncModal();
   }, [profile, convex]);
 
-  // Check for uncelebrated activities - reactive to query changes
-  useEffect(() => {
-    if (uncelebratedActivities && uncelebratedActivities.length > 0 && !showCelebrationModal && !showInitialSyncModal) {
-      const activity = uncelebratedActivities[0]; // Show celebration for the first uncelebrated activity
+  // Helper function to check for celebrations from either query
+  const checkForCelebrations = (activities: any[], source: string) => {
+    if (activities && activities.length > 0 && !showCelebrationModal && !showInitialSyncModal) {
+      const activity = activities[0]; // Show celebration for the first uncelebrated activity
 
-      console.log('[AppLayout] Found uncelebrated activity, showing celebration modal');
+
+      // Track which activity we're celebrating
+      setCelebratingActivityId(activity._id);
 
       setCelebrationData({
         runData: {
@@ -183,18 +187,34 @@ export default function AppLayout() {
         plantData: activity.plantData ? {
           emoji: activity.plantData.emoji,
           name: activity.plantData.name,
+          imagePath: activity.plantData.imagePath,
+          distanceRequired: activity.plantData.distanceRequired,
+          isNewType: activity.plantData.isNewType,
         } : null,
       });
 
       setShowCelebrationModal(true);
     }
+  };
+
+  // Check for uncelebrated activities - reactive to regular query changes
+  useEffect(() => {
+    if (uncelebratedActivities) {
+      checkForCelebrations(uncelebratedActivities, 'regular query');
+    }
   }, [uncelebratedActivities, showCelebrationModal, showInitialSyncModal]);
+
+  // Check for uncelebrated activities - reactive to forced query changes (after sync)
+  useEffect(() => {
+    if (forcedUncelebratedActivities) {
+      checkForCelebrations(forcedUncelebratedActivities, 'forced query after sync');
+    }
+  }, [forcedUncelebratedActivities, showCelebrationModal, showInitialSyncModal]);
 
   // Also check when app becomes active
   useEffect(() => {
     const handleAppStateChange = (nextAppState: string) => {
       if (nextAppState === 'active') {
-        console.log('[AppLayout] App became active, rechecking modals');
         // The reactive useEffects above will automatically handle showing modals
         // when the queries update
       }
@@ -206,10 +226,21 @@ export default function AppLayout() {
 
   const handlePlantAllFromInitialSync = async () => {
     try {
-      console.log('[AppLayout] Planting all plants from initial sync');
-      // The actual planting logic is handled by the existing celebration system
-      // We just need to mark all current year activities as celebrated
+
+      // First, diagnose any plant type issues that might prevent rendering
+      const diagnosis = await diagnosePlantTypeIssues({});
+
+      // If plants have missing types, this could explain why they don't appear in garden
+      if (diagnosis.plantsWithMissingTypes > 0) {
+      }
+
+      // Use the bulk planting function to plant as many as possible (up to 100 in garden)
+      const plantResult = await plantAllInventoryPlants({});
+
+      // Then mark all current year activities as celebrated
+      // This will handle any remaining plants that couldn't be planted due to garden being full
       await markCurrentYearActivitiesCelebrated({});
+
     } catch (error) {
       console.error('[AppLayout] Error planting all from initial sync:', error);
     }
@@ -309,16 +340,15 @@ export default function AppLayout() {
 
       {/* Floating Record Run Button - Only show on index screen */}
       {isOnIndexScreen && (
-        <TouchableOpacity
-          style={styles.floatingButton}
-          onPress={() => {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-            router.push('/run');
-          }}
-          activeOpacity={0.8}
-        >
-          <Text style={styles.floatingButtonText}>Record Run</Text>
-        </TouchableOpacity>
+        <View style={styles.floatingButtonContainer}>
+          <PrimaryButton
+            title="Record"
+            onPress={() => router.push('/run')}
+            size="medium"
+            hapticFeedback="heavy"
+            textWeight='black'
+          />
+        </View>
       )}
 
       {/* Plant Celebration Modal */}
@@ -327,17 +357,19 @@ export default function AppLayout() {
         runData={celebrationData?.runData || null}
         plantData={celebrationData?.plantData || null}
         onClose={async () => {
-          console.log('[AppLayout] Closing celebration modal');
 
-          // Mark the activity as celebrated
-          if (uncelebratedActivities && uncelebratedActivities.length > 0) {
-            const activity = uncelebratedActivities[0];
-            await markActivityCelebrated({ activityId: activity._id });
-            console.log('[AppLayout] Marked activity as celebrated:', activity._id);
+          // Mark the activity as celebrated using the tracked activity ID
+          if (celebratingActivityId) {
+            try {
+              await markActivityCelebrated({ activityId: celebratingActivityId as any });
+            } catch (error) {
+              console.error('[AppLayout] Error marking activity as celebrated:', error);
+            }
           }
 
           setShowCelebrationModal(false);
           setCelebrationData(null);
+          setCelebratingActivityId(null);
         }}
         metricSystem={profile?.metricSystem || 'metric'}
         streakInfo={{
@@ -355,11 +387,9 @@ export default function AppLayout() {
             await updateProfile({
               hasSeenInitialSyncModal: true,
             });
-            console.log('[AppLayout] Marked initial sync modal as seen');
 
             // Clear any syncing states that might be stuck
             // This helps resolve modal conflicts after initial sync
-            console.log('[AppLayout] Initial sync modal closed, states should be cleared by SyncProvider');
           } catch (error) {
             console.error('[AppLayout] Error marking initial sync modal as seen:', error);
           }
@@ -382,7 +412,6 @@ export default function AppLayout() {
             await updateProfile({
               hasSeenWelcomeModal: true,
             });
-            console.log('[AppLayout] Marked welcome modal as seen');
           } catch (error) {
             console.error('[AppLayout] Error marking welcome modal as seen:', error);
           }
@@ -390,32 +419,34 @@ export default function AppLayout() {
         }}
       />
 
-      {/* Sync Loading Modal - shows during initial sync */}
-      <SyncLoadingModal
-        visible={isHealthKitSyncing || isStravaSyncing}
-        source={profile?.stravaSyncEnabled ? "strava" : "healthkit"}
-      />
+      {/* Sync Loading Badge - shows during initial sync */}
+      {(isHealthKitSyncing || isStravaSyncing) && (
+        <View style={styles.syncBadgeContainer}>
+          <SyncLoadingBadge
+            visible={isHealthKitSyncing || isStravaSyncing}
+            source={profile?.stravaSyncEnabled ? "strava" : "healthkit"}
+          />
+        </View>
+      )}
     </>
   );
 }
 
 const styles = StyleSheet.create({
-  floatingButton: {
+  floatingButtonContainer: {
     position: 'absolute',
     bottom: 100,
     left: '50%',
     transform: [{ translateX: -75 }],
     width: 150,
-    height: 50,
-    backgroundColor: Theme.colors.accent.primary,
-    borderRadius: 10,
-    justifyContent: 'center',
-    alignItems: 'center',
     zIndex: 1000,
   },
-  floatingButtonText: {
-    fontSize: 20,
-    fontFamily: Theme.fonts.semibold,
-    color: Theme.colors.background.primary,
+  syncBadgeContainer: {
+    position: 'absolute',
+    top: 60,
+    left: 0,
+    right: 0,
+    alignItems: 'center',
+    zIndex: 1000,
   },
 });

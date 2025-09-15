@@ -1,6 +1,10 @@
+import PrimaryButton from '@/components/PrimaryButton';
 import Theme from '@/constants/theme';
+import { api } from '@/convex/_generated/api';
 import { useSyncProvider } from '@/provider/SyncProvider';
+import { formatDistanceValue, getDistanceUnit, kilometersToMeters } from '@/utils/formatters';
 import { FontAwesome5 } from '@expo/vector-icons';
+import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { LinearGradient } from 'expo-linear-gradient';
 import React, { useState } from 'react';
@@ -23,10 +27,10 @@ interface WelcomeModalProps {
 }
 
 type SyncOption = 'rungarden' | 'healthkit' | 'strava';
-type Step = 'options' | 'setup';
+type Step = 'options' | 'tutorial' | 'setup';
 
 export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
-  const [currentStep, setCurrentStep] = useState<Step>('options');
+  const [currentStep, setCurrentStep] = useState<Step>('tutorial');
   const [selectedOption, setSelectedOption] = useState<SyncOption | null>(null);
   const [isConnecting, setIsConnecting] = useState(false);
 
@@ -37,6 +41,13 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
     isStravaSyncing,
     isConnecting: providerConnecting,
   } = useSyncProvider();
+
+  // Get user profile for unit preferences
+  const profile = useQuery(api.userProfile.getOrCreateProfile);
+  const metricSystem = profile?.metricSystem ?? 'metric';
+
+  // Mutation to update profile
+  const updateProfile = useMutation(api.userProfile.updateProfile);
 
   // Animations
   const stepOpacity = useSharedValue(1);
@@ -83,9 +94,16 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
 
       if (selectedOption === 'healthkit') {
-        await connectHealthKit();
+        await connectHealthKit({ autoSyncEnabled: true });
       } else if (selectedOption === 'strava') {
         await connectStrava();
+      } else if (selectedOption === 'rungarden') {
+        // For RunGarden users, mark that they've completed their initial setup
+        // This ensures they can see individual run celebrations later
+        await updateProfile({
+          hasSeenInitialSyncModal: true,
+        });
+        console.log('[WelcomeModal] Marked RunGarden user as having completed initial setup');
       }
 
       await onClose();
@@ -103,15 +121,22 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
     if (currentStep === 'setup') {
       setSelectedOption(null);
       animateStepTransition(() => setCurrentStep('options'));
+    } else if (currentStep === 'options') {
+      animateStepTransition(() => setCurrentStep('tutorial'));
     }
+  };
+
+  const handleTutorialNext = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    animateStepTransition(() => setCurrentStep('options'));
   };
 
   const renderOptionsStep = () => (
     <View style={styles.stepContainer}>
-      <Text style={styles.title}>Choose Your Data Source</Text>
+      <Text style={styles.title}>How would you like to track your runs?</Text>
 
       <Text style={styles.description}>
-        How would you like to track your runs? You can change this later in Settings.
+        You can change this later in Settings.
       </Text>
 
       <View style={styles.optionsContainer}>
@@ -123,14 +148,11 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
         >
           <View style={styles.optionHeader}>
             <Image source={require('@/assets/images/icon.png')} style={styles.optionIcon} />
-            <Text style={styles.optionTitle}>Run Garden Tracker</Text>
+            <Text style={styles.optionTitle}>RunGarden Tracker</Text>
           </View>
           <Text style={styles.optionDescription}>
             Record runs directly with our built-in GPS tracker
           </Text>
-          <View style={styles.optionBadge}>
-            <Text style={styles.optionBadgeText}>Recommended</Text>
-          </View>
         </TouchableOpacity>
 
         {/* Apple HealthKit */}
@@ -147,25 +169,107 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
             <Text style={styles.optionDescription}>
               Sync running activities from the Health app
             </Text>
+            <View style={styles.optionBadge}>
+              <Text style={styles.optionBadgeText}>Recommended</Text>
+            </View>
           </TouchableOpacity>
         )}
 
         {/* Strava */}
         <TouchableOpacity
-          style={[styles.optionCard, selectedOption === 'strava' && styles.selectedOptionCard]}
-          onPress={() => handleOptionSelect('strava')}
-          activeOpacity={0.7}
+          style={[styles.optionCard, styles.disabledOptionCard]}
+          activeOpacity={1}
+          disabled={true}
         >
           <View style={styles.optionHeader}>
-            <Image source={require('@/assets/images/icons/strava.png')} style={styles.optionIcon} />
-            <Text style={styles.optionTitle}>Strava</Text>
+            <Image source={require('@/assets/images/icons/strava.png')} style={[styles.optionIcon, styles.disabledIcon]} />
+            <Text style={[styles.optionTitle, styles.disabledText]}>Strava</Text>
           </View>
-          <Text style={styles.optionDescription}>
+          <Text style={[styles.optionDescription, styles.disabledText]}>
             Import your running activities from Strava
           </Text>
+          <View style={styles.comingSoonBadge}>
+            <Text style={styles.comingSoonBadgeText}>Coming Soon</Text>
+          </View>
         </TouchableOpacity>
       </View>
 
+      <View style={styles.buttonRow}>
+        <TouchableOpacity
+          style={styles.secondaryButton}
+          onPress={handleBack}
+          activeOpacity={0.8}
+        >
+          <FontAwesome5 name="chevron-left" size={16} color={Theme.colors.text.primary} />
+          <Text style={styles.secondaryButtonText}>Back</Text>
+        </TouchableOpacity>
+      </View>
+    </View>
+  );
+
+  const renderTutorialStep = () => (
+    <View style={styles.stepContainer}>
+      <Text style={styles.title}>How RunGarden Works</Text>
+
+      <Text style={styles.description}>
+        Every run earns you a plant!
+        The distance you run determines which plant you'll receive.
+      </Text>
+
+      <View style={styles.tutorialExamples}>
+        <View style={styles.exampleRow}>
+          <Text style={styles.exampleDistance}>
+            {formatDistanceValue(kilometersToMeters(1), metricSystem)} {getDistanceUnit(metricSystem)} run
+            {metricSystem === 'imperial' && ' (1km)'}
+          </Text>
+          <FontAwesome5 name="arrow-right" size={20} color={Theme.colors.text.tertiary} />
+          <View style={styles.examplePlantContainer}>
+            <Image
+              source={require('@/assets/images/plants/classic/1.png')}
+              style={styles.examplePlantImage}
+            />
+            <Text style={styles.examplePlantName}>Daisy</Text>
+          </View>
+        </View>
+
+        <View style={styles.exampleRow}>
+          <Text style={styles.exampleDistance}>
+            {formatDistanceValue(kilometersToMeters(10), metricSystem)} {getDistanceUnit(metricSystem)} run
+            {metricSystem === 'imperial' && ' (10km)'}
+          </Text>
+          <FontAwesome5 name="arrow-right" size={20} color={Theme.colors.text.tertiary} />
+          <View style={styles.examplePlantContainer}>
+            <Image
+              source={require('@/assets/images/plants/locked.png')}
+              style={styles.examplePlantImage}
+            />
+            <Text style={styles.examplePlantName}>[locked]</Text>
+          </View>
+        </View>
+      </View>
+
+      <View style={styles.tutorialFeatures}>
+        <View style={styles.featureItem}>
+          <FontAwesome5 name="seedling" size={20} color={Theme.colors.accent.primary} />
+          <Text style={styles.featureText}>1 run = 1 plant</Text>
+        </View>
+        <View style={styles.featureItem}>
+          <FontAwesome5 name="trophy" size={20} color={Theme.colors.accent.primary} />
+          <Text style={styles.featureText}>Each distance unlocks different plants</Text>
+        </View>
+        <View style={styles.featureItem}>
+          <FontAwesome5 name="map" size={20} color={Theme.colors.accent.primary} />
+          <Text style={styles.featureText}>Build your own garden</Text>
+        </View>
+      </View>
+
+      <PrimaryButton
+        title="Got it!"
+        onPress={handleTutorialNext}
+        size="large"
+        fullWidth
+        textTransform="none"
+      />
     </View>
   );
 
@@ -177,7 +281,7 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
     return (
       <View style={styles.stepContainer}>
         <Text style={styles.title}>
-          {selectedOption === 'rungarden' && 'Ready to Run! 🏃‍♂️'}
+          {selectedOption === 'rungarden' && 'Ready to Run!'}
           {selectedOption === 'healthkit' && 'Connect to HealthKit'}
           {selectedOption === 'strava' && 'Connect to Strava'}
         </Text>
@@ -203,14 +307,13 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={styles.primaryButton}
-              onPress={onClose}
-              activeOpacity={0.8}
-            >
-              <Text style={styles.primaryButtonText}>Start Growing Your Garden</Text>
-              <FontAwesome5 name="seedling" size={16} color="#FFFFFF" />
-            </TouchableOpacity>
+            <PrimaryButton
+              title="Start Growing Your Garden"
+              onPress={handleSetupComplete}
+              size="large"
+              fullWidth
+              textTransform="none"
+            />
           </>
         )}
 
@@ -235,21 +338,14 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.primaryButton, isLoading && styles.disabledButton]}
+            <PrimaryButton
+              title={isLoading ? "Connecting..." : "Continue"}
               onPress={handleSetupComplete}
-              activeOpacity={0.8}
+              size="large"
+              fullWidth
               disabled={isLoading}
-            >
-              {isLoading ? (
-                <Text style={styles.primaryButtonText}>Connecting...</Text>
-              ) : (
-                <>
-                  <Text style={styles.primaryButtonText}>Connect HealthKit</Text>
-                  <FontAwesome5 name="heart" size={16} color="#FFFFFF" />
-                </>
-              )}
-            </TouchableOpacity>
+              textTransform="none"
+            />
           </>
         )}
 
@@ -274,28 +370,21 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
               </View>
             </View>
 
-            <TouchableOpacity
-              style={[styles.primaryButton, isLoading && styles.disabledButton]}
+            <PrimaryButton
+              title={isLoading ? "Connecting..." : "Connect Strava"}
               onPress={handleSetupComplete}
-              activeOpacity={0.8}
+              size="large"
+              fullWidth
               disabled={isLoading}
-            >
-              {isLoading ? (
-                <Text style={styles.primaryButtonText}>Connecting...</Text>
-              ) : (
-                <>
-                  <Text style={styles.primaryButtonText}>Connect Strava</Text>
-                  <FontAwesome5 name="running" size={16} color="#FFFFFF" />
-                </>
-              )}
-            </TouchableOpacity>
+              textTransform="none"
+            />
           </>
         )}
 
         {currentStep === 'setup' && (
           <View style={styles.buttonRow}>
             <TouchableOpacity
-              style={[styles.secondaryButton, isLoading && styles.disabledButton]}
+              style={[styles.secondaryButton, isLoading && { opacity: 0.6 }]}
               onPress={handleBack}
               activeOpacity={0.8}
               disabled={isLoading}
@@ -323,6 +412,7 @@ export default function WelcomeModal({ visible, onClose }: WelcomeModalProps) {
         <SafeAreaView style={styles.safeArea}>
           <Reanimated.View style={[styles.content, stepAnimatedStyle]}>
             {currentStep === 'options' && renderOptionsStep()}
+            {currentStep === 'tutorial' && renderTutorialStep()}
             {currentStep === 'setup' && renderSetupStep()}
           </Reanimated.View>
         </SafeAreaView>
@@ -374,12 +464,12 @@ const styles = StyleSheet.create({
     padding: Theme.spacing.lg,
     marginBottom: Theme.spacing.md,
     borderWidth: 2,
-    borderColor: 'transparent',
+    borderColor: Theme.colors.border.primary,
     position: 'relative',
   },
   selectedOptionCard: {
     borderColor: Theme.colors.accent.primary,
-    backgroundColor: `${Theme.colors.accent.primary}15`,
+    backgroundColor: 'white',
   },
   optionHeader: {
     flexDirection: 'row',
@@ -389,6 +479,7 @@ const styles = StyleSheet.create({
   optionIcon: {
     width: 32,
     height: 32,
+    borderRadius: Theme.borderRadius.small,
     marginRight: Theme.spacing.md,
   },
   optionTitle: {
@@ -412,6 +503,30 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
   },
   optionBadgeText: {
+    fontSize: 10,
+    fontFamily: Theme.fonts.bold,
+    color: '#FFFFFF',
+  },
+  disabledOptionCard: {
+    opacity: 0.6,
+    backgroundColor: Theme.colors.background.tertiary,
+  },
+  disabledIcon: {
+    opacity: 0.5,
+  },
+  disabledText: {
+    color: Theme.colors.text.disabled,
+  },
+  comingSoonBadge: {
+    position: 'absolute',
+    top: Theme.spacing.sm,
+    right: Theme.spacing.sm,
+    backgroundColor: Theme.colors.text.tertiary,
+    borderRadius: Theme.borderRadius.small,
+    paddingHorizontal: Theme.spacing.sm,
+    paddingVertical: 4,
+  },
+  comingSoonBadgeText: {
     fontSize: 10,
     fontFamily: Theme.fonts.bold,
     color: '#FFFFFF',
@@ -445,23 +560,6 @@ const styles = StyleSheet.create({
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.primary,
   },
-  primaryButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.xl,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    width: '100%',
-    maxWidth: 300,
-  },
-  primaryButtonText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.semibold,
-    color: '#FFFFFF',
-    marginRight: Theme.spacing.sm,
-  },
   secondaryButton: {
     backgroundColor: 'transparent',
     borderRadius: Theme.borderRadius.large,
@@ -479,12 +577,61 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
     marginLeft: Theme.spacing.sm,
   },
-  disabledButton: {
-    opacity: 0.6,
-  },
   buttonRow: {
     flexDirection: 'row',
     justifyContent: 'center',
     marginTop: Theme.spacing.lg,
+  },
+  tutorialExamples: {
+    flexDirection: 'column',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.md,
+    gap: Theme.spacing.lg,
+  },
+  exampleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    padding: Theme.spacing.lg,
+    width: '90%',
+    maxWidth: 250,
+  },
+  examplePlantContainer: {
+    alignItems: 'center',
+    flex: 1,
+  },
+  examplePlantImage: {
+    width: 50,
+    height: 50,
+  },
+  exampleDistance: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    flex: 1,
+  },
+  examplePlantName: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.secondary,
+    textAlign: 'center',
+  },
+  tutorialFeatures: {
+    width: '100%',
+    marginBottom: Theme.spacing.xl,
+  },
+  featureItem: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.lg,
+  },
+  featureText: {
+    fontSize: 18,
+    fontFamily: Theme.fonts.semibold,
+    color: Theme.colors.text.primary,
+    marginLeft: Theme.spacing.lg,
   },
 });

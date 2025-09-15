@@ -1,14 +1,17 @@
 import { api } from '@/convex/_generated/api';
+import { useOnboardingSync } from '@/hooks/useOnboardingSync';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import DatabaseHealthService from '@/services/DatabaseHealthService';
 import DatabaseStravaService from '@/services/DatabaseStravaService';
+import { trackRatingAction } from '@/services/RatingService';
 import { useConvex, useConvexAuth, useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
-import React, { createContext, useContext, useEffect, useState } from 'react';
-import { Alert, Platform } from 'react-native';
+import React, { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { Alert, AppState, AppStateStatus, Platform } from 'react-native';
 
 interface SyncContextType {
   // Health Kit
-  connectHealthKit: () => Promise<void>;
+  connectHealthKit: (options?: { autoSyncEnabled?: boolean }) => Promise<void>;
   disconnectHealthKit: () => Promise<void>;
   syncHealthKitManually: () => Promise<void>;
 
@@ -16,6 +19,10 @@ interface SyncContextType {
   connectStrava: () => Promise<void>;
   disconnectStrava: () => Promise<void>;
   syncStravaManually: () => Promise<void>;
+
+  // Activity celebration trigger
+  triggerCelebrationCheck: () => void;
+  celebrationCheckTrigger: number;
 
   // States
   isHealthKitSyncing: boolean;
@@ -38,6 +45,7 @@ interface SyncProviderProps {
 }
 
 export default function SyncProvider({ children }: SyncProviderProps) {
+  const analytics = useAnalytics();
   const { isAuthenticated } = useConvexAuth();
   const convex = useConvex();
 
@@ -49,11 +57,39 @@ export default function SyncProvider({ children }: SyncProviderProps) {
   const [isHealthKitSyncing, setIsHealthKitSyncing] = useState(false);
   const [isStravaSyncing, setIsStravaSyncing] = useState(false);
   const [isConnecting, setIsConnecting] = useState(false);
+  const [celebrationCheckTrigger, setCelebrationCheckTrigger] = useState(0);
+
+  // Auto-sync state
+  const appState = useRef(AppState.currentState);
+  const lastSyncTime = useRef<Date | null>(null);
+  const syncTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   // Queries and mutations
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const updateSyncPreferences = useMutation(api.userProfile.updateSyncPreferences);
   const createProfile = useMutation(api.userProfile.createProfile);
+
+  // Process pending onboarding data after authentication
+  useOnboardingSync();
+
+  // User profile query for identification
+  const currentUser = useQuery(api.userProfile.currentUser);
+
+  // Identify user to analytics when authenticated
+  useEffect(() => {
+    if (isAuthenticated && currentUser && profile) {
+      const userId = currentUser._id;
+      const traits = {
+        firstName: profile.firstName,
+        lastName: profile.lastName,
+        email: currentUser.email,
+        metricSystem: profile.metricSystem,
+        createdAt: currentUser._creationTime,
+      };
+
+      analytics.identify(userId, traits);
+    }
+  }, [isAuthenticated, currentUser, profile, analytics]);
 
   // Initialize services
   useEffect(() => {
@@ -78,19 +114,177 @@ export default function SyncProvider({ children }: SyncProviderProps) {
     initializeServices();
   }, [isAuthenticated, convex, createProfile, profile]);
 
-  const connectHealthKit = async () => {
+  // Celebration trigger function
+  const triggerCelebrationCheck = () => {
+    setCelebrationCheckTrigger(prev => prev + 1);
+  };
+
+  // Auto-sync helper functions
+  const shouldAutoSync = (): boolean => {
+    if (!profile) return false;
+
+    // Check if HealthKit is enabled and auto-sync is enabled
+    const healthKitEnabled = profile.healthKitSyncEnabled;
+    const stravaEnabled = profile.stravaSyncEnabled;
+    const autoSyncEnabled = profile.autoSyncEnabled ?? true; // Default to true
+
+    return autoSyncEnabled && Boolean(healthKitEnabled || stravaEnabled);
+  };
+
+  const isRecentSync = (): boolean => {
+    if (!lastSyncTime.current) return false;
+
+    const now = new Date();
+    const timeDiff = now.getTime() - lastSyncTime.current.getTime();
+    const fiveMinutes = 5 * 60 * 1000; // 5 minutes in milliseconds
+
+    return timeDiff < fiveMinutes;
+  };
+
+  const performAutoSync = async (source: 'foreground' | 'background' | 'periodic'): Promise<void> => {
+    if (!shouldAutoSync() || isRecentSync()) {
+      return;
+    }
+
+    if (isHealthKitSyncing || isStravaSyncing || isConnecting) {
+      return;
+    }
+
+    lastSyncTime.current = new Date();
+
+    try {
+      // Auto-sync HealthKit if enabled
+      if (profile?.healthKitSyncEnabled && healthService) {
+        setIsHealthKitSyncing(true);
+
+        try {
+          const syncResult = await healthService.syncActivitiesFromHealthKit(30, profile.healthKitSyncAnchor);
+
+          // Update sync preferences with new anchor and last sync time
+          if (syncResult.newAnchor) {
+            await updateSyncPreferences({
+              healthKitSyncAnchor: syncResult.newAnchor,
+              lastHealthKitSync: new Date().toISOString()
+            });
+          }
+
+          if (syncResult.created > 0 || syncResult.updated > 0) {
+            // Only show haptic feedback for foreground syncs
+            if (source === 'foreground') {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+
+            // Trigger celebration check after successful sync with new activities
+            setTimeout(() => {
+              triggerCelebrationCheck();
+            }, 1000); // Small delay to ensure database operations complete
+          }
+        } catch (healthError) {
+          console.error(`[SyncProvider] Auto-sync HealthKit (${source}) error:`, healthError);
+        } finally {
+          setIsHealthKitSyncing(false);
+        }
+      }
+
+      // Auto-sync Strava if enabled
+      if (profile?.stravaSyncEnabled && stravaService) {
+        setIsStravaSyncing(true);
+
+        try {
+          const syncResult = await stravaService.syncActivitiesFromStrava();
+
+          if (syncResult.created > 0 || syncResult.updated > 0) {
+            // Only show haptic feedback for foreground syncs
+            if (source === 'foreground') {
+              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            }
+          }
+        } catch (stravaError) {
+          console.error(`[SyncProvider] Auto-sync Strava (${source}) error:`, stravaError);
+        } finally {
+          setIsStravaSyncing(false);
+        }
+      }
+    } catch (error) {
+      console.error(`[SyncProvider] Auto-sync (${source}) error:`, error);
+    }
+  };
+
+  // App state change handler for auto-sync
+  useEffect(() => {
+    const handleAppStateChange = (nextAppState: AppStateStatus) => {
+
+      // Sync when app comes to foreground
+      if (appState.current.match(/inactive|background/) && nextAppState === 'active') {
+        // Small delay to ensure everything is ready
+        setTimeout(() => {
+          performAutoSync('foreground');
+        }, 1000);
+      }
+
+      appState.current = nextAppState;
+    };
+
+    const subscription = AppState.addEventListener('change', handleAppStateChange);
+
+    return () => {
+      subscription?.remove();
+    };
+  }, [profile, healthService, stravaService, isHealthKitSyncing, isStravaSyncing, isConnecting]);
+
+  // Periodic sync setup
+  useEffect(() => {
+    if (!shouldAutoSync()) {
+      // Clear any existing timeout if auto-sync is disabled
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+      return;
+    }
+
+    // Set up periodic sync every 30 minutes when app is active
+    const setupPeriodicSync = () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+      }
+
+      syncTimeoutRef.current = setTimeout(() => {
+        if (AppState.currentState === 'active') {
+          performAutoSync('periodic');
+        }
+        setupPeriodicSync(); // Reschedule
+      }, 30 * 60 * 1000) as any; // 30 minutes
+    };
+
+    setupPeriodicSync();
+
+    return () => {
+      if (syncTimeoutRef.current) {
+        clearTimeout(syncTimeoutRef.current);
+        syncTimeoutRef.current = null;
+      }
+    };
+  }, [profile, healthService, stravaService]);
+
+  const connectHealthKit = async (options?: { autoSyncEnabled?: boolean }) => {
     if (!healthService) {
       throw new Error('Health service not initialized');
     }
 
     try {
+      analytics.track({
+        name: 'healthkit_connection_started',
+        properties: {
+          auto_sync_enabled: options?.autoSyncEnabled ?? true,
+        },
+      });
+
       setIsConnecting(true);
-      console.log('[SyncProvider] Starting HealthKit connection...');
 
       // Request HealthKit permissions
       if (Platform.OS === 'ios') {
         const hasPermissions = await healthService.initializeHealthKit();
-        console.log('[SyncProvider] HealthKit permissions check:', hasPermissions);
 
         if (!hasPermissions) {
           const doubleCheck = await healthService.hasRequiredPermissions();
@@ -112,31 +306,44 @@ export default function SyncProvider({ children }: SyncProviderProps) {
         });
       }
 
-      // Enable HealthKit
+      // Enable HealthKit with auto-sync enabled by default
       await updateSyncPreferences({
         healthKitSyncEnabled: true,
         lastHealthKitSync: undefined,
+        autoSyncEnabled: options?.autoSyncEnabled ?? true, // Default to true
       });
 
       // Check if this is the first sync
       const isFirstSync = !profile?.lastHealthKitSync && !profile?.healthKitInitialSyncCompleted;
 
       if (isFirstSync) {
-        console.log('[SyncProvider] Starting initial HealthKit sync...');
         setIsHealthKitSyncing(true);
 
         // Perform initial sync in background
         setTimeout(async () => {
           try {
             const syncResult = await healthService.initialSyncFromHealthKit();
-            console.log('[SyncProvider] Initial HealthKit sync completed:', syncResult);
 
             // Always clear syncing state when sync completes successfully
             // The InitialSyncModal will show if there are results
             setIsHealthKitSyncing(false);
 
+            // Always mark the sync as completed regardless of results
+            try {
+              await updateSyncPreferences({
+                healthKitInitialSyncCompleted: true,
+              });
+            } catch (retryError) {
+              console.warn('[SyncProvider] Could not mark initial sync completed, will retry later:', retryError);
+            }
+
             if (syncResult && (syncResult.created > 0 || syncResult.updated > 0)) {
-              console.log('[SyncProvider] Initial sync successful, modal will show');
+
+              // Trigger celebration check after initial sync completes
+              // This is for cases where user might have activities that should show individual celebrations
+              setTimeout(() => {
+                triggerCelebrationCheck();
+              }, 2000); // Longer delay for initial sync to ensure all processing completes
             } else {
               Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
             }
@@ -150,7 +357,18 @@ export default function SyncProvider({ children }: SyncProviderProps) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       }
 
-      console.log('[SyncProvider] HealthKit connected successfully');
+      // Enable auto-sync for HealthKit
+      if (healthService) {
+        try {
+          await healthService.enableAutoSync();
+        } catch (autoSyncError) {
+          console.warn('[SyncProvider] Could not enable auto-sync for HealthKit:', autoSyncError);
+        }
+      }
+
+
+      // Track rating action for successful connection
+      trackRatingAction();
     } catch (error: any) {
       console.error('[SyncProvider] Error connecting HealthKit:', error);
       throw error;
@@ -162,11 +380,21 @@ export default function SyncProvider({ children }: SyncProviderProps) {
   const disconnectHealthKit = async () => {
     try {
       setIsConnecting(true);
+
+      // Disable auto-sync for HealthKit
+      if (healthService) {
+        try {
+          await healthService.disableAutoSync();
+        } catch (autoSyncError) {
+          console.warn('[SyncProvider] Could not disable auto-sync for HealthKit:', autoSyncError);
+        }
+      }
+
       await updateSyncPreferences({
         healthKitSyncEnabled: false,
         lastHealthKitSync: undefined,
+        autoSyncEnabled: false,
       });
-      console.log('[SyncProvider] HealthKit disconnected');
     } finally {
       setIsConnecting(false);
     }
@@ -178,16 +406,32 @@ export default function SyncProvider({ children }: SyncProviderProps) {
     }
 
     try {
+      analytics.track({
+        name: 'healthkit_manual_sync_started',
+        properties: {},
+      });
+
       setIsHealthKitSyncing(true);
       const syncResult = await healthService.forceSyncFromHealthKitWithPlants(30);
 
       if (syncResult) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const plantsAwarded = syncResult.plantsAwarded || 0;
+
+        // Track rating action for successful manual sync
+        trackRatingAction();
+
         Alert.alert(
           'Sync Complete! 🌱',
           `Synced ${syncResult.created} new activities and updated ${syncResult.updated} existing ones.\n\n🌱 Plants awarded: ${plantsAwarded}\n\n${plantsAwarded > 0 ? 'Check your garden to see your new plants!' : 'Keep running to earn more plants!'}`
         );
+
+        // Trigger celebration check after manual sync with new activities
+        if (syncResult.created > 0) {
+          setTimeout(() => {
+            triggerCelebrationCheck();
+          }, 1000); // Small delay to ensure database operations complete
+        }
       }
     } finally {
       setIsHealthKitSyncing(false);
@@ -200,8 +444,12 @@ export default function SyncProvider({ children }: SyncProviderProps) {
     }
 
     try {
+      analytics.track({
+        name: 'strava_connection_started',
+        properties: {},
+      });
+
       setIsConnecting(true);
-      console.log('[SyncProvider] Starting Strava connection...');
 
       // Check if HealthKit is currently enabled
       if (profile?.healthKitSyncEnabled) {
@@ -227,28 +475,34 @@ export default function SyncProvider({ children }: SyncProviderProps) {
       const isFirstSync = !profile?.lastStravaSync && !profile?.stravaInitialSyncCompleted;
 
       if (isFirstSync) {
-        console.log('[SyncProvider] Starting initial Strava sync...');
         setIsStravaSyncing(true);
 
         // Perform initial sync in background
         setTimeout(async () => {
           try {
             const syncResult = await stravaService.initialSyncFromStrava();
-            console.log('[SyncProvider] Initial Strava sync completed:', syncResult);
 
             // Always clear syncing state when sync completes successfully
-            // The InitialSyncModal will show if there are results
+            // The InitialSyncModal will show regardless of results
             setIsStravaSyncing(false);
 
+            // Always mark the sync as completed regardless of results
+            try {
+              await updateSyncPreferences({
+                stravaInitialSyncCompleted: true,
+              });
+            } catch (retryError) {
+              console.warn('[SyncProvider] Could not mark Strava initial sync completed:', retryError);
+            }
+
             if (syncResult && (syncResult.created > 0 || syncResult.updated > 0)) {
-              console.log('[SyncProvider] Initial Strava sync successful, modal will show');
+            } else {
             }
 
             // Setup webhook
             try {
               const webhookResult = await stravaService.setupWebhook();
               if (webhookResult?.success) {
-                console.log('[SyncProvider] Webhook setup successful:', webhookResult.id);
               } else {
                 console.warn('[SyncProvider] Webhook setup failed:', webhookResult?.message);
               }
@@ -266,7 +520,6 @@ export default function SyncProvider({ children }: SyncProviderProps) {
         try {
           const webhookResult = await stravaService.setupWebhook();
           if (webhookResult?.success) {
-            console.log('[SyncProvider] Webhook setup successful:', webhookResult.id);
             Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
           } else {
             console.warn('[SyncProvider] Webhook setup failed:', webhookResult?.message);
@@ -276,7 +529,9 @@ export default function SyncProvider({ children }: SyncProviderProps) {
         }
       }
 
-      console.log('[SyncProvider] Strava connected successfully');
+
+      // Track rating action for successful connection
+      trackRatingAction();
     } catch (error: any) {
       console.error('[SyncProvider] Error connecting Strava:', error);
       throw error;
@@ -298,7 +553,6 @@ export default function SyncProvider({ children }: SyncProviderProps) {
         stravaTokenExpiresAt: undefined,
         stravaAthleteId: undefined,
       });
-      console.log('[SyncProvider] Strava disconnected');
     } finally {
       setIsConnecting(false);
     }
@@ -316,6 +570,10 @@ export default function SyncProvider({ children }: SyncProviderProps) {
       if (syncResult) {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         const plantsAwarded = syncResult.plantsAwarded || 0;
+
+        // Track rating action for successful manual sync
+        trackRatingAction();
+
         Alert.alert(
           'Sync Complete! 🌱',
           `Synced ${syncResult.created} new activities and updated ${syncResult.updated} existing ones.\n\n🌱 Plants awarded: ${plantsAwarded}\n\n${plantsAwarded > 0 ? 'Check your garden to see your new plants!' : 'Keep running to earn more plants!'}`
@@ -327,7 +585,7 @@ export default function SyncProvider({ children }: SyncProviderProps) {
   };
 
   // Note: Syncing states are now cleared immediately when sync completes
-  // This ensures proper coordination between SyncLoadingModal and InitialSyncModal
+  // This ensures proper coordination between SyncLoadingBadge and InitialSyncModal
 
   const contextValue: SyncContextType = {
     connectHealthKit,
@@ -336,6 +594,8 @@ export default function SyncProvider({ children }: SyncProviderProps) {
     connectStrava,
     disconnectStrava,
     syncStravaManually,
+    triggerCelebrationCheck,
+    celebrationCheckTrigger,
     isHealthKitSyncing,
     isStravaSyncing,
     isConnecting,

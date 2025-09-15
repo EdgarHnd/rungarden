@@ -1,19 +1,22 @@
+import PrimaryButton from '@/components/PrimaryButton';
 import Theme from '@/constants/theme';
 import { OnboardingData } from '@/constants/types';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
+import { requestRating } from '@/services/RatingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { Ionicons } from '@expo/vector-icons';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as AppleAuth from 'expo-apple-authentication';
 import { makeRedirectUri } from "expo-auth-session";
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
 import * as Notifications from 'expo-notifications';
 import { useRouter } from 'expo-router';
 import { openAuthSessionAsync } from "expo-web-browser";
 import React, { useRef, useState } from 'react';
 import {
   Alert,
+  Dimensions,
+  Image,
   Keyboard,
   Platform,
   SafeAreaView,
@@ -25,6 +28,7 @@ import {
   View
 } from 'react-native';
 import Reanimated, {
+  Easing,
   FadeIn,
   FadeOut,
   SlideInLeft,
@@ -35,7 +39,11 @@ import Reanimated, {
 
 const redirectTo = makeRedirectUri();
 
-const TOTAL_STEPS = 9; // Welcome, FirstName, LastName, Gender, Age, Units, Schedule, Notifications, Auth
+const TOTAL_STEPS = 10; // Welcome, FirstName, LastName, Gender, Age, Units, Schedule, Notifications, Rating, Auth
+
+// Screen size detection for responsive design
+const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
+const IS_SMALL_SCREEN = screenHeight < 700; // Detect older iPhones (iPhone SE, etc.)
 
 export default function OnboardingScreen() {
   const { signIn } = useAuthActions();
@@ -43,6 +51,7 @@ export default function OnboardingScreen() {
   const analytics = useAnalytics();
   const [currentStep, setCurrentStep] = useState(0);
   const [isGoingBack, setIsGoingBack] = useState(false);
+  const [isSignInMode, setIsSignInMode] = useState(false);
 
   // Input refs
   const firstNameInputRef = useRef<TextInput>(null);
@@ -53,17 +62,14 @@ export default function OnboardingScreen() {
   const [data, setData] = useState<OnboardingData>({
     firstName: null,
     lastName: null,
-    mascotName: 'Blaze',
-    canRun30Min: null,
-    goalDistance: null,
-    daysPerWeek: 3,
-    preferredDays: [],
-    metricSystem: null,
     gender: null,
     age: null,
+    metricSystem: null,
+    daysPerWeek: 1,
+    preferredDays: [],
     pushNotificationsEnabled: null,
     weekStartDay: 1, // Monday
-    hasRated: null,
+    hasRated: null, // Whether user completed the rating step
   });
 
   // Helper functions
@@ -71,8 +77,12 @@ export default function OnboardingScreen() {
     setData(prev => ({ ...prev, ...updates }));
   };
 
-  const getEnterAnimation = () => isGoingBack ? SlideInLeft : SlideInRight;
-  const getExitAnimation = () => isGoingBack ? SlideOutRight : SlideOutLeft;
+  const getEnterAnimation = () => isGoingBack ?
+    SlideInLeft.duration(400).easing(Easing.out(Easing.cubic)) :
+    SlideInRight.duration(400).easing(Easing.out(Easing.cubic));
+  const getExitAnimation = () => isGoingBack ?
+    SlideOutRight.duration(300).easing(Easing.in(Easing.cubic)) :
+    SlideOutLeft.duration(300).easing(Easing.in(Easing.cubic));
 
   const nextStep = () => {
     if (currentStep < TOTAL_STEPS - 1) {
@@ -93,7 +103,7 @@ export default function OnboardingScreen() {
       setCurrentStep(currentStep - 1);
 
       // Reset direction flag after animation
-      setTimeout(() => setIsGoingBack(false), 400);
+      setTimeout(() => setIsGoingBack(false), 450);
     }
   };
 
@@ -107,34 +117,26 @@ export default function OnboardingScreen() {
       case 5: return data.metricSystem !== null; // Units
       case 6: return data.preferredDays.length >= data.daysPerWeek; // Schedule
       case 7: return data.pushNotificationsEnabled !== null; // Notifications
-      case 8: return true; // Auth
+      case 8: return data.hasRated !== null; // Rating
+      case 9: return true; // Auth
       default: return false;
     }
   };
 
   const saveOnboardingDataToStorage = async () => {
     try {
-      const onboardingData = {
-        trainingProfile: {
-          goalDistance: 'just-run-more' as const,
-          currentAbility: 'none' as const,
-          longestDistance: 'never' as const,
-          daysPerWeek: data.daysPerWeek,
-          preferredDays: data.preferredDays,
-          hasTreadmill: false,
-          preferTimeOverDistance: true,
-          pushNotificationsEnabled: data.pushNotificationsEnabled,
-        },
-        userProfile: {
-          firstName: data.firstName,
-          lastName: data.lastName,
-          mascotName: data.mascotName,
-          path: 'run-habit' as const,
-          metricSystem: data.metricSystem,
-          gender: data.gender,
-          age: data.age,
-          weekStartDay: data.weekStartDay,
-        },
+      // Store the simplified onboarding data that matches what we actually collect
+      const onboardingData: OnboardingData = {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        gender: data.gender,
+        age: data.age,
+        metricSystem: data.metricSystem,
+        daysPerWeek: data.daysPerWeek,
+        preferredDays: data.preferredDays,
+        pushNotificationsEnabled: data.pushNotificationsEnabled,
+        weekStartDay: data.weekStartDay,
+        hasRated: data.hasRated,
       };
 
       await AsyncStorage.setItem('pendingOnboardingData', JSON.stringify(onboardingData));
@@ -146,11 +148,15 @@ export default function OnboardingScreen() {
   const handleGoogleSignIn = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await saveOnboardingDataToStorage();
+
+      // Only save onboarding data if we're in onboarding mode (not sign-in only)
+      if (!isSignInMode) {
+        await saveOnboardingDataToStorage();
+      }
 
       analytics.track({
-        name: 'onboarding_google_signin_attempted',
-        properties: { step: currentStep },
+        name: isSignInMode ? 'signin_google_attempted' : 'onboarding_google_signin_attempted',
+        properties: { step: currentStep, mode: isSignInMode ? 'signin' : 'onboarding' },
       });
 
       const { redirect } = await signIn("google", { redirectTo });
@@ -164,10 +170,11 @@ export default function OnboardingScreen() {
 
         if (signInResult) {
           analytics.track({
-            name: 'onboarding_signin_completed',
+            name: isSignInMode ? 'signin_completed' : 'onboarding_signin_completed',
             properties: {
               auth_method: 'google',
-              step: currentStep
+              step: currentStep,
+              mode: isSignInMode ? 'signin' : 'onboarding'
             },
           });
           router.replace('/(app)');
@@ -182,11 +189,15 @@ export default function OnboardingScreen() {
   const handleAppleSignIn = async () => {
     try {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-      await saveOnboardingDataToStorage();
+
+      // Only save onboarding data if we're in onboarding mode (not sign-in only)
+      if (!isSignInMode) {
+        await saveOnboardingDataToStorage();
+      }
 
       analytics.track({
-        name: 'onboarding_apple_signin_attempted',
-        properties: { step: currentStep },
+        name: isSignInMode ? 'signin_apple_attempted' : 'onboarding_apple_signin_attempted',
+        properties: { step: currentStep, mode: isSignInMode ? 'signin' : 'onboarding' },
       });
 
       if (Platform.OS === 'ios' && await AppleAuth.isAvailableAsync()) {
@@ -201,10 +212,11 @@ export default function OnboardingScreen() {
           const result = await signIn('native-apple', credential);
           if (result) {
             analytics.track({
-              name: 'onboarding_signin_completed',
+              name: isSignInMode ? 'signin_completed' : 'onboarding_signin_completed',
               properties: {
                 auth_method: 'apple',
-                step: currentStep
+                step: currentStep,
+                mode: isSignInMode ? 'signin' : 'onboarding'
               },
             });
             router.replace('/(app)');
@@ -239,60 +251,47 @@ export default function OnboardingScreen() {
     setTimeout(() => nextStep(), 300);
   };
 
+  const handleSignInClick = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsSignInMode(true);
+    setCurrentStep(9); // Jump directly to auth step
+  };
+
   // Render functions for each step
   const renderWelcome = () => (
-    <Reanimated.View
-      style={styles.stepContainer}
-      entering={FadeIn.duration(600)}
-      exiting={FadeOut.duration(300)}
-    >
-      <View style={styles.heroSection}>
-        <LinearGradient
-          colors={['#4CAF50', '#8BC34A', '#CDDC39']}
-          start={{ x: 0, y: 0 }}
-          end={{ x: 1, y: 1 }}
-          style={styles.logoContainer}
-        >
-          <Text style={styles.logoEmoji}>🌱</Text>
-        </LinearGradient>
+    <View style={styles.stepContainer}>
+      <View style={styles.welcomeContainer}>
+        <View style={styles.logoContainer}>
+          <Image
+            source={require('@/assets/images/icon.png')}
+            style={styles.logoImage}
+            resizeMode="contain"
+          />
+        </View>
 
-        <Text style={styles.appTitle}>Welcome to Run Garden</Text>
-        <Text style={styles.appTagline}>Grow your garden with every run</Text>
+        <Text style={styles.appTitle}>RunGarden</Text>
+        <Text style={styles.appSubtitle}>Grow your garden, one run at a time</Text>
       </View>
 
-      <View style={styles.featuresSection}>
-        <View style={styles.feature}>
-          <Text style={styles.featureEmoji}>🏃‍♂️</Text>
-          <View style={styles.featureText}>
-            <Text style={styles.featureTitle}>Run & Earn Plants</Text>
-            <Text style={styles.featureDescription}>Every run rewards you with plants based on distance</Text>
-          </View>
-        </View>
+      <View style={styles.welcomeButtons}>
+        <PrimaryButton
+          title="Get Started"
+          onPress={nextStep}
+          size="large"
+          fullWidth
+        />
 
-        <View style={styles.feature}>
-          <Text style={styles.featureEmoji}>🌳</Text>
-          <View style={styles.featureText}>
-            <Text style={styles.featureTitle}>Build Your Garden</Text>
-            <Text style={styles.featureDescription}>Plant and grow your collection in a beautiful garden</Text>
-          </View>
-        </View>
-
-        <View style={styles.feature}>
-          <Text style={styles.featureEmoji}>👥</Text>
-          <View style={styles.featureText}>
-            <Text style={styles.featureTitle}>Share with Friends</Text>
-            <Text style={styles.featureDescription}>Visit friends' gardens and motivate each other</Text>
-          </View>
-        </View>
+        <PrimaryButton
+          title="Already have an account? Sign in"
+          onPress={handleSignInClick}
+          variant="secondary"
+          size="medium"
+          fullWidth
+          textWeight="medium"
+          textTransform="none"
+        />
       </View>
-
-      <TouchableOpacity
-        style={styles.continueButton}
-        onPress={nextStep}
-      >
-        <Text style={styles.continueButtonText}>Continue</Text>
-      </TouchableOpacity>
-    </Reanimated.View>
+    </View>
   );
 
   const renderFirstName = () => (
@@ -307,7 +306,7 @@ export default function OnboardingScreen() {
           <TextInput
             ref={firstNameInputRef}
             style={styles.textInput}
-            placeholder="Edgar"
+            placeholder="Forest"
             placeholderTextColor={Theme.colors.text.tertiary}
             value={data.firstName || ''}
             onChangeText={(text) => updateData({ firstName: text })}
@@ -332,7 +331,7 @@ export default function OnboardingScreen() {
           <TextInput
             ref={lastNameInputRef}
             style={styles.textInput}
-            placeholder="Haond"
+            placeholder="Gump"
             placeholderTextColor={Theme.colors.text.tertiary}
             value={data.lastName || ''}
             onChangeText={(text) => updateData({ lastName: text })}
@@ -366,6 +365,7 @@ export default function OnboardingScreen() {
                 data.gender === option.value && styles.optionButtonSelected
               ]}
               onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 updateData({ gender: option.value as any });
                 setTimeout(() => nextStep(), 300);
               }}
@@ -384,32 +384,45 @@ export default function OnboardingScreen() {
   );
 
   const renderAge = () => (
-    <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-      <Reanimated.View
-        style={styles.stepContainer}
-        entering={getEnterAnimation()}
-        exiting={getExitAnimation()}
-      >
-        <View style={styles.inputSection}>
-          <Text style={styles.stepTitle}>What's your age?</Text>
-          <TextInput
-            ref={ageInputRef}
-            style={styles.textInput}
-            placeholder="35"
-            placeholderTextColor={Theme.colors.text.tertiary}
-            value={data.age?.toString() || ''}
-            onChangeText={(text) => {
-              const age = parseInt(text) || null;
-              updateData({ age });
-            }}
-            keyboardType="numeric"
-            autoFocus
-            returnKeyType="done"
-            onSubmitEditing={() => canProceed() && nextStep()}
-          />
+    <Reanimated.View
+      style={styles.stepContainer}
+      entering={getEnterAnimation()}
+      exiting={getExitAnimation()}
+    >
+      <View style={styles.optionsSection}>
+        <Text style={styles.stepTitle}>What's your age?</Text>
+        <View style={styles.optionsContainer}>
+          {[
+            { value: 20, label: 'Under 25' },
+            { value: 30, label: '25-34' },
+            { value: 40, label: '35-44' },
+            { value: 50, label: '45-54' },
+            { value: 60, label: '55-64' },
+            { value: 70, label: '65+' },
+          ].map((range) => (
+            <TouchableOpacity
+              key={range.value}
+              style={[
+                styles.optionButton,
+                data.age === range.value && styles.optionButtonSelected
+              ]}
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                updateData({ age: range.value });
+                setTimeout(() => nextStep(), 300);
+              }}
+            >
+              <Text style={[
+                styles.optionButtonText,
+                data.age === range.value && styles.optionButtonTextSelected
+              ]}>
+                {range.label}
+              </Text>
+            </TouchableOpacity>
+          ))}
         </View>
-      </Reanimated.View>
-    </TouchableWithoutFeedback>
+      </View>
+    </Reanimated.View>
   );
 
   const renderUnits = () => (
@@ -427,12 +440,12 @@ export default function OnboardingScreen() {
               data.metricSystem === 'metric' && styles.unitCardSelected
             ]}
             onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               updateData({ metricSystem: 'metric' });
               setTimeout(() => nextStep(), 300);
             }}
           >
             <Text style={styles.unitTitle}>Metric</Text>
-            <Text style={styles.unitSubtitle}>km, kg, °C</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -441,12 +454,12 @@ export default function OnboardingScreen() {
               data.metricSystem === 'imperial' && styles.unitCardSelected
             ]}
             onPress={() => {
+              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               updateData({ metricSystem: 'imperial' });
               setTimeout(() => nextStep(), 300);
             }}
           >
             <Text style={styles.unitTitle}>Imperial</Text>
-            <Text style={styles.unitSubtitle}>miles, lbs, °F</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -463,10 +476,10 @@ export default function OnboardingScreen() {
         exiting={getExitAnimation()}
       >
         <View style={styles.scheduleSection}>
-          <Text style={styles.stepTitle}>Set your training schedule</Text>
+          <Text style={styles.stepTitle}>How many days do you want to run?</Text>
 
           <View style={styles.daysPerWeekSection}>
-            <Text style={styles.sectionSubtitle}>Days per week (1-7)</Text>
+            <Text style={styles.sectionSubtitle}>Days per week</Text>
             <View style={styles.counterContainer}>
               <TouchableOpacity
                 style={[styles.counterButton, data.daysPerWeek <= 1 && styles.counterButtonDisabled]}
@@ -519,16 +532,35 @@ export default function OnboardingScreen() {
                     data.preferredDays.includes(day) && styles.dayButtonSelected
                   ]}
                   onPress={() => {
-                    const newPreferred = data.preferredDays.includes(day)
-                      ? data.preferredDays.filter(d => d !== day)
-                      : data.preferredDays.length < data.daysPerWeek
-                        ? [...data.preferredDays, day]
-                        : data.preferredDays;
+                    let newPreferred;
+
+                    if (data.preferredDays.includes(day)) {
+                      // If clicking on already selected day
+                      if (data.daysPerWeek === 1) {
+                        // For 1 day per week, don't allow unselecting - keep it selected
+                        newPreferred = data.preferredDays;
+                      } else {
+                        // For multiple days, allow unselecting
+                        newPreferred = data.preferredDays.filter(d => d !== day);
+                      }
+                    } else {
+                      // If clicking on unselected day
+                      if (data.preferredDays.length < data.daysPerWeek) {
+                        // Have room for more days
+                        newPreferred = [...data.preferredDays, day];
+                      } else if (data.daysPerWeek === 1) {
+                        // For 1 day per week, replace the current selection
+                        newPreferred = [day];
+                      } else {
+                        // At capacity, don't change
+                        newPreferred = data.preferredDays;
+                      }
+                    }
 
                     updateData({ preferredDays: newPreferred });
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                   }}
-                  disabled={!data.preferredDays.includes(day) && data.preferredDays.length >= data.daysPerWeek}
+                  disabled={!data.preferredDays.includes(day) && data.preferredDays.length >= data.daysPerWeek && data.daysPerWeek > 1}
                 >
                   <Text style={[
                     styles.dayButtonText,
@@ -591,6 +623,73 @@ export default function OnboardingScreen() {
     </Reanimated.View>
   );
 
+  const renderRating = () => (
+    <Reanimated.View
+      style={styles.stepContainer}
+      entering={getEnterAnimation()}
+      exiting={getExitAnimation()}
+    >
+      <View style={styles.ratingSection}>
+        <Text style={styles.stepTitle}>We're a small team</Text>
+        <Text style={styles.stepDescription}>
+          So a rating goes a long way 💜
+        </Text>
+
+        <View style={styles.ratingContainer}>
+          <View style={styles.starsContainer}>
+            {[1, 2, 3, 4, 5].map((star) => (
+              <Ionicons
+                key={star}
+                name="star"
+                size={32}
+                color={Theme.colors.accent.primary}
+                style={styles.starIcon}
+              />
+            ))}
+          </View>
+
+          <View style={styles.ratingButtons}>
+            <PrimaryButton
+              title="Leave a rating"
+              onPress={async () => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                updateData({ hasRated: true });
+
+                // Actually request the app store rating and wait for it
+                try {
+                  await requestRating(true); // true = manual request from onboarding
+                  // Rating dialog has been shown, now proceed
+                  setTimeout(() => nextStep(), 300);
+                } catch (error) {
+                  console.error('Failed to request rating:', error);
+                  // Even if rating fails, still proceed to next step
+                  setTimeout(() => nextStep(), 300);
+                }
+              }}
+              size="large"
+              fullWidth
+              textTransform="none"
+            />
+
+            <PrimaryButton
+              title="Maybe later"
+              onPress={() => {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                updateData({ hasRated: false });
+                setTimeout(() => nextStep(), 300);
+              }}
+              variant="secondary"
+              size="large"
+              fullWidth
+              textWeight="medium"
+              textTransform="none"
+            />
+          </View>
+        </View>
+      </View>
+    </Reanimated.View>
+  );
+
   const renderAuth = () => (
     <Reanimated.View
       style={styles.stepContainer}
@@ -598,52 +697,79 @@ export default function OnboardingScreen() {
       exiting={getExitAnimation()}
     >
       <View style={styles.authSection}>
-        <Text style={styles.stepTitle}>Sign up to save your progress</Text>
+        <Text style={styles.stepTitle}>
+          {isSignInMode ? 'Welcome back!' : 'Sign up to save your progress'}
+        </Text>
         <Text style={styles.stepDescription}>
-          Keep your garden and running data safe across all your devices
+          {isSignInMode
+            ? 'Sign in to access your garden and continue your running journey'
+            : 'Keep your garden and running data safe across all your devices'
+          }
         </Text>
 
-        <View style={styles.authBenefits}>
-          <View style={styles.benefit}>
-            <View style={styles.benefitCheck}>
-              <Ionicons name="checkmark" size={16} color="white" />
+        {!isSignInMode && (
+          <View style={styles.authBenefits}>
+            <View style={styles.benefit}>
+              <View style={styles.benefitCheck}>
+                <Ionicons name="checkmark" size={16} color="white" />
+              </View>
+              <Text style={styles.benefitText}>Save your garden progress</Text>
             </View>
-            <Text style={styles.benefitText}>Save your garden progress</Text>
-          </View>
 
-          <View style={styles.benefit}>
-            <View style={styles.benefitCheck}>
-              <Ionicons name="checkmark" size={16} color="white" />
+            <View style={styles.benefit}>
+              <View style={styles.benefitCheck}>
+                <Ionicons name="checkmark" size={16} color="white" />
+              </View>
+              <Text style={styles.benefitText}>Sync between devices</Text>
             </View>
-            <Text style={styles.benefitText}>Sync between devices</Text>
-          </View>
 
-          <View style={styles.benefit}>
-            <View style={styles.benefitCheck}>
-              <Ionicons name="checkmark" size={16} color="white" />
+            <View style={styles.benefit}>
+              <View style={styles.benefitCheck}>
+                <Ionicons name="checkmark" size={16} color="white" />
+              </View>
+              <Text style={styles.benefitText}>Connect with friends</Text>
             </View>
-            <Text style={styles.benefitText}>Connect with friends</Text>
           </View>
-        </View>
+        )}
 
         <View style={styles.authButtons}>
-          <TouchableOpacity
-            style={styles.googleButton}
+          <PrimaryButton
+            title={isSignInMode ? 'Sign in with Google' : 'Continue with Google'}
             onPress={handleGoogleSignIn}
-          >
-            <Text style={styles.googleButtonText}>Continue with Google</Text>
-          </TouchableOpacity>
+            size="large"
+            fullWidth
+            gradientColors={['#DB4437', '#EA4335']}
+            textTransform="none"
+          />
 
           {Platform.OS === 'ios' && (
-            <TouchableOpacity
-              style={styles.appleButton}
+            <PrimaryButton
+              title="Sign in with Apple"
               onPress={handleAppleSignIn}
-            >
-              <Ionicons name="logo-apple" size={20} color="white" />
-              <Text style={styles.appleButtonText}>Sign in with Apple</Text>
-            </TouchableOpacity>
+              size="large"
+              fullWidth
+              gradientColors={['#000000', '#333333']}
+              textTransform="none"
+              icon={<Ionicons name="logo-apple" size={20} color="white" />}
+              iconPosition="left"
+            />
           )}
         </View>
+
+        {isSignInMode && (
+          <PrimaryButton
+            title="New to RunGarden? Get Started"
+            onPress={() => {
+              setIsSignInMode(false);
+              setCurrentStep(0);
+            }}
+            variant="secondary"
+            size="medium"
+            fullWidth
+            textWeight="medium"
+            textTransform="none"
+          />
+        )}
 
         <Text style={styles.privacyText}>
           We only use your account for authentication. Your data stays private.
@@ -653,7 +779,7 @@ export default function OnboardingScreen() {
   );
 
   const renderProgressBar = () => {
-    if (currentStep === 0) return null;
+    if (currentStep === 0 || isSignInMode) return null;
 
     return (
       <View style={styles.progressBarContainer}>
@@ -676,19 +802,19 @@ export default function OnboardingScreen() {
 
   const renderContinueButton = () => {
     // Show continue button for steps that need manual progression
-    const needsContinueButton = [1, 2, 4, 6]; // FirstName, LastName, Age, Schedule
+    const needsContinueButton = [1, 2, 6]; // FirstName, LastName, Schedule (Age and Rating now auto-advance)
 
     if (!needsContinueButton.includes(currentStep)) return null;
 
     return (
       <View style={styles.footer}>
-        <TouchableOpacity
-          style={[styles.continueButton, !canProceed() && styles.continueButtonDisabled]}
+        <PrimaryButton
+          title="Continue"
           onPress={nextStep}
           disabled={!canProceed()}
-        >
-          <Text style={styles.continueButtonText}>Continue</Text>
-        </TouchableOpacity>
+          size="large"
+          fullWidth
+        />
       </View>
     );
   };
@@ -697,15 +823,56 @@ export default function OnboardingScreen() {
     <SafeAreaView style={styles.container}>
       {renderProgressBar()}
       <View style={styles.content}>
-        {currentStep === 0 && renderWelcome()}
-        {currentStep === 1 && renderFirstName()}
-        {currentStep === 2 && renderLastName()}
-        {currentStep === 3 && renderGender()}
-        {currentStep === 4 && renderAge()}
-        {currentStep === 5 && renderUnits()}
-        {currentStep === 6 && renderSchedule()}
-        {currentStep === 7 && renderNotifications()}
-        {currentStep === 8 && renderAuth()}
+        {currentStep === 0 && (
+          <Reanimated.View style={{ flex: 1 }} entering={FadeIn.duration(600)} exiting={FadeOut.duration(300)} key="step-0">
+            {renderWelcome()}
+          </Reanimated.View>
+        )}
+        {currentStep === 1 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-1">
+            {renderFirstName()}
+          </Reanimated.View>
+        )}
+        {currentStep === 2 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-2">
+            {renderLastName()}
+          </Reanimated.View>
+        )}
+        {currentStep === 3 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-3">
+            {renderGender()}
+          </Reanimated.View>
+        )}
+        {currentStep === 4 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-4">
+            {renderAge()}
+          </Reanimated.View>
+        )}
+        {currentStep === 5 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-5">
+            {renderUnits()}
+          </Reanimated.View>
+        )}
+        {currentStep === 6 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-6">
+            {renderSchedule()}
+          </Reanimated.View>
+        )}
+        {currentStep === 7 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-7">
+            {renderNotifications()}
+          </Reanimated.View>
+        )}
+        {currentStep === 8 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-8">
+            {renderRating()}
+          </Reanimated.View>
+        )}
+        {currentStep === 9 && (
+          <Reanimated.View style={{ flex: 1 }} entering={getEnterAnimation()} exiting={getExitAnimation()} key="step-9">
+            {renderAuth()}
+          </Reanimated.View>
+        )}
       </View>
       {renderContinueButton()}
     </SafeAreaView>
@@ -726,7 +893,6 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     paddingHorizontal: Theme.spacing.xl,
-    paddingTop: 50,
     paddingBottom: Theme.spacing.lg,
   },
   backButton: {
@@ -749,70 +915,48 @@ const styles = StyleSheet.create({
   stepContainer: {
     flex: 1,
     paddingHorizontal: Theme.spacing.xl,
-    justifyContent: 'center',
+    justifyContent: 'flex-start',
+    paddingTop: IS_SMALL_SCREEN ? 60 : 100,
   },
 
   // Welcome screen styles
-  heroSection: {
+  welcomeContainer: {
+    flex: 1,
     alignItems: 'center',
-    marginBottom: 60,
+    justifyContent: 'center',
+    paddingHorizontal: Theme.spacing.xl,
   },
   logoContainer: {
     width: 120,
     height: 120,
-    borderRadius: 60,
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 24,
-    ...Theme.shadows.large,
   },
-  logoEmoji: {
-    fontSize: 48,
+  logoImage: {
+    width: 120,
+    height: 120,
   },
   appTitle: {
-    fontSize: 32,
-    fontFamily: Theme.fonts.bold,
+    fontSize: 36,
+    fontFamily: Theme.fonts.black,
     color: Theme.colors.text.primary,
-    marginBottom: 8,
+    marginBottom: 12,
     textAlign: 'center',
   },
-  appTagline: {
+  appSubtitle: {
     fontSize: 18,
     fontFamily: Theme.fonts.medium,
     color: Theme.colors.text.secondary,
     textAlign: 'center',
     lineHeight: 24,
+    maxWidth: 280,
   },
 
-  featuresSection: {
-    gap: Theme.spacing.lg,
-    marginBottom: 60,
-  },
-  feature: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
-  },
-  featureEmoji: {
-    fontSize: 32,
-    marginRight: Theme.spacing.lg,
-  },
-  featureText: {
-    flex: 1,
-  },
-  featureTitle: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
-    marginBottom: 4,
-  },
-  featureDescription: {
-    fontSize: 14,
-    fontFamily: Theme.fonts.medium,
-    color: Theme.colors.text.secondary,
-    lineHeight: 20,
+  // Welcome buttons container
+  welcomeButtons: {
+    gap: Theme.spacing.md,
+    width: '100%',
+    paddingHorizontal: Theme.spacing.xl,
   },
 
   // Input section styles
@@ -852,24 +996,25 @@ const styles = StyleSheet.create({
   // Options section styles
   optionsSection: {
     alignItems: 'center',
-    gap: Theme.spacing.xl,
+    gap: IS_SMALL_SCREEN ? Theme.spacing.lg : Theme.spacing.xxl,
+    paddingTop: IS_SMALL_SCREEN ? Theme.spacing.md : Theme.spacing.xl,
   },
   optionsContainer: {
-    gap: Theme.spacing.lg,
+    gap: Theme.spacing.md,
     width: '100%',
   },
   optionButton: {
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.xl,
+    paddingVertical: IS_SMALL_SCREEN ? Theme.spacing.md : Theme.spacing.lg,
+    paddingHorizontal: IS_SMALL_SCREEN ? Theme.spacing.lg : Theme.spacing.xl,
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: 'transparent',
   },
   optionButtonSelected: {
     borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
+    backgroundColor: 'white',
   },
   optionButtonText: {
     fontSize: 18,
@@ -892,12 +1037,12 @@ const styles = StyleSheet.create({
     borderRadius: Theme.borderRadius.large,
     padding: Theme.spacing.xl,
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: 'transparent',
   },
   unitCardSelected: {
     borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
+    backgroundColor: 'white',
   },
   unitTitle: {
     fontSize: 18,
@@ -971,12 +1116,12 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.lg,
     minWidth: 45,
     alignItems: 'center',
-    borderWidth: 2,
+    borderWidth: 3,
     borderColor: 'transparent',
   },
   dayButtonSelected: {
     borderColor: Theme.colors.accent.primary,
-    backgroundColor: Theme.colors.transparent.accent20,
+    backgroundColor: 'white',
   },
   dayButtonText: {
     fontSize: 14,
@@ -1022,33 +1167,6 @@ const styles = StyleSheet.create({
     gap: Theme.spacing.md,
     width: '100%',
   },
-  googleButton: {
-    backgroundColor: '#DB4437',
-    borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.lg,
-    alignItems: 'center',
-    ...Theme.shadows.medium,
-  },
-  googleButtonText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: 'white',
-  },
-  appleButton: {
-    backgroundColor: '#000000',
-    borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.lg,
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: Theme.spacing.sm,
-    ...Theme.shadows.medium,
-  },
-  appleButtonText: {
-    fontSize: 16,
-    fontFamily: Theme.fonts.bold,
-    color: 'white',
-  },
 
   privacyText: {
     fontSize: 13,
@@ -1058,25 +1176,32 @@ const styles = StyleSheet.create({
     lineHeight: 18,
   },
 
+  // Rating section styles
+  ratingSection: {
+    alignItems: 'center',
+    gap: Theme.spacing.xl,
+  },
+  ratingContainer: {
+    alignItems: 'center',
+    gap: Theme.spacing.xl,
+    width: '100%',
+  },
+  starsContainer: {
+    flexDirection: 'row',
+    gap: Theme.spacing.sm,
+    marginVertical: Theme.spacing.lg,
+  },
+  starIcon: {
+    // Additional styling can be added here if needed
+  },
+  ratingButtons: {
+    gap: Theme.spacing.lg,
+    width: '100%',
+  },
+
   // Footer styles
   footer: {
     padding: Theme.spacing.xl,
     paddingBottom: 40,
-  },
-  continueButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    borderRadius: Theme.borderRadius.large,
-    paddingVertical: Theme.spacing.lg,
-    alignItems: 'center',
-    ...Theme.shadows.accent,
-  },
-  continueButtonDisabled: {
-    backgroundColor: Theme.colors.background.tertiary,
-    opacity: 0.5,
-  },
-  continueButtonText: {
-    fontSize: 18,
-    fontFamily: Theme.fonts.bold,
-    color: 'white',
   },
 }); 

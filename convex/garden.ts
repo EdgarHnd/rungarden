@@ -1,5 +1,6 @@
 import { getAuthUserId } from "@convex-dev/auth/server";
 import { ConvexError, v } from "convex/values";
+import { api } from "./_generated/api";
 import { mutation, query } from "./_generated/server";
 
 // Initialize user's garden with default settings
@@ -90,7 +91,7 @@ export const getGardenLayout = query({
   },
 });
 
-// Get all plants in user's garden (planted plants with positions)
+  // Get all plants in user's garden (planted plants with positions)
 export const getGardenPlants = query({
   args: {},
   handler: async (ctx) => {
@@ -105,16 +106,32 @@ export const getGardenPlants = query({
       .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", true))
       .collect();
 
+    console.log(`[getGardenPlants] Found ${plants.length} planted plants for user ${userId}`);
+
     // Fetch plant type details for each plant
     const plantsWithTypes = await Promise.all(
       plants.map(async (plant) => {
         const plantType = await ctx.db.get(plant.plantTypeId);
+        
+        // Debug logging for missing plant types
+        if (!plantType) {
+          console.warn(`[getGardenPlants] Missing plant type for plant ${plant._id}, plantTypeId: ${plant.plantTypeId}`);
+        }
+        
         return {
           ...plant,
           plantType,
         };
       })
     );
+
+    // Count plants with missing plant types
+    const plantsWithMissingTypes = plantsWithTypes.filter(p => !p.plantType);
+    if (plantsWithMissingTypes.length > 0) {
+      console.warn(`[getGardenPlants] ${plantsWithMissingTypes.length} out of ${plantsWithTypes.length} plants have missing plant types`);
+    } else {
+      console.log(`[getGardenPlants] All ${plantsWithTypes.length} plants have valid plant types`);
+    }
 
     return plantsWithTypes;
   },
@@ -305,7 +322,7 @@ export const plantAllInventoryPlants = mutation({
       }
 
       if (!gridPosition) {
-        console.warn(`[plantAllInventoryPlants] No more available positions in garden after planting ${plantsPlanted} plants`);
+        console.warn(`[plantAllInventoryPlants] Garden full: planted ${plantsPlanted} plants, ${inventoryPlants.length - plantsPlanted} plants remain in inventory`);
         break; // No more space in garden
       }
 
@@ -329,9 +346,68 @@ export const plantAllInventoryPlants = mutation({
       });
     }
 
-    console.log(`[plantAllInventoryPlants] Successfully planted ${plantsPlanted} plants for user ${userId}`);
+    console.log(`[plantAllInventoryPlants] Successfully planted ${plantsPlanted} plants for user ${userId}. ${inventoryPlants.length - plantsPlanted} plants remain in inventory.`);
 
-    return { success: true, plantsPlanted };
+    return { success: true, plantsPlanted, remainingInInventory: inventoryPlants.length - plantsPlanted };
+  },
+});
+
+// Debug function to check for plants with missing plant types and fix them
+export const diagnosePlantTypeIssues = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new ConvexError("Not authenticated");
+    }
+
+    console.log(`[diagnosePlantTypeIssues] Starting diagnosis for user ${userId}`);
+
+    // Get all user's plants
+    const userPlants = await ctx.db
+      .query("plants")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .collect();
+
+    console.log(`[diagnosePlantTypeIssues] Found ${userPlants.length} total plants`);
+
+    // Check which plants have missing plant types
+    const plantsWithMissingTypes = [];
+    const plantTypeIds = new Set();
+
+    for (const plant of userPlants) {
+      const plantType = await ctx.db.get(plant.plantTypeId);
+      if (!plantType) {
+        plantsWithMissingTypes.push(plant);
+      }
+      plantTypeIds.add(plant.plantTypeId);
+    }
+
+    console.log(`[diagnosePlantTypeIssues] ${plantsWithMissingTypes.length} plants have missing plant types`);
+    console.log(`[diagnosePlantTypeIssues] Referenced plant type IDs:`, Array.from(plantTypeIds));
+
+    // Get all available plant types
+    const availablePlantTypes = await ctx.db.query("plantTypes").collect();
+    console.log(`[diagnosePlantTypeIssues] ${availablePlantTypes.length} plant types available in database`);
+    
+    // If no plant types exist, try to initialize them
+    if (availablePlantTypes.length === 0) {
+      console.warn(`[diagnosePlantTypeIssues] No plant types found! Attempting to initialize...`);
+      try {
+        await ctx.runMutation(api.plantTypesNew.initializeNewPlantTypes, {});
+        console.log(`[diagnosePlantTypeIssues] Successfully initialized plant types`);
+      } catch (error) {
+        console.error(`[diagnosePlantTypeIssues] Failed to initialize plant types:`, error);
+      }
+    }
+
+    return {
+      totalPlants: userPlants.length,
+      plantsWithMissingTypes: plantsWithMissingTypes.length,
+      availablePlantTypes: availablePlantTypes.length,
+      missingPlantIds: plantsWithMissingTypes.map(p => p._id),
+      referencedTypeIds: Array.from(plantTypeIds),
+    };
   },
 });
 

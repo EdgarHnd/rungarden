@@ -1,14 +1,17 @@
+import PlantStashSkeleton from '@/components/PlantStashSkeleton';
 import { Theme } from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
-import { formatDistance } from '@/utils/formatters';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
+import { formatDistance, formatPlantDistance, metersToKilometers } from '@/utils/formatters';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
 import { router, useNavigation } from 'expo-router';
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import {
   Dimensions,
   FlatList,
+  Image,
   Pressable,
   SafeAreaView,
   StyleSheet,
@@ -16,13 +19,21 @@ import {
   TouchableOpacity,
   View
 } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 
 const { height: screenHeight, width: screenWidth } = Dimensions.get('window');
+
+import { getImageSource } from '@/utils/plantImageMapping';
 
 interface PlantStashItem {
   _id: string;
   name: string;
   emoji: string;
+  imagePath?: string;
   distanceRequired: number;
   rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythical';
   category: 'flower' | 'bush' | 'tree' | 'desert' | 'mushroom';
@@ -35,7 +46,13 @@ interface PlantStashItem {
 
 
 export default function StashScreen() {
+  const analytics = useAnalytics();
   const navigation = useNavigation();
+  const [contentReady, setContentReady] = useState(false);
+
+  // Animation values
+  const skeletonOpacity = useSharedValue(1);
+  const contentOpacity = useSharedValue(0);
 
   // Get comprehensive plant stash data
   const stashData = useQuery(api.plants.getPlantStashData);
@@ -44,11 +61,35 @@ export default function StashScreen() {
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const metricSystem = (profile?.metricSystem ?? 'metric') as 'metric' | 'imperial';
 
+  // Helper function to format distance with km in parentheses for imperial users
+  const formatDistanceWithKm = (meters: number) => {
+    const formattedDistance = formatDistance(meters, metricSystem);
+    if (metricSystem === 'imperial') {
+      const km = metersToKilometers(meters);
+      return `${formattedDistance} (${km.toFixed(km < 1 ? 1 : 0)}km)`;
+    }
+    return formattedDistance;
+  };
+
   // Disable swipe back gesture for consistent behavior
   useEffect(() => {
     // @ts-ignore
     navigation.setOptions?.({ gestureEnabled: false });
   }, []);
+
+  // Handle smooth transition from skeleton to content
+  useEffect(() => {
+    if (stashData && profile && !contentReady) {
+      // Wait a brief moment to ensure content is ready, then fade transition
+      const timer = setTimeout(() => {
+        setContentReady(true);
+        // Fade out skeleton and fade in content
+        skeletonOpacity.value = withTiming(0, { duration: 300 });
+        contentOpacity.value = withTiming(1, { duration: 300 });
+      }, 100);
+      return () => clearTimeout(timer);
+    }
+  }, [stashData, profile, contentReady, skeletonOpacity, contentOpacity]);
 
 
   const handlePlantPress = (plant: PlantStashItem) => {
@@ -57,9 +98,7 @@ export default function StashScreen() {
 
     if (plant.isUnlocked) {
       // Could show plant details modal here in the future
-      console.log(`Viewing ${plant.name} - unlocked by ${plant.distanceRequired / 1000}km runs`);
     } else {
-      console.log(`${plant.name} locked - need ${plant.distanceToUnlock}km run to unlock`);
     }
   };
 
@@ -86,17 +125,24 @@ export default function StashScreen() {
         activeOpacity={0.7}
       >
         <View style={styles.plantContainer}>
-          <Text style={[
-            styles.plantEmojiText,
-            isHeroPlant && styles.heroEmojiText
-          ]}>
-            {isLocked ? '🔒' : item.emoji}
-          </Text>
+          {isLocked ? (
+            <Image
+              source={getImageSource('assets/images/plants/locked.png')}
+              style={styles.plantImage}
+              resizeMode="contain"
+            />
+          ) : (
+            <Image
+              source={getImageSource(item.imagePath, item.distanceRequired)}
+              style={styles.plantImage}
+              resizeMode="contain"
+            />
+          )}
           <Text style={[
             styles.plantDistance,
             isHeroPlant && styles.heroDistanceText
           ]}>
-            {formatDistance(item.distanceRequired, metricSystem)}
+            {formatPlantDistance(item.distanceRequired, metricSystem)}
           </Text>
         </View>
       </TouchableOpacity>
@@ -106,6 +152,17 @@ export default function StashScreen() {
   const unlockedCount = stashData?.plants.filter(p => p.isUnlocked).length || 0;
   const totalCount = stashData?.plants.length || 100;
   const availablePlants = stashData?.plants.filter(p => p.isUnlocked && p.unplantedCount > 0).length || 0;
+
+  const isLoading = !contentReady;
+
+  // Animated styles
+  const skeletonAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: skeletonOpacity.value,
+  }));
+
+  const contentAnimatedStyle = useAnimatedStyle(() => ({
+    opacity: contentOpacity.value,
+  }));
 
   return (
     <SafeAreaView style={styles.container}>
@@ -121,7 +178,7 @@ export default function StashScreen() {
         <View style={styles.headerCenter}>
           <Text style={styles.title}>Plant Collection</Text>
           <Text style={styles.subtitle}>
-            {unlockedCount}/{totalCount} unlocked
+            {isLoading ? 'Loading...' : `${unlockedCount}/${totalCount} unlocked`}
           </Text>
         </View>
 
@@ -130,16 +187,26 @@ export default function StashScreen() {
         </View>
       </View>
 
-      {/* Plant Grid */}
-      <FlatList
-        data={stashData?.plants || []}
-        renderItem={renderPlantItem}
-        keyExtractor={(item, index) => `${item._id}-${index}`}
-        numColumns={2}
-        contentContainerStyle={styles.plantGrid}
-        showsVerticalScrollIndicator={false}
-        columnWrapperStyle={styles.row}
-      />
+      {/* Plant Grid with smooth transition */}
+      <View style={styles.contentContainer}>
+        {/* Skeleton Loader */}
+        <Animated.View style={[styles.absoluteFill, skeletonAnimatedStyle]}>
+          <PlantStashSkeleton itemCount={16} />
+        </Animated.View>
+
+        {/* Actual Content */}
+        <Animated.View style={[styles.absoluteFill, contentAnimatedStyle]}>
+          <FlatList
+            data={stashData?.plants || []}
+            renderItem={renderPlantItem}
+            keyExtractor={(item, index) => `${item._id}-${index}`}
+            numColumns={2}
+            contentContainerStyle={styles.plantGrid}
+            showsVerticalScrollIndicator={false}
+            columnWrapperStyle={styles.row}
+          />
+        </Animated.View>
+      </View>
 
     </SafeAreaView>
   );
@@ -186,6 +253,17 @@ const styles = StyleSheet.create({
     width: 40,
     alignItems: 'flex-end',
   },
+  contentContainer: {
+    flex: 1,
+    position: 'relative',
+  },
+  absoluteFill: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+  },
   instructionsContainer: {
     paddingHorizontal: 24,
     paddingBottom: 16,
@@ -207,13 +285,13 @@ const styles = StyleSheet.create({
     paddingHorizontal: 10,
   },
   plantItem: {
-    width: (screenWidth - 60) / 2, // 2 columns with spacing
+    width: (screenWidth - 40) / 2, // 2 columns with less spacing for larger items
     aspectRatio: 1,
     backgroundColor: 'transparent',
     alignItems: 'center',
     justifyContent: 'center',
-    marginBottom: 16,
-    marginHorizontal: 8,
+    marginBottom: 20,
+    marginHorizontal: 6,
     position: 'relative',
   },
   lockedItem: {
@@ -229,12 +307,17 @@ const styles = StyleSheet.create({
     height: '100%',
   },
   plantEmojiText: {
-    fontSize: 28,
-    marginBottom: 2,
+    fontSize: 48,
+    marginBottom: 4,
+  },
+  plantImage: {
+    width: 120,
+    height: 120,
+    marginBottom: 4,
   },
   plantDistance: {
-    fontSize: 10,
-    fontFamily: Theme.fonts.medium,
+    fontSize: 18,
+    fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.secondary,
     textAlign: 'center',
   },
@@ -255,7 +338,7 @@ const styles = StyleSheet.create({
   },
   // Milestone styling
   heroEmojiText: {
-    fontSize: 32, // Slightly larger for hero plants
+    fontSize: 64, // Slightly larger for hero plants
     textShadowColor: 'rgba(255, 215, 0, 0.3)',
     textShadowOffset: { width: 0, height: 1 },
     textShadowRadius: 2,

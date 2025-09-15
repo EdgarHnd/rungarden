@@ -1,3 +1,4 @@
+import PrimaryButton from '@/components/PrimaryButton';
 import { Ionicons } from '@expo/vector-icons';
 import { useMutation, useQuery } from 'convex/react';
 import { LinearGradient } from 'expo-linear-gradient';
@@ -78,13 +79,14 @@ export default function EditProfileScreen() {
           <Ionicons name="chevron-back" size={24} color={Theme.colors.text.primary} />
         </TouchableOpacity>
         <Text style={styles.title}>Edit profile</Text>
-        <TouchableOpacity
+        <PrimaryButton
           onPress={handleSave}
-          style={[styles.saveButton, isSaving && styles.saveButtonDisabled]}
           disabled={isSaving}
-        >
-          <Text style={styles.saveText}>{isSaving ? 'Saving...' : 'Save'}</Text>
-        </TouchableOpacity>
+          size="small"
+          hapticFeedback="light"
+          textTransform="none"
+          title={isSaving ? 'Saving...' : 'Save'}
+        />
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>

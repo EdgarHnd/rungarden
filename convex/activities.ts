@@ -2004,14 +2004,131 @@ export const getUncelebratedActivities = query({
       if (plant?.plantTypeId) {
         const plantType = await ctx.db.get(plant.plantTypeId);
         if (plantType) {
+          // Check if this is the first plant of this type the user has earned
+          // by checking if this plant is the earliest one of this type
+          const allPlantsOfType = await ctx.db
+            .query("plants")
+            .withIndex("by_user", (q) => q.eq("userId", userId))
+            .filter((q) => q.eq(q.field("plantTypeId"), plant.plantTypeId))
+            .collect();
+
+          // Sort by earnedAt to find the first one
+          const sortedPlants = allPlantsOfType.sort((a, b) => 
+            new Date(a.earnedAt).getTime() - new Date(b.earnedAt).getTime()
+          );
+
+          const isNewType = sortedPlants.length > 0 && sortedPlants[0]._id === plant._id;
+
           plantData = {
             emoji: plantType.emoji,
             name: plantType.name,
+            imagePath: plantType.imagePath,
+            distanceRequired: plantType.distanceRequired,
+            isNewType,
           };
         }
       }
     }
     
+    return [{
+      ...activity,
+      plantData,
+    }];
+  },
+});
+
+// Get activities that haven't been celebrated yet (bypasses throttling for explicit triggers)
+export const getUncelebratedActivitiesForced = query({
+  args: { bypassThrottling: v.optional(v.boolean()) },
+  handler: async (ctx, { bypassThrottling = false }) => {
+    const userId = await getAuthUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user has seen initial sync modal
+    const profile = await ctx.db
+      .query("userProfiles")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .first();
+
+    // If user hasn't seen initial sync modal yet, don't show individual celebration modals
+    if (!profile?.hasSeenInitialSyncModal) {
+      console.log("[getUncelebratedActivitiesForced] User hasn't seen initial sync modal yet, skipping individual celebrations");
+      return [];
+    }
+
+    // Only apply throttling if not bypassing
+    if (!bypassThrottling) {
+      // Check if initial sync is still in progress (optimization)
+      const currentTime = Date.now();
+      const lastSyncTime = profile?.lastHealthKitSync || profile?.lastStravaSync;
+      if (lastSyncTime) {
+        const timeSinceSync = currentTime - new Date(lastSyncTime).getTime();
+        // If sync happened within last 30 seconds, throttle celebration queries
+        if (timeSinceSync < 30000) {
+          console.log("[getUncelebratedActivitiesForced] Recent sync detected, throttling celebration queries");
+          return [];
+        }
+      }
+    } else {
+      console.log("[getUncelebratedActivitiesForced] Bypassing throttling for explicit trigger");
+    }
+
+    // Get activities with plants that haven't been celebrated (limit to 1 for performance)
+    const activities = await ctx.db
+      .query("activities")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => 
+        q.and(
+          q.neq(q.field("plantEarned"), undefined),
+          q.or(
+            q.eq(q.field("celebrationShown"), undefined),
+            q.eq(q.field("celebrationShown"), false)
+          )
+        )
+      )
+      .order("desc")
+      .take(1); // Reduced from 5 to 1 for performance
+
+    if (activities.length === 0) {
+      return [];
+    }
+
+    // Enrich with plant data (only for the single activity)
+    const activity = activities[0];
+    let plantData = null;
+    if (activity.plantEarned) {
+      const plant = await ctx.db.get(activity.plantEarned);
+      if (plant?.plantTypeId) {
+        const plantType = await ctx.db.get(plant.plantTypeId);
+        if (plantType) {
+          // Check if this is the first plant of this type the user has earned
+          // by checking if this plant is the earliest one of this type
+          const allPlantsOfType = await ctx.db
+            .query("plants")
+            .withIndex("by_user", (q) => q.eq("userId", userId))
+            .filter((q) => q.eq(q.field("plantTypeId"), plant.plantTypeId))
+            .collect();
+
+          // Sort by earnedAt to find the first one
+          const sortedPlants = allPlantsOfType.sort((a, b) => 
+            new Date(a.earnedAt).getTime() - new Date(b.earnedAt).getTime()
+          );
+
+          const isNewType = sortedPlants.length > 0 && sortedPlants[0]._id === plant._id;
+
+          plantData = {
+            emoji: plantType.emoji,
+            name: plantType.name,
+            imagePath: plantType.imagePath,
+            distanceRequired: plantType.distanceRequired,
+            isNewType,
+          };
+        }
+      }
+    }
+
     return [{
       ...activity,
       plantData,

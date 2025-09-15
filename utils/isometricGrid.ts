@@ -19,8 +19,8 @@ export interface IsometricGridConfig {
 // Default configuration for 10x10 isometric grid
 export const DEFAULT_GRID_CONFIG: IsometricGridConfig = {
   gridSize: 10,
-  tileWidth: 30,  // Smaller tiles to fit garden in screen
-  tileHeight: 15,
+  tileWidth: 32,  // Increased from 30 to add more horizontal spacing
+  tileHeight: 16, // Increased from 15 to add more vertical spacing
   offsetX: 200,   // Center the grid in screen-sized canvas
   offsetY: 300,
 };

@@ -1,7 +1,8 @@
+import PrimaryButton from '@/components/PrimaryButton';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
-import { FontAwesome, FontAwesome6 } from '@expo/vector-icons';
+import { FontAwesome, FontAwesome5, FontAwesome6 } from '@expo/vector-icons';
 import { useNavigation } from '@react-navigation/native';
 import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
@@ -142,13 +143,17 @@ export default function AddFriendScreen() {
             {(() => {
               const alreadySent = outgoingRequests?.some((r: any) => r.userId === item.userId);
               return (
-                <TouchableOpacity
-                  style={[styles.addButton, alreadySent && styles.addButtonDisabled]}
+                <PrimaryButton
+                  title={alreadySent ? 'Sent' : 'Add'}
+                  size="small"
+                  textWeight="bold"
+                  textTransform="none"
+                  icon={alreadySent ? <FontAwesome5 name="check" size={16} color="#FFFFFF" /> : <FontAwesome5 name="plus" size={16} color="#FFFFFF" />}
+                  iconPosition="left"
+                  gradientReversed={true}
                   onPress={() => alreadySent ? null : handleAdd(item.userId as string)}
                   disabled={alreadySent}
-                >
-                  <Text style={styles.addButtonText}>{alreadySent ? 'Sent' : 'Add'}</Text>
-                </TouchableOpacity>
+                />
               );
             })()}
           </View>

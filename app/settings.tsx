@@ -5,6 +5,7 @@ import { api } from '@/convex/_generated/api';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { useSyncProvider } from '@/provider/SyncProvider';
 import { PushNotificationService } from '@/services/PushNotificationService';
+import { requestRating } from '@/services/RatingService';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5, Ionicons } from '@expo/vector-icons';
 import { useConvex, useConvexAuth, useMutation, useQuery } from 'convex/react';
@@ -60,7 +61,7 @@ export default function SettingsScreen() {
   const handleSignOut = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     await signOut();
-    router.replace('/');
+    // Navigation is handled automatically by ConvexAuthProvider
   };
 
   /**
@@ -304,14 +305,14 @@ export default function SettingsScreen() {
 
 
   /**
-   * Select Run Garden in-app recording as the primary source (disables Strava & HealthKit)
+   * Select RunGarden in-app recording as the primary source (disables Strava & HealthKit)
    */
   const handleRunGardenSelect = async () => {
     try {
       // If HealthKit or Strava is active, confirm the switch
       if (profile?.healthKitSyncEnabled || profile?.stravaSyncEnabled) {
         Alert.alert(
-          'Switch to Run Garden',
+          'Switch to RunGarden',
           'This will disable syncing from HealthKit and Strava to prevent duplicate activities. How would you like to handle existing activities?',
           [
             { text: 'Cancel', style: 'cancel' },
@@ -334,7 +335,7 @@ export default function SettingsScreen() {
         );
       }
     } catch (error) {
-      console.error('Error selecting Run Garden:', error);
+      console.error('Error selecting RunGarden:', error);
     }
   };
 
@@ -357,9 +358,9 @@ export default function SettingsScreen() {
       });
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-      Alert.alert('Success! ✅', 'Run Garden is now your active data source. You can record runs directly in the app.');
+      Alert.alert('Success! ✅', 'RunGarden is now your active data source. You can record runs directly in the app.');
     } catch (err) {
-      console.error('Error switching to Run Garden:', err);
+      console.error('Error switching to RunGarden:', err);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
       Alert.alert('Error', 'Failed to switch data source');
     } finally {
@@ -530,296 +531,284 @@ export default function SettingsScreen() {
       </View>
 
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        {/* Preferences Section */}
+        {/* Distance Units */}
         <View style={styles.sectionGroup}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          <Text style={styles.sectionDescription}>
-            Customize your app settings for units and calendar display.
-          </Text>
+          <Text style={styles.sectionHeader}>DISTANCE UNITS</Text>
 
-          {/* Metric System Toggle */}
-          <View style={styles.section}>
-            <View style={styles.sectionContent}>
-              <View style={styles.syncOptionContent}>
-                <View style={styles.syncOptionHeader}>
-                  <FontAwesome5 name="pencil-ruler" size={20} color={Theme.colors.text.primary} />
-                  <Text style={styles.syncOptionTitle}>Use Metric System</Text>
-                </View>
-                <Text style={styles.syncOptionDescription}>
-                  {getCurrentMetricSystem() === "metric" ? "Kilometers and meters" : "Miles and feet"}
-                </Text>
-              </View>
-              <Switch
-                value={getCurrentMetricSystem() === "metric"}
-                onValueChange={handleMetricSystemToggle}
-                trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.accent.primary }}
-                thumbColor={Theme.colors.background.primary}
-                ios_backgroundColor={Theme.colors.background.tertiary}
-                disabled={isConnecting}
-              />
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => {
+              Alert.alert(
+                'Distance Units',
+                'Choose your preferred distance units',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'Kilometers',
+                    onPress: () => handleMetricSystemToggle(true)
+                  },
+                  {
+                    text: 'Miles',
+                    onPress: () => handleMetricSystemToggle(false)
+                  }
+                ]
+              );
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.settingLabel}>Distance Units</Text>
+            <View style={styles.settingValue}>
+              <Text style={styles.settingValueText}>
+                {getCurrentMetricSystem() === "metric" ? "Kilometers" : "Miles"}
+              </Text>
+              <FontAwesome5 name="chevron-down" size={16} color={Theme.colors.accent.primary} />
             </View>
-          </View>
+          </TouchableOpacity>
 
-          {/* First Day of Week Toggle */}
-          <View style={styles.section}>
-            <View style={styles.sectionContent}>
-              <View style={styles.syncOptionContent}>
-                <View style={styles.syncOptionHeader}>
-                  <FontAwesome5 name="calendar-week" size={20} color={Theme.colors.text.primary} />
-                  <Text style={styles.syncOptionTitle}>Start Week on Monday</Text>
-                </View>
-                <Text style={styles.syncOptionDescription}>
-                  {getCurrentWeekStartDay() === 1 ? "Week starts on Monday" : "Week starts on Sunday"}
-                </Text>
-              </View>
-              <Switch
-                value={getCurrentWeekStartDay() === 1}
-                onValueChange={handleFirstDayOfWeekToggle}
-                trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.accent.primary }}
-                thumbColor={Theme.colors.background.primary}
-                ios_backgroundColor={Theme.colors.background.tertiary}
-                disabled={isConnecting}
-              />
-            </View>
-          </View>
+        </View>
 
-          {/* Push Notifications Toggle */}
-          <View style={styles.section}>
-            <View style={styles.sectionContent}>
-              <View style={styles.syncOptionContent}>
-                <View style={styles.syncOptionHeader}>
-                  <FontAwesome5 name="bell" size={20} color={Theme.colors.text.primary} />
-                  <Text style={styles.syncOptionTitle}>Push Notifications</Text>
-                </View>
-                <Text style={styles.syncOptionDescription}>
-                  Get notified about your garden progress
-                </Text>
-              </View>
-              <Switch
-                value={getCurrentPushNotifications()}
-                onValueChange={handlePushNotificationsToggle}
-                trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.accent.primary }}
-                thumbColor={Theme.colors.background.primary}
-                ios_backgroundColor={Theme.colors.background.tertiary}
-                disabled={isConnecting}
-              />
+        {/* Data Source */}
+        <View style={styles.sectionGroup}>
+          <Text style={styles.sectionHeader}>DATA SOURCE</Text>
+          <TouchableOpacity
+            style={styles.settingRow}
+            onPress={() => {
+              Alert.alert(
+                'Data Source',
+                'Choose your primary data source',
+                [
+                  { text: 'Cancel', style: 'cancel' },
+                  {
+                    text: 'RunGarden',
+                    onPress: handleRunGardenSelect
+                  },
+                  ...(Platform.OS === 'ios' ? [{
+                    text: 'Apple Health',
+                    onPress: handleHealthKitConnect
+                  }] : [])
+                ]
+              );
+            }}
+            activeOpacity={0.7}
+          >
+            <Text style={styles.settingLabel}>Data Source</Text>
+            <View style={styles.settingValue}>
+              <Text style={styles.settingValueText}>
+                {profile?.healthKitSyncEnabled ? 'Apple Health' : profile?.stravaSyncEnabled ? 'Strava' : 'RunGarden'}
+              </Text>
+              <FontAwesome5 name="chevron-down" size={16} color={Theme.colors.accent.primary} />
             </View>
-          </View>
+          </TouchableOpacity>
 
 
         </View>
 
-        {/* Data Source Section */}
+        {/* Apple Health Integration */}
+        {Platform.OS === 'ios' && (
+          <View style={styles.sectionGroup}>
+            <Text style={styles.sectionHeader}>APPLE HEALTH INTEGRATION</Text>
+
+            <View style={styles.settingRow}>
+              <Text style={styles.settingLabel}>Apple Health Connected</Text>
+              <View style={[styles.statusBadge, { backgroundColor: profile?.healthKitSyncEnabled ? Theme.colors.status.success : Theme.colors.background.tertiary }]}>
+                <Text style={[styles.statusText, { color: profile?.healthKitSyncEnabled ? '#FFFFFF' : Theme.colors.text.tertiary }]}>
+                  {profile?.healthKitSyncEnabled ? 'Connected' : 'Not Connected'}
+                </Text>
+              </View>
+            </View>
+          </View>
+        )}
+
+        {/* Support */}
         <View style={styles.sectionGroup}>
-          <Text style={styles.sectionTitle}>Data Source</Text>
-          <Text style={styles.sectionDescription}>
-            Choose your primary data source for running activities. Only one source can be active at a time.
-          </Text>
+          <Text style={styles.sectionHeader}>SUPPORT</Text>
 
-          {/* Run Garden In-App Recording */}
           <TouchableOpacity
-            style={styles.section}
-            onPress={handleRunGardenSelect}
-            activeOpacity={0.7}
-          >
-            <View style={styles.sectionContent}>
-              <View style={styles.syncOptionContent}>
-                <View style={styles.syncOptionHeader}>
-                  <Image source={require('@/assets/images/icon.png')} style={[styles.iconImage, { borderRadius: 10 }]} />
-                  <Text style={styles.syncOptionTitle}>Run Garden In-App Recording</Text>
-                  {!profile?.healthKitSyncEnabled && !profile?.stravaSyncEnabled && (
-                    <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.accent.primary }]}>
-                      <Text style={styles.comingSoonText}>Selected</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.syncOptionDescription}>Record runs directly with Run Garden's built-in tracker</Text>
-              </View>
-              <FontAwesome5
-                name={!profile?.healthKitSyncEnabled && !profile?.stravaSyncEnabled ? 'check' : 'chevron-right'}
-                size={20}
-                color={Theme.colors.text.primary}
-              />
-            </View>
-          </TouchableOpacity>
-
-
-          {/* HealthKit Sync */}
-          {Platform.OS === 'ios' && (
-            <TouchableOpacity
-              style={styles.section}
-              onPress={() => {
-                if (profile?.healthKitSyncEnabled) {
-                  // Already connected - show disconnect option
-                  Alert.alert(
-                    'Disconnect HealthKit',
-                    'Are you sure you want to disconnect from HealthKit? This will disable syncing but keep your existing activities.',
-                    [
-                      { text: 'Cancel', style: 'cancel' },
-                      {
-                        text: 'Disconnect',
-                        style: 'destructive',
-                        onPress: async () => {
-                          try {
-                            setIsLoading(true);
-                            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-                            await updateSyncPreferences({
-                              healthKitSyncEnabled: false,
-                              lastHealthKitSync: undefined,
-                            });
-                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                          } catch (error) {
-                            console.error('Error disconnecting HealthKit:', error);
-                            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
-                            Alert.alert('Error', 'Failed to disconnect from HealthKit');
-                          } finally {
-                            setIsLoading(false);
-                          }
-                        }
-                      }
-                    ]
-                  );
-                } else {
-                  // Not connected - handle connection
-                  handleHealthKitConnect();
-                }
-              }}
-              activeOpacity={0.7}
-            >
-              <View style={styles.sectionContent}>
-                <View style={styles.syncOptionContent}>
-                  <View style={styles.syncOptionHeader}>
-                    <Image source={require('@/assets/images/icons/apple-health.png')} style={styles.iconImage} />
-                    <Text style={styles.syncOptionTitle}>Apple HealthKit</Text>
-                    {profile?.healthKitSyncEnabled && (
-                      <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.accent.primary }]}>
-                        <Text style={styles.comingSoonText}>Connected</Text>
-                      </View>
-                    )}
-                  </View>
-                  <Text style={styles.syncOptionDescription}>
-                    {profile?.healthKitSyncEnabled
-                      ? 'Syncing activities from the Health app'
-                      : 'Connect to sync running activities from the Health app'
-                    }
-                  </Text>
-                </View>
-                <FontAwesome5
-                  name={profile?.healthKitSyncEnabled ? "unlink" : "chevron-right"}
-                  size={20}
-                  color={profile?.healthKitSyncEnabled ? Theme.colors.status.error : Theme.colors.text.primary}
-                />
-              </View>
-            </TouchableOpacity>
-          )}
-          {/* Manual Sync Button - Only show for connected sources */}
-          {profile?.healthKitSyncEnabled && (
-            <TouchableOpacity
-              style={[styles.section, isHealthKitSyncing && styles.disabledSection]}
-              onPress={handleManualSync}
-              activeOpacity={0.7}
-              disabled={isHealthKitSyncing}
-            >
-              <View style={styles.sectionContent}>
-                <View style={styles.syncOptionContent}>
-                  <View style={styles.syncOptionHeader}>
-                    <FontAwesome5
-                      name={isHealthKitSyncing ? "spinner" : "sync"}
-                      size={20}
-                      color={Theme.colors.accent.primary}
-                      style={isHealthKitSyncing ? { transform: [{ rotate: '0deg' }] } : undefined}
-                    />
-                    <Text style={styles.syncOptionTitle}>
-                      {isHealthKitSyncing ? 'Syncing HealthKit...' : 'Sync HealthKit Now'}
-                    </Text>
-                  </View>
-                  <Text style={styles.syncOptionDescription}>
-                    {profile?.lastHealthKitSync
-                      ? `Last sync: ${new Date(profile.lastHealthKitSync).toLocaleString()}`
-                      : 'Sync your HealthKit activities and grow plants'
-                    }
-                  </Text>
-                </View>
-                <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
-              </View>
-            </TouchableOpacity>
-          )}
-
-          {/* Auto-Sync Toggle */}
-          {profile?.healthKitSyncEnabled && (
-            <View style={styles.section}>
-              <View style={styles.sectionContent}>
-                <View style={styles.syncOptionContent}>
-                  <View style={styles.syncOptionHeader}>
-                    <FontAwesome5 name="magic" size={20} color={Theme.colors.text.primary} />
-                    <Text style={styles.syncOptionTitle}>Auto-Sync HealthKit</Text>
-                  </View>
-                  <Text style={styles.syncOptionDescription}>
-                    {getCurrentAutoSync() ? 'Automatically sync new runs in the background' : 'Enable automatic background syncing'}
-                  </Text>
-                </View>
-                <Switch
-                  value={getCurrentAutoSync()}
-                  onValueChange={handleAutoSyncToggle}
-                  trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.accent.primary }}
-                  thumbColor={Theme.colors.background.primary}
-                  ios_backgroundColor={Theme.colors.background.tertiary}
-                  disabled={isConnecting}
-                />
-              </View>
-            </View>
-          )}
-
-          {/* Current Data Source Info */}
-          {profile?.healthKitSyncEnabled && (
-            <View style={styles.infoSection}>
-              <FontAwesome5 name="info-circle" size={16} color={Theme.colors.status.success} />
-              <Text style={styles.infoText}>
-                HealthKit is your active data source. {getCurrentAutoSync() ? 'Auto-sync will automatically detect new runs and award plants.' : 'Use manual sync or enable auto-sync for automatic updates.'}
-              </Text>
-            </View>
-          )}
-
-          {/* Strava Sync */}
-          <TouchableOpacity
-            style={styles.section}
-            onPress={() => {
-              if (profile?.stravaSyncEnabled) {
-                handleStravaDisconnect();
-              } else {
-                handleStravaConnect();
+            style={styles.settingRow}
+            onPress={async () => {
+              try {
+                Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+                analytics.track({ name: 'rate_app_tapped' });
+                await requestRating(true); // Pass true for manual request
+              } catch (error) {
+                console.error('Error requesting rating:', error);
+                Alert.alert('Error', 'Unable to open rating dialog. Please rate us in the App Store.');
               }
             }}
             activeOpacity={0.7}
           >
-            <View style={styles.sectionContent}>
-              <View style={styles.syncOptionContent}>
-                <View style={styles.syncOptionHeader}>
-                  <Image source={require('@/assets/images/icons/strava.png')} style={styles.iconImage} />
-                  <Text style={styles.syncOptionTitle}>Strava</Text>
-                  {profile?.stravaSyncEnabled && (
-                    <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.accent.primary }]}>
-                      <Text style={styles.comingSoonText}>Connected</Text>
-                    </View>
-                  )}
-                </View>
-                <Text style={styles.syncOptionDescription}>
-                  {profile?.stravaSyncEnabled
-                    ? 'Syncing activities from Strava via webhooks'
-                    : 'Connect to sync running activities from Strava'
+            <View style={styles.settingWithIcon}>
+              <FontAwesome5 name="star" size={20} color={Theme.colors.accent.primary} />
+              <Text style={styles.settingLabel}>Help us by rating us 5 stars</Text>
+            </View>
+            <FontAwesome5 name="chevron-right" size={16} color={Theme.colors.text.tertiary} />
+          </TouchableOpacity>
+        </View>
+
+        {/* Hide all the old complex sections */}
+        {false && (
+          <View>
+            {/* HealthKit Sync */}
+            {Platform.OS === 'ios' && (
+              <TouchableOpacity
+                style={styles.section}
+                onPress={() => {
+                  if (profile?.healthKitSyncEnabled) {
+                    // Already connected - show disconnect option
+                    Alert.alert(
+                      'Disconnect HealthKit',
+                      'Are you sure you want to disconnect from HealthKit? This will disable syncing but keep your existing activities.',
+                      [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                          text: 'Disconnect',
+                          style: 'destructive',
+                          onPress: async () => {
+                            try {
+                              setIsLoading(true);
+                              Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+                              await updateSyncPreferences({
+                                healthKitSyncEnabled: false,
+                                lastHealthKitSync: undefined,
+                              });
+                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+                            } catch (error) {
+                              console.error('Error disconnecting HealthKit:', error);
+                              Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
+                              Alert.alert('Error', 'Failed to disconnect from HealthKit');
+                            } finally {
+                              setIsLoading(false);
+                            }
+                          }
+                        }
+                      ]
+                    );
+                  } else {
+                    // Not connected - handle connection
+                    handleHealthKitConnect();
                   }
+                }}
+                activeOpacity={0.7}
+              >
+                <View style={styles.sectionContent}>
+                  <View style={styles.syncOptionContent}>
+                    <View style={styles.syncOptionHeader}>
+                      <Image source={require('@/assets/images/icons/apple-health.png')} style={styles.iconImage} />
+                      <Text style={styles.syncOptionTitle}>Apple HealthKit</Text>
+                      {profile?.healthKitSyncEnabled && (
+                        <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.accent.primary }]}>
+                          <Text style={styles.comingSoonText}>Connected</Text>
+                        </View>
+                      )}
+                    </View>
+                    <Text style={styles.syncOptionDescription}>
+                      {profile?.healthKitSyncEnabled
+                        ? 'Syncing activities from the Health app'
+                        : 'Connect to sync running activities from the Health app'
+                      }
+                    </Text>
+                  </View>
+                  <FontAwesome5
+                    name={profile?.healthKitSyncEnabled ? "unlink" : "chevron-right"}
+                    size={20}
+                    color={profile?.healthKitSyncEnabled ? Theme.colors.status.error : Theme.colors.text.primary}
+                  />
+                </View>
+              </TouchableOpacity>
+            )}
+            {/* Manual Sync Button - Only show for connected sources */}
+            {profile?.healthKitSyncEnabled && (
+              <TouchableOpacity
+                style={[styles.section, isHealthKitSyncing && styles.disabledSection]}
+                onPress={handleManualSync}
+                activeOpacity={0.7}
+                disabled={isHealthKitSyncing}
+              >
+                <View style={styles.sectionContent}>
+                  <View style={styles.syncOptionContent}>
+                    <View style={styles.syncOptionHeader}>
+                      <FontAwesome5
+                        name={isHealthKitSyncing ? "spinner" : "sync"}
+                        size={20}
+                        color={Theme.colors.accent.primary}
+                        style={isHealthKitSyncing ? { transform: [{ rotate: '0deg' }] } : undefined}
+                      />
+                      <Text style={styles.syncOptionTitle}>
+                        {isHealthKitSyncing ? 'Syncing HealthKit...' : 'Sync HealthKit Now'}
+                      </Text>
+                    </View>
+                    <Text style={styles.syncOptionDescription}>
+                      {profile?.lastHealthKitSync
+                        ? `Last sync: ${new Date(profile?.lastHealthKitSync ?? '').toLocaleString()}`
+                        : 'Sync your HealthKit activities and grow plants'
+                      }
+                    </Text>
+                  </View>
+                  <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
+                </View>
+              </TouchableOpacity>
+            )}
+
+            {/* Auto-Sync Toggle */}
+            {profile?.healthKitSyncEnabled && (
+              <View style={styles.section}>
+                <View style={styles.sectionContent}>
+                  <View style={styles.syncOptionContent}>
+                    <View style={styles.syncOptionHeader}>
+                      <FontAwesome5 name="magic" size={20} color={Theme.colors.text.primary} />
+                      <Text style={styles.syncOptionTitle}>Auto-Sync HealthKit</Text>
+                    </View>
+                    <Text style={styles.syncOptionDescription}>
+                      {getCurrentAutoSync() ? 'Automatically sync new runs in the background' : 'Enable automatic background syncing'}
+                    </Text>
+                  </View>
+                  <Switch
+                    value={getCurrentAutoSync()}
+                    onValueChange={handleAutoSyncToggle}
+                    trackColor={{ false: Theme.colors.background.tertiary, true: Theme.colors.accent.primary }}
+                    thumbColor={Theme.colors.background.primary}
+                    ios_backgroundColor={Theme.colors.background.tertiary}
+                    disabled={isConnecting}
+                  />
+                </View>
+              </View>
+            )}
+
+            {/* Current Data Source Info */}
+            {profile?.healthKitSyncEnabled && (
+              <View style={styles.infoSection}>
+                <FontAwesome5 name="info-circle" size={16} color={Theme.colors.status.success} />
+                <Text style={styles.infoText}>
+                  HealthKit is your active data source. {getCurrentAutoSync() ? 'Auto-sync will automatically detect new runs and award plants.' : 'Use manual sync or enable auto-sync for automatic updates.'}
                 </Text>
               </View>
-              <FontAwesome5
-                name={profile?.stravaSyncEnabled ? "unlink" : "chevron-right"}
-                size={20}
-                color={profile?.stravaSyncEnabled ? Theme.colors.status.error : Theme.colors.text.primary}
-              />
-            </View>
-          </TouchableOpacity>
+            )}
 
-          {/* Manual Strava Sync Button */}
-          {profile?.stravaSyncEnabled && (
+            {/* Strava Sync - Temporarily Disabled */}
+            <View style={[styles.section, { opacity: 0.6 }]}>
+              <View style={styles.sectionContent}>
+                <View style={styles.syncOptionContent}>
+                  <View style={styles.syncOptionHeader}>
+                    <Image source={require('@/assets/images/icons/strava.png')} style={styles.iconImage} />
+                    <Text style={styles.syncOptionTitle}>Strava</Text>
+                    <View style={[styles.comingSoonBadge, { backgroundColor: Theme.colors.status.warning }]}>
+                      <Text style={styles.comingSoonText}>Coming Soon</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.syncOptionDescription}>
+                    Strava integration is temporarily unavailable while we improve the experience
+                  </Text>
+                </View>
+                <FontAwesome5
+                  name="clock"
+                  size={20}
+                  color={Theme.colors.text.tertiary}
+                />
+              </View>
+            </View>
+
+            {/* Manual Strava Sync Button - Temporarily Disabled */}
+            {/* {profile?.stravaSyncEnabled && (
             <TouchableOpacity
               style={[styles.section, isStravaSyncing && styles.disabledSection]}
               onPress={handleStravaManualSync}
@@ -849,20 +838,20 @@ export default function SettingsScreen() {
                 <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.accent.primary} />
               </View>
             </TouchableOpacity>
-          )}
+          )} */}
 
-          {/* Strava Data Source Info */}
-          {profile?.stravaSyncEnabled && (
+            {/* Strava Data Source Info - Temporarily Disabled */}
+            {/* {profile?.stravaSyncEnabled && (
             <View style={styles.infoSection}>
               <FontAwesome5 name="info-circle" size={16} color={Theme.colors.status.success} />
               <Text style={styles.infoText}>
                 Strava is your active data source. New activities will be automatically synced via webhooks and award plants.
               </Text>
             </View>
-          )}
+          )} */}
 
-          {/* Dev Only: Webhook Check Button */}
-          {__DEV__ && profile?.stravaSyncEnabled && (
+            {/* Dev Only: Webhook Check Button - Temporarily Disabled */}
+            {/* {__DEV__ && profile?.stravaSyncEnabled && (
             <TouchableOpacity
               style={[styles.section, { backgroundColor: Theme.colors.background.secondary }]}
               onPress={async () => {
@@ -890,23 +879,24 @@ export default function SettingsScreen() {
                 <FontAwesome5 name="chevron-right" size={20} color={Theme.colors.status.warning} />
               </View>
             </TouchableOpacity>
-          )}
+          )} */}
 
-          {/* No Data Source Info */}
-          {!profile?.healthKitSyncEnabled && !profile?.stravaSyncEnabled && (
-            <View style={styles.infoSection}>
-              <FontAwesome5 name="info-circle" size={16} color={Theme.colors.text.tertiary} />
-              <Text style={styles.infoText}>
-                {Platform.OS === 'ios'
-                  ? 'Connect to HealthKit or Strava to automatically track your runs, or use Run Garden\'s built-in recorder.'
-                  : 'Connect to Strava to automatically track your runs, or use Run Garden\'s built-in recorder.'
-                }
-              </Text>
-            </View>
-          )}
+            {/* No Data Source Info */}
+            {!profile?.healthKitSyncEnabled && !profile?.stravaSyncEnabled && (
+              <View style={styles.infoSection}>
+                <FontAwesome5 name="info-circle" size={16} color={Theme.colors.text.tertiary} />
+                <Text style={styles.infoText}>
+                  {Platform.OS === 'ios'
+                    ? 'Connect to HealthKit or Strava to automatically track your runs, or use RunGarden\'s built-in recorder.'
+                    : 'Connect to Strava to automatically track your runs, or use RunGarden\'s built-in recorder.'
+                  }
+                </Text>
+              </View>
+            )}
 
 
-        </View>
+          </View>
+        )}
 
         {/* Legal Section */}
         <View style={styles.sectionGroup}>
@@ -1161,5 +1151,58 @@ const styles = StyleSheet.create({
     color: Theme.colors.status.error,
     marginLeft: 8,
     fontWeight: '600',
+  },
+  // New minimal styles
+  sectionHeader: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.tertiary,
+    letterSpacing: 0.5,
+    marginBottom: Theme.spacing.md,
+  },
+  settingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    backgroundColor: Theme.colors.background.secondary,
+    borderRadius: Theme.borderRadius.medium,
+    paddingVertical: Theme.spacing.lg,
+    paddingHorizontal: Theme.spacing.lg,
+    marginBottom: Theme.spacing.sm,
+  },
+  settingLabel: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.primary,
+  },
+  settingValue: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
+  },
+  settingValueText: {
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.accent.primary,
+  },
+  currentlyUsing: {
+    fontSize: 14,
+    fontFamily: Theme.fonts.regular,
+    color: Theme.colors.text.secondary,
+    marginBottom: Theme.spacing.md,
+  },
+  statusBadge: {
+    borderRadius: Theme.borderRadius.small,
+    paddingHorizontal: Theme.spacing.sm,
+    paddingVertical: 4,
+  },
+  statusText: {
+    fontSize: 12,
+    fontFamily: Theme.fonts.medium,
+  },
+  settingWithIcon: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.md,
   },
 }); 

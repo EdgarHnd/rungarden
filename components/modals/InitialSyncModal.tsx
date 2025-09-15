@@ -1,8 +1,11 @@
+import PrimaryButton from '@/components/PrimaryButton';
 import Theme from '@/constants/theme';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
+import { formatPlantDistance } from '@/utils/formatters';
+import { getImageSource } from '@/utils/plantImageMapping';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
-import { Dimensions, Modal, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, Modal, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 import {
   interpolate,
   default as Reanimated,
@@ -23,6 +26,7 @@ interface PlantEarned {
     distanceRequired: number;
     rarity: string;
     category: string;
+    imagePath?: string;
   };
 }
 
@@ -213,6 +217,10 @@ export default function InitialSyncModal({
   };
 
   const handleContinue = () => {
+    const hasRuns = totalRuns > 0;
+    const plantsEarned = syncResult?.plantsEarned || [];
+    const hasPlants = plantsEarned.length > 0;
+
     analytics.track({
       name: 'initial_sync_continue_clicked',
       properties: {
@@ -226,7 +234,12 @@ export default function InitialSyncModal({
       setCurrentStep('plants');
     } else if (currentStep === 'plants') {
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setCurrentStep('details');
+      // Skip details step if no runs or no detailed plants to show
+      if (hasRuns && hasPlants) {
+        setCurrentStep('details');
+      } else {
+        handlePlantAll();
+      }
     } else if (currentStep === 'details') {
       handlePlantAll();
     }
@@ -250,7 +263,6 @@ export default function InitialSyncModal({
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       handleClose();
     } catch (error) {
-      console.error('Error planting all plants:', error);
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
     } finally {
       setIsPlanting(false);
@@ -295,88 +307,128 @@ export default function InitialSyncModal({
   const totalRuns = syncResult.created + syncResult.updated;
   const plantsAwarded = syncResult.plantsAwarded || 0;
 
-  const renderSyncStep = () => (
-    <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
-      <View style={styles.centeredGroup}>
-        <View style={styles.headerSection}>
-          <Text style={styles.headerEmoji}>🎉</Text>
-          <Text style={styles.headerTitle}>
-            Your {getCurrentYear()} Runs Synced!
-          </Text>
-        </View>
-
-        <View style={styles.contentSection}>
-          <View style={styles.syncStatsContainer}>
-            <View style={styles.syncStatCard}>
-              <Text style={styles.syncStatNumber}>{totalRuns}</Text>
-              <Text style={styles.syncStatLabel}>runs this year</Text>
-            </View>
-
-            <View style={styles.syncStatCard}>
-              <Text style={styles.syncStatNumber}>{formatDistance(syncResult.distanceGained)}</Text>
-              <Text style={styles.syncStatLabel}>total distance</Text>
-            </View>
-          </View>
-
-          <Text style={styles.syncDescription}>
-            {source === 'strava'
-              ? `We've imported all your ${getCurrentYear()} runs from Strava! Now let's see how many plants you've earned.`
-              : `We've imported all your ${getCurrentYear()} runs from Apple Health! Now let's see how many plants you've earned.`
-            }
-          </Text>
-        </View>
-      </View>
-
-      <TouchableOpacity
-        style={styles.actionButton}
-        onPress={handleContinue}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.actionButtonText}>Show My Plants</Text>
-      </TouchableOpacity>
-    </Reanimated.View>
-  );
-
-  const renderPlantsStep = () => {
-    const plantsEarned = syncResult?.plantsEarned || [];
-    const hasPlants = plantsEarned.length > 0;
-
+  const renderSyncStep = () => {
+    const hasRuns = totalRuns > 0;
 
     return (
       <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
         <View style={styles.centeredGroup}>
           <View style={styles.headerSection}>
-            <Text style={styles.headerTitle}>Plants Earned!</Text>
+            <Text style={styles.headerEmoji}>{hasRuns ? '🎉' : '🌱'}</Text>
+            <Text style={styles.headerTitle}>
+              {hasRuns
+                ? `Your ${getCurrentYear()} Runs Synced!`
+                : 'Ready to Start Running!'
+              }
+            </Text>
+          </View>
+
+          <View style={styles.contentSection}>
+            {hasRuns ? (
+              <>
+                <View style={styles.syncStatsContainer}>
+                  <View style={styles.syncStatCard}>
+                    <Text style={styles.syncStatNumber}>{totalRuns}</Text>
+                    <Text style={styles.syncStatLabel}>runs this year</Text>
+                  </View>
+
+                  <View style={styles.syncStatCard}>
+                    <Text style={styles.syncStatNumber}>{formatDistance(syncResult.distanceGained)}</Text>
+                    <Text style={styles.syncStatLabel}>total distance</Text>
+                  </View>
+                </View>
+
+                <Text style={styles.syncDescription}>
+                  {source === 'strava'
+                    ? `We've imported all your ${getCurrentYear()} runs from Strava! Now let's see how many plants you've earned.`
+                    : `We've imported all your ${getCurrentYear()} runs from Apple Health! Now let's see how many plants you've earned.`
+                  }
+                </Text>
+              </>
+            ) : (
+              <Text style={styles.syncDescription}>
+                {source === 'strava'
+                  ? `Great! We've connected to your Strava account. You don't have any runs from ${getCurrentYear()} yet, but every run you complete will earn you plants for your garden!`
+                  : `Perfect! We've connected to Apple Health. You don't have any runs from ${getCurrentYear()} yet, but every run you complete will earn you plants for your garden!`
+                }
+              </Text>
+            )}
+          </View>
+        </View>
+
+        <PrimaryButton
+          title={hasRuns ? "Show My Plants" : "Start My Garden"}
+          onPress={handleContinue}
+          size="large"
+          fullWidth
+          textTransform="none"
+        />
+      </Reanimated.View>
+    );
+  };
+
+  const renderPlantsStep = () => {
+    const plantsEarned = syncResult?.plantsEarned || [];
+    const hasPlants = plantsEarned.length > 0;
+    const hasRuns = totalRuns > 0;
+
+    return (
+      <Reanimated.View style={[stepAnimatedStyle, styles.stepContent]}>
+        <View style={styles.centeredGroup}>
+          <View style={styles.headerSection}>
+            <Text style={styles.headerTitle}>
+              {hasRuns ? 'Plants Earned!' : 'Your Garden Awaits!'}
+            </Text>
           </View>
 
           <View style={styles.contentSection}>
             <View style={styles.centerContent}>
-              <Reanimated.View style={[styles.plantBadge, plantBadgeAnimatedStyle]}>
-                <Text style={styles.plantEmoji}>🌱</Text>
-                <Text style={styles.plantValue}>{animatedPlantCount}</Text>
-                <Text style={styles.plantLabel}>plants</Text>
-              </Reanimated.View>
+              {hasRuns ? (
+                <>
+                  <Reanimated.View style={[styles.plantBadge, plantBadgeAnimatedStyle]}>
+                    <Image
+                      source={require('@/assets/images/logo.png')}
+                      style={styles.plantImage}
+                    />
+                    <Text style={styles.plantValue}>{animatedPlantCount}</Text>
+                    <Text style={styles.plantLabel}>plants</Text>
+                  </Reanimated.View>
 
-              <Text style={styles.plantDescription}>
-                {hasPlants
-                  ? `Amazing! You've unlocked ${plantsEarned.length} different plant type${plantsEarned.length === 1 ? '' : 's'} from your ${getCurrentYear()} runs.`
-                  : `Amazing! You've earned ${plantsAwarded} plants from your ${getCurrentYear()} runs.`
-                }
-              </Text>
+                  <Text style={styles.plantDescription}>
+                    {hasPlants
+                      ? `Amazing! You've unlocked ${plantsEarned.length} different plant type${plantsEarned.length === 1 ? '' : 's'} from your ${getCurrentYear()} runs.`
+                      : `Amazing! You've earned ${plantsAwarded} plants from your ${getCurrentYear()} runs.`
+                    }
+                  </Text>
+                </>
+              ) : (
+                <>
+                  <Reanimated.View style={[styles.plantBadge, plantBadgeAnimatedStyle]}>
+                    <Image
+                      source={require('@/assets/images/logo.png')}
+                      style={styles.plantImage}
+                    />
+                    <Text style={styles.plantValue}>0</Text>
+                    <Text style={styles.plantLabel}>plants</Text>
+                  </Reanimated.View>
+
+                  <Text style={styles.plantDescription}>
+                    Your garden is ready and waiting! Complete your first run to earn your first plant and start growing your beautiful running garden.
+                  </Text>
+                </>
+              )}
             </View>
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
-          onPress={handleContinue}
-          activeOpacity={0.8}
+        <PrimaryButton
+          title={hasRuns ? (hasPlants ? 'See Plant Details' : 'Plant All in Garden') : 'Start Running'}
+          onPress={hasRuns ? handleContinue : handleClose}
+          size="large"
+          fullWidth
           disabled={isPlanting}
-        >
-          <Text style={styles.actionButtonText}>
-            {hasPlants ? 'See Plant Details' : 'Plant All in Garden'}
-          </Text>
-        </TouchableOpacity>
+          textTransform="none"
+        />
       </Reanimated.View>
     );
   };
@@ -398,22 +450,27 @@ export default function InitialSyncModal({
                 showsVerticalScrollIndicator={false}
                 contentContainerStyle={styles.plantsScrollContent}
               >
-                {plantsEarned.slice(0, visiblePlantsCount).map((plantData, index) => (
-                  <View key={plantData.plantType._id} style={styles.plantItem}>
-                    <View style={styles.plantItemContent}>
-                      <Text style={styles.plantItemEmoji}>{plantData.plantType.emoji}</Text>
-                      <View style={styles.plantItemInfo}>
-                        <Text style={styles.plantItemName}>{plantData.plantType.name}</Text>
-                        <Text style={styles.plantItemDistance}>
-                          {Math.floor(plantData.plantType.distanceRequired / 1000)}km
-                        </Text>
-                      </View>
-                      <View style={styles.plantItemCount}>
-                        <Text style={styles.plantItemCountText}>×{plantData.count}</Text>
+                {plantsEarned.slice(0, visiblePlantsCount).map((plantData, index) => {
+                  return (
+                    <View key={plantData.plantType._id} style={styles.plantItem}>
+                      <View style={styles.plantItemContent}>
+                        <Image
+                          source={getImageSource(plantData.plantType.imagePath, plantData.plantType.distanceRequired)}
+                          style={styles.plantItemImage}
+                        />
+                        <View style={styles.plantItemInfo}>
+                          <Text style={styles.plantItemName}>{plantData.plantType.name}</Text>
+                          <Text style={styles.plantItemDistance}>
+                            {formatPlantDistance(plantData.plantType.distanceRequired, metricSystem)}
+                          </Text>
+                        </View>
+                        <View style={styles.plantItemCount}>
+                          <Text style={styles.plantItemCountText}>×{plantData.count}</Text>
+                        </View>
                       </View>
                     </View>
-                  </View>
-                ))}
+                  );
+                })}
               </ScrollView>
             </Reanimated.View>
 
@@ -423,16 +480,14 @@ export default function InitialSyncModal({
           </View>
         </View>
 
-        <TouchableOpacity
-          style={[styles.actionButton, { backgroundColor: Theme.colors.accent.primary }]}
+        <PrimaryButton
+          title={isPlanting ? 'Planting...' : 'Plant All in Garden'}
           onPress={handleContinue}
-          activeOpacity={0.8}
+          size="large"
+          fullWidth
           disabled={isPlanting}
-        >
-          <Text style={styles.actionButtonText}>
-            {isPlanting ? 'Planting...' : 'Plant All in Garden'}
-          </Text>
-        </TouchableOpacity>
+          textTransform="none"
+        />
       </Reanimated.View>
     );
   };
@@ -471,8 +526,6 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     backgroundColor: Theme.colors.background.primary,
-    justifyContent: 'center',
-    alignItems: 'center',
   },
   container: {
     flex: 1,
@@ -480,19 +533,23 @@ const styles = StyleSheet.create({
   },
   stepContent: {
     flex: 1,
-    paddingTop: Theme.spacing.xxxl,
-    paddingBottom: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.xxl,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: Theme.spacing.xxl,
+    paddingBottom: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xl,
   },
   centeredGroup: {
     flex: 1,
     justifyContent: 'center',
+    alignItems: 'center',
+    width: '100%',
   },
 
   // Header Section
   headerSection: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
+    marginBottom: Theme.spacing.xxl,
   },
   headerEmoji: {
     fontSize: 64,
@@ -500,33 +557,38 @@ const styles = StyleSheet.create({
   },
   headerTitle: {
     fontSize: 28,
-    fontFamily: Theme.fonts.semibold,
+    fontFamily: Theme.fonts.bold,
     color: Theme.colors.text.primary,
     textAlign: 'center',
   },
 
   // Content Section
   contentSection: {
-    flexGrow: 1,
+    flex: 1,
     justifyContent: 'center',
     alignItems: 'center',
+    width: '100%',
   },
   centerContent: {
     alignItems: 'center',
+    width: '100%',
   },
 
   // Sync Stats Section
   syncStatsContainer: {
     flexDirection: 'column',
-    marginVertical: Theme.spacing.xxxl,
-    gap: Theme.spacing.md,
+    marginTop: Theme.spacing.lg,
+    marginBottom: Theme.spacing.xxl,
+    gap: Theme.spacing.lg,
+    width: '100%',
   },
   syncStatCard: {
     backgroundColor: Theme.colors.background.secondary,
     borderRadius: Theme.borderRadius.large,
-    padding: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.lg,
     alignItems: 'center',
-    borderWidth: 1,
+    borderWidth: 2,
     borderColor: Theme.colors.border.primary,
   },
   syncStatNumber: {
@@ -544,11 +606,12 @@ const styles = StyleSheet.create({
   },
   syncDescription: {
     fontSize: 16,
-    fontFamily: Theme.fonts.medium,
+    fontFamily: Theme.fonts.regular,
     color: Theme.colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 22,
+    lineHeight: 24,
     paddingHorizontal: Theme.spacing.lg,
+    marginTop: Theme.spacing.md,
   },
 
   // Plant Section
@@ -557,16 +620,17 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     gap: Theme.spacing.sm,
-    paddingHorizontal: Theme.spacing.xxxl,
-    paddingVertical: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xl,
+    paddingVertical: Theme.spacing.lg,
     marginBottom: Theme.spacing.xl,
-    backgroundColor: Theme.colors.accent.primary + '20',
+    backgroundColor: Theme.colors.accent.primary + '15',
     borderRadius: Theme.borderRadius.large,
     borderWidth: 2,
-    borderColor: Theme.colors.accent.primary + '40',
+    borderColor: Theme.colors.accent.primary + '30',
   },
-  plantEmoji: {
-    fontSize: 48,
+  plantImage: {
+    width: 48,
+    height: 48,
     marginBottom: Theme.spacing.sm,
   },
   plantValue: {
@@ -587,29 +651,28 @@ const styles = StyleSheet.create({
   },
   plantDescription: {
     fontSize: 16,
-    fontFamily: Theme.fonts.medium,
+    fontFamily: Theme.fonts.regular,
     color: Theme.colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: Theme.spacing.lg,
-    marginBottom: Theme.spacing.xxxl,
+    lineHeight: 24,
+    paddingHorizontal: Theme.spacing.md,
+    marginBottom: Theme.spacing.xl,
   },
   plantDescriptionDetails: {
     fontSize: 16,
-    fontFamily: Theme.fonts.medium,
+    fontFamily: Theme.fonts.regular,
     color: Theme.colors.text.secondary,
     textAlign: 'center',
-    lineHeight: 22,
-    paddingHorizontal: Theme.spacing.lg,
+    lineHeight: 24,
+    paddingHorizontal: Theme.spacing.md,
     marginTop: Theme.spacing.lg,
   },
 
   // Plants List Section
   plantsListContainer: {
     width: '100%',
-    maxHeight: Dimensions.get('window').height * 0.6,
-    marginVertical: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.md,
+    maxHeight: Dimensions.get('window').height * 0.5,
+    marginVertical: Theme.spacing.xl,
   },
   plantsScrollView: {
     // ensure ScrollView doesn't collapse or over-expand in this layout
@@ -619,18 +682,19 @@ const styles = StyleSheet.create({
   },
   plantItem: {
     backgroundColor: Theme.colors.background.secondary,
-    borderRadius: Theme.borderRadius.medium,
-    marginBottom: Theme.spacing.sm,
-    borderWidth: 1,
+    borderRadius: Theme.borderRadius.large,
+    marginBottom: Theme.spacing.md,
+    borderWidth: 2,
     borderColor: Theme.colors.border.primary,
   },
   plantItemContent: {
     flexDirection: 'row',
     alignItems: 'center',
-    padding: Theme.spacing.md,
+    padding: Theme.spacing.lg,
   },
-  plantItemEmoji: {
-    fontSize: 24,
+  plantItemImage: {
+    width: 32,
+    height: 32,
     marginRight: Theme.spacing.md,
   },
   plantItemInfo: {
@@ -648,12 +712,12 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.tertiary,
   },
   plantItemCount: {
-    backgroundColor: Theme.colors.accent.primary + '20',
+    backgroundColor: Theme.colors.accent.primary + '15',
     borderRadius: Theme.borderRadius.small,
     paddingHorizontal: Theme.spacing.sm,
     paddingVertical: Theme.spacing.xs,
     borderWidth: 1,
-    borderColor: Theme.colors.accent.primary + '40',
+    borderColor: Theme.colors.accent.primary + '30',
   },
   plantItemCountText: {
     fontSize: 14,
@@ -661,20 +725,4 @@ const styles = StyleSheet.create({
     color: Theme.colors.accent.primary,
   },
 
-  // Action Button
-  actionButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.medium,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 4,
-    borderBottomColor: Theme.colors.accent.secondary,
-  },
-  actionButtonText: {
-    fontSize: 16,
-    textTransform: 'uppercase',
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.background.primary,
-  },
 });

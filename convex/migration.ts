@@ -258,6 +258,25 @@ export const resetGardensAndPlantTypes = mutation({
   },
 });
 
+// Reset only gardens (preserve plant types)
+export const resetGardensOnly = mutation({
+  args: {},
+  handler: async (ctx) => {
+    console.log("🏡 Deleting gardens only (preserving plant types)...");
+    
+    const gardens = await ctx.db.query("gardenLayout").take(100);
+    
+    for (const garden of gardens) {
+      await ctx.db.delete(garden._id);
+    }
+    
+    return {
+      gardensDeleted: gardens.length,
+      plantTypesDeleted: 0, // Keep this for consistency with the interface
+    };
+  },
+});
+
 // Reset user profiles
 export const resetUserProfiles = mutation({
   args: {},
@@ -305,7 +324,7 @@ export const resetAllData = mutation({
       instructions: [
         "Call resetPlants() repeatedly until hasMore = false",
         "Call resetActivities() repeatedly until hasMore = false", 
-        "Call resetGardensAndPlantTypes() once",
+        "Call resetGardensOnly() once (preserves plant types)",
         "Call resetUserProfiles() once"
       ]
     };

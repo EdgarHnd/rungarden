@@ -82,8 +82,16 @@ export const updateProfile = mutation({
     lastName: v.optional(v.string()),
     phoneNumber: v.optional(v.string()),
     region: v.optional(v.string()),
+    // Personal information from onboarding
+    gender: v.optional(v.union(v.literal("female"), v.literal("male"), v.literal("other"))),
+    age: v.optional(v.number()),
+    // Preferences
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))),
+    // Training preferences from onboarding
+    daysPerWeek: v.optional(v.number()),
+    preferredDays: v.optional(v.array(v.string())),
+    // App settings
     pushNotificationsEnabled: v.optional(v.boolean()),
     healthKitSyncEnabled: v.optional(v.boolean()),
     autoSyncEnabled: v.optional(v.boolean()),
@@ -125,8 +133,12 @@ export const updateProfile = mutation({
         totalCalories: 0,
         firstName: args.firstName,
         lastName: args.lastName,
+        gender: args.gender,
+        age: args.age,
         metricSystem: args.metricSystem ?? "metric",
         weekStartDay: args.weekStartDay ?? 1,
+        daysPerWeek: args.daysPerWeek,
+        preferredDays: args.preferredDays,
         pushNotificationsEnabled: args.pushNotificationsEnabled ?? false,
         healthKitSyncEnabled: args.healthKitSyncEnabled ?? false,
         autoSyncEnabled: args.autoSyncEnabled ?? false,

@@ -2,9 +2,9 @@ import Theme from '@/constants/theme';
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
-import { StyleSheet, Text, TouchableOpacity, View } from 'react-native';
-import Svg, { Path } from 'react-native-svg';
-import { DEFAULT_GRID_CONFIG, getAllGridPositions, getGridTileCorners, gridToScreen } from '../utils/isometricGrid';
+import { Image, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { DEFAULT_GRID_CONFIG, getAllGridPositions, gridToScreen } from '../utils/isometricGrid';
+import { getImageSource } from '../utils/plantImageMapping';
 
 interface PlantInGarden {
   _id: string;
@@ -18,6 +18,7 @@ interface PlantInGarden {
     emoji: string;
     imagePath?: string;
     rarity: 'common' | 'uncommon' | 'rare' | 'epic';
+    distanceRequired?: number;
   };
 }
 
@@ -42,31 +43,35 @@ export default function FriendGarden({ friendName, friendId, plants, size = 120 
   // Get grid positions for the mini garden
   const allPositions = getAllGridPositions(miniGridConfig);
 
-  // Render grid tiles
-  const renderGridTiles = () => {
+  // Render mini platform
+  const renderPlatform = () => {
+    // Center the platform at the mini grid center
+    const centerRow = Math.floor(miniGridConfig.gridSize / 2);
+    const centerCol = Math.floor(miniGridConfig.gridSize / 2);
+    const centerPosition = gridToScreen({ row: centerRow, col: centerCol }, miniGridConfig);
+
+    // Scale platform for mini garden
+    const platformWidth = size * 0.8;
+    const platformHeight = size * 0.6;
+
+    // Position the image so its center aligns with the grid center
+    const imageX = centerPosition.x - platformWidth / 2;
+    const imageY = centerPosition.y - platformHeight / 2;
+
     return (
-      <Svg
-        style={StyleSheet.absoluteFillObject}
-        width={size}
-        height={size}
-      >
-        {allPositions.map((gridPos, index) => {
-          const corners = getGridTileCorners(gridPos, miniGridConfig);
-
-          // Create diamond path
-          const pathData = `M ${corners[0].x} ${corners[0].y} L ${corners[1].x} ${corners[1].y} L ${corners[2].x} ${corners[2].y} L ${corners[3].x} ${corners[3].y} Z`;
-
-          return (
-            <Path
-              key={`${gridPos.row}-${gridPos.col}`}
-              d={pathData}
-              fill='rgba(34, 197, 94, 0.05)' // Very subtle green
-              stroke='rgba(34, 197, 94, 0.2)'
-              strokeWidth={0.5}
-            />
-          );
-        })}
-      </Svg>
+      <Image
+        source={require('../assets/images/backgrounds/platform2.png')}
+        style={[
+          styles.platformImage,
+          {
+            left: imageX,
+            top: imageY,
+            width: platformWidth,
+            height: platformHeight,
+          }
+        ]}
+        resizeMode="contain"
+      />
     );
   };
 
@@ -75,10 +80,9 @@ export default function FriendGarden({ friendName, friendId, plants, size = 120 
     return plants.map((plant) => {
       if (!plant.gridPosition) return null;
 
-      // Use the same base size ratio as DraggablePlant but scaled for mini garden
-      const baseSize = 9; // Half of DraggablePlant's 18px
+      // Use smaller base size for mini garden thumbnails
+      const baseSize = 6; // Even smaller for thumbnail view
       const screenPos = gridToScreen(plant.gridPosition, miniGridConfig);
-      const emoji = plant.plantType?.emoji || '🌱';
 
       // Get grid depth for proper z-index (same as DraggablePlant)
       const gridDepth = plant.gridPosition.row + plant.gridPosition.col;
@@ -97,12 +101,14 @@ export default function FriendGarden({ friendName, friendId, plants, size = 120 
         >
           <View style={styles.plantTouchArea}>
             <View style={styles.plantImageContainer}>
-              <Text style={[
-                styles.plantEmoji,
-                plant.isWilted && styles.wiltedPlant,
-              ]}>
-                {emoji}
-              </Text>
+              <Image
+                source={getImageSource(plant.plantType?.imagePath, plant.plantType?.distanceRequired)}
+                style={[
+                  styles.plantImage,
+                  plant.isWilted === true && styles.wiltedPlant,
+                ]}
+                resizeMode="contain"
+              />
             </View>
           </View>
         </View>
@@ -128,12 +134,12 @@ export default function FriendGarden({ friendName, friendId, plants, size = 120 
         onPress={handleGardenTap}
         activeOpacity={0.8}
       >
-        {renderGridTiles()}
+        {renderPlatform()}
         {renderPlants()}
+        <Text style={styles.friendName} numberOfLines={1}>
+          {friendName}
+        </Text>
       </TouchableOpacity>
-      <Text style={styles.friendName} numberOfLines={1}>
-        {friendName}
-      </Text>
     </View>
   );
 }
@@ -144,7 +150,7 @@ const styles = StyleSheet.create({
     margin: 8,
   },
   gardenContainer: {
-    backgroundColor: Theme.colors.background.secondary,
+    backgroundColor: 'white',
     borderRadius: 12,
     position: 'relative',
     overflow: 'hidden',
@@ -155,8 +161,8 @@ const styles = StyleSheet.create({
     position: 'absolute',
   },
   plantTouchArea: {
-    width: 9, // Half of DraggablePlant's 18px
-    height: 9,
+    width: 6, // Smaller for thumbnail view
+    height: 6,
     alignItems: 'center',
     justifyContent: 'center',
   },
@@ -165,9 +171,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     position: 'relative',
   },
-  plantEmoji: {
-    fontSize: 7, // Half of DraggablePlant's 14px
-    textAlign: 'center',
+  plantImage: {
+    // Much smaller for mini garden thumbnails
+    width: 20, // Smaller than quarter size for better fit
+    height: 20,
   },
   wiltedPlant: {
     opacity: 0.6,
@@ -177,7 +184,10 @@ const styles = StyleSheet.create({
     fontFamily: 'SF-Pro-Rounded-Semibold',
     color: Theme.colors.text.primary,
     marginTop: 8,
-    textAlign: 'center',
+    marginLeft: 10,
     maxWidth: 120,
+  },
+  platformImage: {
+    position: 'absolute',
   },
 });

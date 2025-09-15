@@ -1,13 +1,15 @@
 import FriendGarden from '@/components/FriendGarden';
 import LoadingScreen from '@/components/LoadingScreen';
+import PrimaryButton from '@/components/PrimaryButton';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useConvexAuth, useMutation, useQuery } from "convex/react";
 import * as Haptics from 'expo-haptics';
 import { router } from 'expo-router';
 import React from 'react';
-import { Dimensions, FlatList, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, FlatList, SafeAreaView, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 interface Friend {
   _id: string;
@@ -19,6 +21,7 @@ interface Friend {
 const { width: screenWidth } = Dimensions.get('window');
 
 export default function FriendsScreen() {
+  const analytics = useAnalytics();
   const { isAuthenticated } = useConvexAuth();
   const friendsWithGardens = useQuery(api.friends.getFriendsWithGardens);
   const incomingRequests = useQuery(api.friends.getIncomingFriendRequests);
@@ -29,12 +32,24 @@ export default function FriendsScreen() {
   }
 
   const handleInviteFriend = () => {
+    analytics.track({
+      name: 'add_friend_opened',
+      properties: {
+        from_screen: 'friends',
+      },
+    });
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     router.push('/add-friend');
   };
 
   const handleRespond = async (requestId: string, accept: boolean) => {
     try {
+      analytics.track({
+        name: 'friend_request_responded',
+        properties: {
+          action: accept ? 'accepted' : 'declined',
+        },
+      });
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
       await respondRequest({ requestId: requestId as any, accept });
     } catch (e: any) {
@@ -89,14 +104,16 @@ export default function FriendsScreen() {
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <Text style={styles.title}>Friends</Text>
-        <TouchableOpacity
-          style={styles.inviteButton}
+        <PrimaryButton
+          title="Invite"
+          size="small"
           onPress={handleInviteFriend}
-          activeOpacity={0.8}
-        >
-          <FontAwesome5 name="user-plus" size={18} color={Theme.colors.background.primary} />
-          <Text style={styles.inviteButtonText}>Invite</Text>
-        </TouchableOpacity>
+          textWeight="bold"
+          textTransform="none"
+          icon={<FontAwesome5 name="user-plus" size={16} color="#FFFFFF" />}
+          iconPosition="left"
+          gradientReversed={true}
+        />
       </View>
 
       {/* Friend Requests */}
@@ -110,18 +127,26 @@ export default function FriendsScreen() {
               <View style={styles.requestRow}>
                 <Text style={styles.requestName}>{(item as any).fromUser?.name || (item as any).fromUser?.firstName || 'Unknown User'}</Text>
                 <View style={styles.requestActions}>
-                  <TouchableOpacity
-                    style={[styles.acceptButton, styles.requestButton]}
+                  <PrimaryButton
+                    size="small"
+                    textWeight="bold"
+                    textTransform="none"
+                    title="Accept"
+                    icon={<FontAwesome5 name="check" size={16} color="#FFFFFF" />}
+                    iconPosition="left"
+                    gradientReversed={true}
                     onPress={() => handleRespond(item._id as string, true)}
-                  >
-                    <Text style={styles.requestButtonText}>Accept</Text>
-                  </TouchableOpacity>
-                  <TouchableOpacity
-                    style={[styles.rejectButton, styles.requestButton]}
+                  />
+                  <PrimaryButton
+                    size="small"
+                    textWeight="bold"
+                    textTransform="none"
+                    title="Decline"
+                    icon={<FontAwesome5 name="times" size={16} color="#FFFFFF" />}
+                    iconPosition="left"
+                    gradientReversed={true}
                     onPress={() => handleRespond(item._id as string, false)}
-                  >
-                    <Text style={styles.requestButtonText}>Decline</Text>
-                  </TouchableOpacity>
+                  />
                 </View>
               </View>
             )}
@@ -177,13 +202,15 @@ export default function FriendsScreen() {
           <Text style={styles.emptySubtitle}>
             Invite friends to join your running journey and grow gardens together 🌱
           </Text>
-          <TouchableOpacity
-            style={styles.emptyButton}
+          <PrimaryButton
+            title="Invite Friends"
             onPress={handleInviteFriend}
-            activeOpacity={0.8}
-          >
-            <Text style={styles.emptyButtonText}>Invite Friends</Text>
-          </TouchableOpacity>
+            textWeight="bold"
+            textTransform="none"
+            icon={<FontAwesome5 name="user-plus" size={16} color="#FFFFFF" />}
+            iconPosition="left"
+            gradientReversed={true}
+          />
         </View>
       )}
     </SafeAreaView>
@@ -209,19 +236,10 @@ const styles = StyleSheet.create({
     color: Theme.colors.text.primary,
   },
   inviteButton: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    backgroundColor: Theme.colors.accent.primary,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 20,
-    ...Theme.shadows.small,
+    // Replaced by PrimaryButton
   },
   inviteButtonText: {
-    fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
-    color: Theme.colors.background.primary,
-    marginLeft: 6,
+    // Replaced by PrimaryButton
   },
   scrollContainer: {
     flex: 1,
@@ -257,7 +275,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: 40,
-    paddingTop: 100,
   },
   emptyTitle: {
     fontSize: 24,

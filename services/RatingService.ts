@@ -7,7 +7,8 @@ const MIN_ACTIONS_BEFORE_RATING = 3;
 const MIN_DAYS_BETWEEN_PROMPTS = 1;
 
 // Add this flag for development testing
-const FORCE_RATING_IN_DEV = __DEV__ && false; // Set to true to test rating flow in development
+// Set to true to test rating flow in development (shows console logs instead of actual rating dialog)
+const FORCE_RATING_IN_DEV = __DEV__ && false;
 
 export async function trackRatingAction() {
   try {
@@ -28,12 +29,15 @@ export async function shouldShowRating(isManualRequest: boolean = false): Promis
 
     // Check if rating is available
     const isAvailable = await StoreReview.isAvailableAsync();
-    if (!isAvailable) return false;
-
-    // If it's a manual request (from settings), bypass the cooldown and action checks
+    
+    // For manual requests (like onboarding), show the UI even if StoreReview isn't available
+    // This allows the onboarding flow to continue and shows fallback behavior in dev/simulator
     if (isManualRequest) {
       return true;
     }
+
+    // For automatic prompts, require StoreReview to be available
+    if (!isAvailable) return false;
 
     // Check last prompt date
     const lastPromptStr = await AsyncStorage.getItem(RATING_KEY);
@@ -58,7 +62,12 @@ export async function shouldShowRating(isManualRequest: boolean = false): Promis
 export async function requestRating(isManualRequest: boolean = false) {
   try {
     const canRate = await shouldShowRating(isManualRequest);
-    if (!canRate) return;
+    if (!canRate) {
+      return;
+    }
+
+    // Check if StoreReview is actually available for the native prompt
+    const isAvailable = await StoreReview.isAvailableAsync();
 
     // Only update the last prompt date and reset counter for automatic prompts
     if (!isManualRequest) {
@@ -66,8 +75,13 @@ export async function requestRating(isManualRequest: boolean = false) {
       await AsyncStorage.setItem(RATING_ACTIONS_KEY, '0');
     }
     
-    // Request the rating
-    await StoreReview.requestReview();
+    // Request the rating if available, otherwise log for development
+    if (isAvailable) {
+      await StoreReview.requestReview();
+    } else {
+      // In development/simulator, the onboarding will still proceed
+      // The actual rating dialog will only work in production builds on physical devices
+    }
   } catch (error) {
     console.error('Error requesting rating:', error);
   }

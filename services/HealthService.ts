@@ -1,9 +1,16 @@
 import {
+  AuthorizationStatus,
+  authorizationStatusFor,
+  disableBackgroundDelivery,
+  enableBackgroundDelivery,
+  getRequestStatusForAuthorization,
   isHealthDataAvailable,
+  ObjectTypeIdentifier,
   queryWorkoutSamples,
   requestAuthorization,
   SampleTypeIdentifierWriteable,
   subscribeToChanges,
+  UpdateFrequency,
   WorkoutSample
 } from '@kingstinct/react-native-healthkit';
 import { Platform } from 'react-native';
@@ -35,12 +42,14 @@ class HealthService {
     'HKQuantityTypeIdentifierStepCount',
     'HKQuantityTypeIdentifierDistanceWalkingRunning',
     'HKQuantityTypeIdentifierActiveEnergyBurned',
-    'HKQuantityTypeIdentifierHeartRate'
+    'HKQuantityTypeIdentifierHeartRate',
+    'HKWorkoutTypeIdentifier' // Add workout permissions for reading workout samples
   ];
 
   private writePermissions: SampleTypeIdentifierWriteable[] = [
     'HKQuantityTypeIdentifierDistanceWalkingRunning',
     'HKQuantityTypeIdentifierActiveEnergyBurned'
+    // Note: HKWorkoutTypeIdentifier is read-only, so we don't include it in write permissions
   ];
 
   /**
@@ -58,18 +67,28 @@ class HealthService {
         throw new Error('HealthKit is not available on this device');
       }
 
-      // Request authorization for read and write permissions separately
-      // Note: Workouts are read-only, so we don't include them in write permissions
-        const authStatus = await requestAuthorization(
-          this.readPermissions,
-          this.writePermissions
-        );
+      // First check the current authorization status
+      const requestStatus = await getRequestStatusForAuthorization(
+        this.writePermissions,
+        this.readPermissions as ObjectTypeIdentifier[]
+      );
+      console.log('[HealthService] Current request status:', requestStatus);
 
-      console.log('[HealthService] Authorization status:', authStatus);
+      // Request authorization for read and write permissions
+      const authStatus = await requestAuthorization(
+        this.writePermissions,
+        this.readPermissions as ObjectTypeIdentifier[]
+      );
+
+      console.log('[HealthService] Authorization request result:', authStatus);
+      
+      // Check individual authorization status for workout data specifically
+      const workoutAuthStatus = authorizationStatusFor('HKWorkoutTypeIdentifier' as ObjectTypeIdentifier);
+      console.log('[HealthService] Workout authorization status:', workoutAuthStatus);
       
       this.isInitialized = true;
       
-      // The authorization status is a boolean indicating success
+      // Return true if we got authorization (note: HealthKit may return true even for partial authorization)
       return authStatus === true;
     } catch (error) {
       console.error('[HealthService] Error initializing HealthKit:', error);
@@ -86,12 +105,32 @@ class HealthService {
     }
 
     try {
-      // Try to query a small amount of data to check permissions
+      // First ensure HealthKit is initialized
+      if (!this.isInitialized) {
+        console.log('[HealthService] HealthKit not initialized, initializing now...');
+        const initialized = await this.initializeHealthKit();
+        if (!initialized) {
+          return false;
+        }
+      }
+
+      // Check authorization status for workout data specifically
+      const workoutAuthStatus = authorizationStatusFor('HKWorkoutTypeIdentifier' as ObjectTypeIdentifier);
+      console.log('[HealthService] Workout authorization status check:', workoutAuthStatus);
+      
+      // If status is denied, return false immediately
+      if (workoutAuthStatus === AuthorizationStatus.notDetermined || workoutAuthStatus === AuthorizationStatus.sharingDenied) {
+        console.log('[HealthService] Workout permissions not granted or determined');
+        return false;
+      }
+
+      // Try to query a small amount of data to double-check permissions
       const workouts = await queryWorkoutSamples({
         limit: 1
       });
       
-      // If we can query workouts without error, we likely have the required permissions
+      // If we can query workouts without error, we have the required permissions
+      console.log('[HealthService] Permission check successful - can query workouts');
       return true;
     } catch (error) {
       console.log('[HealthService] Permission check failed:', error);
@@ -104,7 +143,10 @@ class HealthService {
    */
   async getRunningActivities(days: number = 30): Promise<RunningActivity[]> {
     if (!this.isInitialized) {
-      await this.initializeHealthKit();
+      const initialized = await this.initializeHealthKit();
+      if (!initialized) {
+        throw new Error('HealthKit initialization failed - permissions may be denied');
+      }
     }
 
     try {
@@ -157,7 +199,10 @@ class HealthService {
     deletedActivities: string[];
   }> {
     if (!this.isInitialized) {
-      await this.initializeHealthKit();
+      const initialized = await this.initializeHealthKit();
+      if (!initialized) {
+        throw new Error('HealthKit initialization failed - permissions may be denied');
+      }
     }
 
     try {
@@ -208,6 +253,67 @@ class HealthService {
   }
 
   /**
+   * Enable background delivery for HealthKit data types
+   */
+  async enableBackgroundDelivery(): Promise<boolean> {
+    if (Platform.OS !== 'ios') {
+      return false;
+    }
+
+    if (!this.isInitialized) {
+      console.log('[HealthService] HealthKit not initialized, initializing now...');
+      const initialized = await this.initializeHealthKit();
+      if (!initialized) {
+        return false;
+      }
+    }
+
+    try {
+      console.log('[HealthService] Enabling background delivery for workout data');
+      
+      // Enable background delivery for workout data with immediate frequency
+      const workoutSuccess = await enableBackgroundDelivery(
+        'HKWorkoutTypeIdentifier' as ObjectTypeIdentifier,
+        UpdateFrequency.immediate
+      );
+      
+      // Enable background delivery for distance data
+      const distanceSuccess = await enableBackgroundDelivery(
+        'HKQuantityTypeIdentifierDistanceWalkingRunning' as ObjectTypeIdentifier,
+        UpdateFrequency.immediate
+      );
+
+      console.log(`[HealthService] Background delivery enabled: workout=${workoutSuccess}, distance=${distanceSuccess}`);
+      return workoutSuccess && distanceSuccess;
+    } catch (error) {
+      console.error('[HealthService] Error enabling background delivery:', error);
+      return false;
+    }
+  }
+
+  /**
+   * Disable background delivery for HealthKit data types
+   */
+  async disableBackgroundDelivery(): Promise<boolean> {
+    if (Platform.OS !== 'ios') {
+      return false;
+    }
+
+    try {
+      console.log('[HealthService] Disabling background delivery for workout data');
+      
+      const workoutSuccess = await disableBackgroundDelivery('HKWorkoutTypeIdentifier' as ObjectTypeIdentifier);
+      const distanceSuccess = await disableBackgroundDelivery('HKQuantityTypeIdentifierDistanceWalkingRunning' as ObjectTypeIdentifier);
+
+      console.log(`[HealthService] Background delivery disabled: workout=${workoutSuccess}, distance=${distanceSuccess}`);
+      return workoutSuccess && distanceSuccess;
+    } catch (error) {
+      console.error('[HealthService] Error disabling background delivery:', error);
+      return false;
+    }
+  }
+
+  /**
    * Subscribe to changes in HealthKit data for background sync
    */
   subscribeToWorkoutChanges(callback: () => void): (() => void) | string {
@@ -218,7 +324,7 @@ class HealthService {
     console.log('[HealthService] Setting up background subscription for workouts');
 
     try {
-      // According to docs, subscribeToChanges takes a type identifier and callback
+      // Subscribe to distance changes (workouts don't support direct subscription)
       const unsubscribe = subscribeToChanges('HKQuantityTypeIdentifierDistanceWalkingRunning', () => {
         console.log('[HealthService] New workout data detected');
         callback();

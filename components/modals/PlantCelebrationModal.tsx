@@ -1,14 +1,22 @@
+import PrimaryButton from '@/components/PrimaryButton';
 import StatsBadges from '@/components/StatsBadges';
 import Theme from '@/constants/theme';
 import * as Haptics from 'expo-haptics';
 import React, { useEffect, useState } from 'react';
-import { Modal, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
+import { Dimensions, Image, Modal, SafeAreaView, StyleSheet, Text, View } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useSharedValue,
   withSpring,
   withTiming
 } from 'react-native-reanimated';
+
+import { formatDistance as formatDistanceUtil, formatDuration as formatDurationUtil, formatPace as formatPaceUtil } from '@/utils/formatters';
+import { getImageSource } from '@/utils/plantImageMapping';
+
+// Screen size detection for responsive design
+const { height: screenHeight } = Dimensions.get('window');
+const IS_SMALL_SCREEN = screenHeight < 700;
 
 interface PlantCelebrationModalProps {
   visible: boolean;
@@ -21,6 +29,9 @@ interface PlantCelebrationModalProps {
   plantData: {
     emoji: string;
     name: string;
+    imagePath?: string;
+    distanceRequired?: number;
+    isNewType?: boolean;
   } | null;
   onClose: () => void;
   metricSystem?: 'metric' | 'imperial';
@@ -38,7 +49,7 @@ export default function PlantCelebrationModal({
   metricSystem = 'metric',
   streakInfo
 }: PlantCelebrationModalProps) {
-  const [currentStep, setCurrentStep] = useState<'plant-stats' | 'streak'>('streak');
+  const [currentStep, setCurrentStep] = useState<'plant-stats' | 'streak'>('plant-stats');
 
   // Reanimated values for animations
   const stepScale = useSharedValue(0);
@@ -141,13 +152,9 @@ export default function PlantCelebrationModal({
   };
 
   const handleContinue = () => {
-    if (currentStep === 'streak') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      setCurrentStep('plant-stats');
-    } else if (currentStep === 'plant-stats') {
-      Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-      handleClose();
-    }
+    // Streak functionality temporarily disabled
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    handleClose();
   };
 
   const handleClose = () => {
@@ -170,35 +177,15 @@ export default function PlantCelebrationModal({
   };
 
   const formatDistance = (meters: number) => {
-    if (metricSystem === 'metric') {
-      const kilometers = meters / 1000;
-      return `${kilometers.toFixed(2)} km`;
-    } else {
-      const miles = (meters / 1000) * 0.621371;
-      return `${miles.toFixed(2)} mi`;
-    }
+    return formatDistanceUtil(meters, metricSystem);
   };
 
   const formatDuration = (minutes: number) => {
-    const hours = Math.floor(minutes / 60);
-    const mins = Math.round(minutes % 60);
-    return hours > 0 ? `${hours}h ${mins}m` : `${mins}m`;
+    return formatDurationUtil(minutes);
   };
 
-  const formatPace = (duration: number, distance: number) => {
-    if (distance === 0) return '--:--';
-    const paceMinPerKm = (duration / (distance / 1000));
-    let adjustedPace = paceMinPerKm;
-    let unit = '/km';
-
-    if (metricSystem !== 'metric') {
-      adjustedPace = paceMinPerKm / 1.609344;
-      unit = '/mi';
-    }
-
-    const minutes = Math.floor(adjustedPace);
-    const seconds = Math.round((adjustedPace - minutes) * 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
+  const formatPace = (duration: number, distance: number, metricSys: 'metric' | 'imperial' = metricSystem) => {
+    return formatPaceUtil(duration, distance, metricSys);
   };
 
   if (!visible || !runData || !plantData) return null;
@@ -217,12 +204,22 @@ export default function PlantCelebrationModal({
 
         <View style={styles.plantSection}>
           <Animated.View style={[styles.plantVisualContainer, plantAnimatedStyle]}>
-            <Text style={styles.plantEmoji}>{plantData.emoji}</Text>
+            <Image
+              source={getImageSource(plantData.imagePath, plantData.distanceRequired)}
+              style={styles.plantImage}
+              resizeMode="contain"
+            />
           </Animated.View>
 
-          <View style={styles.newPlantBadge}>
-            <Text style={styles.newPlantBadgeText}>New Plant Unlocked!</Text>
-          </View>
+          {/* Plant Name */}
+          <Text style={styles.plantName}>{plantData.name}</Text>
+
+          {/* Only show the badge if it's a new plant type */}
+          {plantData.isNewType && (
+            <View style={styles.newPlantBadge}>
+              <Text style={styles.newPlantBadgeText}>New Plant Unlocked!</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.statsContainer}>
@@ -241,7 +238,7 @@ export default function PlantCelebrationModal({
             },
             {
               label: 'Pace',
-              value: formatPace(runData.duration, runData.distance),
+              value: formatPace(runData.duration, runData.distance, metricSystem),
               icon: '⚡',
               color: Theme.colors.text.primary
             },
@@ -255,13 +252,13 @@ export default function PlantCelebrationModal({
         </View>
       </View>
 
-      <TouchableOpacity
-        style={styles.actionButton}
+      <PrimaryButton
+        title="Plant in Garden"
         onPress={handleContinue}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.actionButtonText}>Plant in Garden</Text>
-      </TouchableOpacity>
+        size="large"
+        fullWidth
+        textTransform="none"
+      />
     </Animated.View>
   );
 
@@ -287,13 +284,14 @@ export default function PlantCelebrationModal({
         </Animated.View>
       </View>
 
-      <TouchableOpacity
-        style={[styles.actionButton, { backgroundColor: '#FF6B35' }]}
+      <PrimaryButton
+        title="Keep It Going!"
         onPress={handleContinue}
-        activeOpacity={0.8}
-      >
-        <Text style={styles.actionButtonText}>Keep It Going!</Text>
-      </TouchableOpacity>
+        size="large"
+        fullWidth
+        textTransform="none"
+        gradientColors={['#FF6B35', '#FF8A65']}
+      />
     </Animated.View>
   );
 
@@ -338,9 +336,11 @@ const styles = StyleSheet.create({
   },
   stepContent: {
     flex: 1,
-    paddingTop: Theme.spacing.lg,
-    paddingBottom: Theme.spacing.lg,
-    paddingHorizontal: Theme.spacing.xxl,
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingTop: IS_SMALL_SCREEN ? Theme.spacing.lg : Theme.spacing.xxl,
+    paddingBottom: Theme.spacing.xl,
+    paddingHorizontal: Theme.spacing.xl,
   },
   centeredGroup: {
     flex: 1,
@@ -350,8 +350,8 @@ const styles = StyleSheet.create({
   // Header Section
   headerSection: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
-    paddingTop: Theme.spacing.xl,
+    marginBottom: IS_SMALL_SCREEN ? Theme.spacing.md : Theme.spacing.lg,
+    paddingTop: IS_SMALL_SCREEN ? Theme.spacing.md : Theme.spacing.xl,
   },
   headerTitle: {
     fontSize: 28,
@@ -370,14 +370,23 @@ const styles = StyleSheet.create({
   // Plant Section
   plantSection: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.xl,
+    marginBottom: IS_SMALL_SCREEN ? Theme.spacing.lg : Theme.spacing.xl,
   },
   plantVisualContainer: {
     alignItems: 'center',
     marginBottom: Theme.spacing.md,
   },
-  plantEmoji: {
-    fontSize: 120,
+  plantImage: {
+    width: IS_SMALL_SCREEN ? 150 : 200,
+    height: IS_SMALL_SCREEN ? 150 : 200,
+  },
+  plantName: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginTop: Theme.spacing.md,
+    marginBottom: Theme.spacing.sm,
   },
   newPlantBadge: {
     backgroundColor: '#FFFFFF',
@@ -431,20 +440,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: Theme.spacing.lg,
   },
 
-  // Action Button
-  actionButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    paddingVertical: Theme.spacing.md,
-    borderRadius: Theme.borderRadius.medium,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderBottomWidth: 4,
-    borderBottomColor: Theme.colors.accent.secondary,
-  },
-  actionButtonText: {
-    fontSize: 16,
-    textTransform: 'uppercase',
-    fontFamily: Theme.fonts.bold,
-    color: Theme.colors.background.primary,
-  },
 });

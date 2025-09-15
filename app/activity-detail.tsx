@@ -8,6 +8,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import React, { useEffect, useState } from 'react';
 import {
   Alert,
+  Dimensions,
   Image,
   ScrollView,
   StyleSheet,
@@ -17,38 +18,24 @@ import {
 } from 'react-native';
 import { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
-// Helper function to get image source from path
-const getImageSource = (imagePath: string) => {
-  // Map image paths to actual require statements
-  const imageMap: { [key: string]: any } = {
-    'assets/images/plants/01.png': require('../assets/images/plants/01.png'),
-    'assets/images/plants/carrot.png': require('../assets/images/plants/carrot.png'),
-    'assets/images/plants/sakura.png': require('../assets/images/plants/sakura.png'),
-  };
+import { formatDistance, formatPace, formatPlantDistance } from '@/utils/formatters';
+import { getImageSource } from '@/utils/plantImageMapping';
 
-  return imageMap[imagePath] || null;
-};
+// Screen size detection for responsive design
+const { height: screenHeight } = Dimensions.get('window');
+const IS_SMALL_SCREEN = screenHeight < 700;
 
-// Helper function to get plant display (image or emoji)
+// Helper function to get plant display (always image now)
 const getPlantDisplay = (plantType: any) => {
   const imagePath = plantType?.imagePath;
-  const imageSource = imagePath ? getImageSource(imagePath) : null;
 
-  if (imageSource) {
-    return (
-      <Image
-        source={imageSource}
-        style={styles.plantImage}
-        resizeMode="contain"
-      />
-    );
-  } else {
-    return (
-      <Text style={styles.plantEmoji}>
-        {plantType?.emoji || '🌱'}
-      </Text>
-    );
-  }
+  return (
+    <Image
+      source={getImageSource(imagePath, plantType?.distanceRequired)}
+      style={styles.plantImage}
+      resizeMode="contain"
+    />
+  );
 };
 
 export default function ActivityDetailScreen() {
@@ -148,18 +135,28 @@ export default function ActivityDetailScreen() {
     }
   }, [params.activity, activityFromId]);
 
-  const formatDistance = (meters: number) => {
+  const formatDistanceToZeroDecimal = (meters: number) => {
     if (isMetric) {
       const kilometers = meters / 1000;
-      return `${kilometers.toFixed(2)}`;
+      return `${kilometers.toFixed(0)}`;
     } else {
-      const miles = (meters / 1000) * 0.621371;
-      return `${miles.toFixed(2)}`;
+      const miles = meters * 0.000621371;
+      return `${miles.toFixed(0)}`;
     }
   };
 
   const getDistanceUnit = () => {
     return isMetric ? 'km' : 'mi';
+  };
+
+  // Helper function to format distance with km in parentheses for imperial users
+  const formatDistanceWithKm = (meters: number) => {
+    const formattedDistance = formatDistance(meters, isMetric ? 'metric' : 'imperial');
+    if (!isMetric) {
+      const km = meters / 1000;
+      return `${formattedDistance} (${km.toFixed(km < 1 ? 1 : 0)}km)`;
+    }
+    return formattedDistance;
   };
 
   const formatDuration = (minutes: number) => {
@@ -187,21 +184,6 @@ export default function ActivityDetailScreen() {
     return paceMinPerKm;
   };
 
-  const formatPace = (pace: number) => {
-    let adjustedPace = pace;
-    let unit = '/km';
-
-    if (!isMetric) {
-      // Convert pace from min/km to min/mile
-      // Since 1 mile = 1.609344 km, pace per mile should be pace per km divided by 1.609344
-      adjustedPace = pace / 1.609344;
-      unit = '/mi';
-    }
-
-    const minutes = Math.floor(adjustedPace);
-    const seconds = Math.round((adjustedPace - minutes) * 60);
-    return `${minutes}:${seconds.toString().padStart(2, '0')}${unit}`;
-  };
 
   const getRunScore = () => {
     if (!activity) return 0;
@@ -291,15 +273,18 @@ export default function ActivityDetailScreen() {
         {plantEarned && (
           <View style={styles.plantSection}>
             <View style={styles.plantCard}>
+              {/* New Plant Badge - Only show if it's the first time unlocking this plant type */}
+              {plantEarned.isNewType && (
+                <View style={styles.newPlantBadge}>
+                  <Text style={styles.newPlantBadgeText}>New Plant Unlocked!</Text>
+                </View>
+              )}
               {/* Plant Visual */}
               <View style={styles.plantVisualContainer}>
                 {getPlantDisplay(plantEarned.plantType)}
               </View>
+              <Text style={styles.plantName}>{formatPlantDistance(plantEarned.plantType?.distanceRequired || 0, isMetric ? 'metric' : 'imperial')} {plantEarned.plantType?.name}</Text>
 
-              {/* New Plant Badge */}
-              <View style={styles.newPlantBadge}>
-                <Text style={styles.newPlantBadgeText}>New Plant Unlocked!</Text>
-              </View>
             </View>
           </View>
         )}
@@ -309,7 +294,7 @@ export default function ActivityDetailScreen() {
           <StatsBadges stats={[
             {
               label: 'Distance',
-              value: `${formatDistance(activity.distance)} ${getDistanceUnit()}`,
+              value: formatDistance(activity.distance, isMetric ? 'metric' : 'imperial'),
               icon: '🛣️',
               color: Theme.colors.text.primary
             },
@@ -321,7 +306,7 @@ export default function ActivityDetailScreen() {
             },
             {
               label: 'Pace',
-              value: formatPace(calculatePace(activity.duration, activity.distance)),
+              value: formatPace(activity.duration, activity.distance, isMetric ? 'metric' : 'imperial'),
               icon: '⚡️',
               color: Theme.colors.text.primary
             },
@@ -966,12 +951,12 @@ const styles = StyleSheet.create({
   // Plant Section Styles
   plantSection: {
     paddingHorizontal: Theme.spacing.xl,
-    marginBottom: Theme.spacing.xxxl,
+    marginBottom: IS_SMALL_SCREEN ? Theme.spacing.xl : Theme.spacing.xxxl,
   },
   plantCard: {
     // backgroundColor: '#F5F5F5',
     //borderRadius: 20,
-    padding: Theme.spacing.xl,
+    padding: IS_SMALL_SCREEN ? Theme.spacing.lg : Theme.spacing.xl,
     alignItems: 'center',
     // borderWidth: 3,
     // borderColor: '#000000',
@@ -985,14 +970,21 @@ const styles = StyleSheet.create({
   },
   plantVisualContainer: {
     alignItems: 'center',
-    marginBottom: Theme.spacing.lg,
+    marginBottom: IS_SMALL_SCREEN ? Theme.spacing.md : Theme.spacing.lg,
   },
   plantEmoji: {
     fontSize: 120,
   },
   plantImage: {
-    width: 120,
-    height: 120,
+    width: IS_SMALL_SCREEN ? 150 : 200,
+    height: IS_SMALL_SCREEN ? 150 : 200,
+  },
+  plantName: {
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+    textAlign: 'center',
+    marginBottom: 16,
   },
   newPlantBadge: {
     backgroundColor: '#FFFFFF',

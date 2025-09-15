@@ -1,12 +1,17 @@
 import { v } from "convex/values";
 import { mutation, query } from "./_generated/server";
 
+// Helper function to generate classic image path for km distance
+const getClassicImagePath = (kmDistance: number): string => {
+  return `assets/images/plants/classic/${kmDistance}.png`;
+};
+
 // New comprehensive plant system with proper categorization
 export const NEW_PLANT_SYSTEM = {
   // Hero plants at major milestones
   HERO: {
-    5: { name: "Marigold", emoji: "🌼", category: "flower" as const },
-    10: { name: "Rose", emoji: "🌹", category: "flower" as const },
+    5: { name: "Rose", emoji: "�", category: "flower" as const },
+    10: { name: "Apple Tree", emoji: "🍎", category: "flower" as const },
     21: { name: "Sakura", emoji: "🌸", category: "tree" as const },
     42: { name: "Baobab", emoji: "🌳", category: "tree" as const },
     100: { name: "Golden Truffle", emoji: "🍄", category: "mushroom" as const }
@@ -16,50 +21,50 @@ export const NEW_PLANT_SYSTEM = {
   FLOWERS: {
     1: { name: "Daisy", emoji: "🌼", category: "flower" as const },
     2: { name: "Dandelion", emoji: "🌻", category: "flower" as const },
-    3: { name: "Clover Bloom", emoji: "🍀", category: "flower" as const },
+    3: { name: "Marigold", emoji: "🌻", category: "flower" as const },
     4: { name: "Bluebell", emoji: "🔔", category: "flower" as const },
-    6: { name: "Poppy", emoji: "🌺", category: "flower" as const },
+    6: { name: "Money Plant", emoji: "💰", category: "flower" as const },
     7: { name: "Cornflower", emoji: "💙", category: "flower" as const },
-    8: { name: "Iris", emoji: "🌷", category: "flower" as const },
-    9: { name: "Sunflower", emoji: "🌻", category: "flower" as const }
+    8: { name: "Poppy", emoji: "🌺", category: "flower" as const },
+    9: { name: "Aloe Vera", emoji: "🌿", category: "desert" as const }
   },
   
-  // Bushes (11-20km)
+  // Bushes and Trees mixed (11-20km)
   BUSHES: {
     11: { name: "Lavender Bush", emoji: "💜", category: "bush" as const },
-    12: { name: "Boxwood", emoji: "🌿", category: "bush" as const },
+    12: { name: "Olive Tree", emoji: "🫒", category: "tree" as const },
     13: { name: "Camellia", emoji: "🌺", category: "bush" as const },
-    14: { name: "Azalea", emoji: "🌸", category: "bush" as const },
+    14: { name: "Birch", emoji: "🌳", category: "tree" as const },
     15: { name: "Rosemary", emoji: "🌿", category: "bush" as const },
-    16: { name: "Hibiscus", emoji: "🌺", category: "bush" as const },
+    16: { name: "Pine", emoji: "🌲", category: "tree" as const },
     17: { name: "Hydrangea", emoji: "💙", category: "bush" as const },
-    18: { name: "Holly", emoji: "🍃", category: "bush" as const },
+    18: { name: "Willow", emoji: "🌳", category: "tree" as const },
     19: { name: "Oleander", emoji: "🌸", category: "bush" as const },
-    20: { name: "Tea Bush", emoji: "🍃", category: "bush" as const }
+    20: { name: "Maple", emoji: "🍁", category: "tree" as const }
   },
   
   // Trees (22-41km, excluding hero plants)
   TREES: {
-    22: { name: "Olive", emoji: "🫒", category: "tree" as const },
-    23: { name: "Birch", emoji: "🌳", category: "tree" as const },
-    24: { name: "Elm", emoji: "🌳", category: "tree" as const },
-    25: { name: "Maple", emoji: "🍁", category: "tree" as const },
-    26: { name: "Willow", emoji: "🌳", category: "tree" as const },
-    27: { name: "Pine", emoji: "🌲", category: "tree" as const },
-    28: { name: "Eucalyptus", emoji: "🌿", category: "tree" as const },
-    29: { name: "Cypress", emoji: "🌲", category: "tree" as const },
-    30: { name: "Jacaranda", emoji: "💜", category: "tree" as const },
-    31: { name: "Acacia", emoji: "🌳", category: "tree" as const },
-    32: { name: "Ash", emoji: "🌳", category: "tree" as const },
-    33: { name: "Ginkgo", emoji: "🍂", category: "tree" as const },
-    34: { name: "Magnolia", emoji: "🌸", category: "tree" as const },
-    35: { name: "Cedar", emoji: "🌲", category: "tree" as const },
-    36: { name: "Chestnut", emoji: "🌰", category: "tree" as const },
-    37: { name: "Linden", emoji: "🌳", category: "tree" as const },
-    38: { name: "Hornbeam", emoji: "🌳", category: "tree" as const },
-    39: { name: "Redwood Sapling", emoji: "🌲", category: "tree" as const },
-    40: { name: "Oak", emoji: "🌳", category: "tree" as const },
-    41: { name: "Sequoia Sapling", emoji: "🌲", category: "tree" as const }
+    22: { name: "Elm", emoji: "🌳", category: "tree" as const },
+    23: { name: "Eucalyptus", emoji: "🌿", category: "tree" as const },
+    24: { name: "Cypress", emoji: "🌲", category: "tree" as const },
+    25: { name: "Jacaranda", emoji: "💜", category: "tree" as const },
+    26: { name: "Acacia", emoji: "🌳", category: "tree" as const },
+    27: { name: "Ash", emoji: "🌳", category: "tree" as const },
+    28: { name: "Ginkgo", emoji: "🍂", category: "tree" as const },
+    29: { name: "Magnolia", emoji: "🌸", category: "tree" as const },
+    30: { name: "Cedar", emoji: "🌲", category: "tree" as const },
+    31: { name: "Chestnut", emoji: "🌰", category: "tree" as const },
+    32: { name: "Linden", emoji: "🌳", category: "tree" as const },
+    33: { name: "Hornbeam", emoji: "🌳", category: "tree" as const },
+    34: { name: "Redwood Sapling", emoji: "🌲", category: "tree" as const },
+    35: { name: "Oak", emoji: "🌳", category: "tree" as const },
+    36: { name: "Sequoia Sapling", emoji: "🌲", category: "tree" as const },
+    37: { name: "Boxwood", emoji: "🌿", category: "bush" as const },
+    38: { name: "Azalea", emoji: "🌸", category: "bush" as const },
+    39: { name: "Hibiscus", emoji: "🌺", category: "bush" as const },
+    40: { name: "Holly", emoji: "🍃", category: "bush" as const },
+    41: { name: "Tea Bush", emoji: "🍃", category: "bush" as const }
   },
   
   // Desert plants (43-69km)
@@ -211,6 +216,7 @@ export const NEW_PLANT_DISTANCE_REWARDS = (() => {
         rarity: getRarityForDistance(distance),
         category: plant.category as "flower" | "bush" | "tree" | "desert" | "mushroom",
         description: `A ${plant.category} earned from your ${distance}km achievement`,
+        imagePath: getClassicImagePath(distance),
         growthStages: getGrowthStages(plant.category, plant.emoji)
       });
     }
@@ -227,6 +233,7 @@ export const ULTRA_DISTANCE_MUSHROOM = {
   rarity: "mythical" as const,
   category: "mushroom" as const,
   description: "A mystical mushroom for ultra-distance runners beyond 100km",
+  imagePath: getClassicImagePath(100), // Use the 100km image for ultra distances
   growthStages: [
     { stage: 0, name: "Spore", emoji: "🌱" },
     { stage: 1, name: "Mycelium", emoji: "🌿" },

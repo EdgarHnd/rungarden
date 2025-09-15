@@ -34,7 +34,7 @@ interface GardenCanvasProps {
 
 export default function GardenCanvas({
   children,
-  backgroundColor = Theme.colors.background.primary,
+  backgroundColor = Theme.colors.background.primary, //'#E3D1B9', 
   onCanvasTap,
   onGridTap,
   onDoubleTap,

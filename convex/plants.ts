@@ -350,32 +350,54 @@ export const getPlantByActivityId = query({
       return null;
     }
 
+    let plant = null;
+    let plantType = null;
+
     // If activity has plantEarned reference, get it directly
     if (activity.plantEarned) {
-      const plant = await ctx.db.get(activity.plantEarned);
+      plant = await ctx.db.get(activity.plantEarned);
       if (plant) {
-        const plantType = await ctx.db.get(plant.plantTypeId);
-        return {
-          ...plant,
-          plantType,
-        };
+        plantType = await ctx.db.get(plant.plantTypeId);
       }
     }
 
     // Fallback: search for plant by earnedFromActivityId index
-    const plant = await ctx.db
-      .query("plants")
-      .withIndex("by_activity", (q) => q.eq("earnedFromActivityId", activityId))
-      .first();
+    if (!plant) {
+      plant = await ctx.db
+        .query("plants")
+        .withIndex("by_activity", (q) => q.eq("earnedFromActivityId", activityId))
+        .first();
 
-    if (!plant || plant.userId !== userId) {
+      if (!plant || plant.userId !== userId) {
+        return null;
+      }
+
+      plantType = await ctx.db.get(plant.plantTypeId);
+    }
+
+    if (!plant || !plantType) {
       return null;
     }
 
-    const plantType = await ctx.db.get(plant.plantTypeId);
+    // Check if this is the first plant of this type the user has earned
+    // by checking if this plant is the earliest one of this type
+    const allPlantsOfType = await ctx.db
+      .query("plants")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("plantTypeId"), plant.plantTypeId))
+      .collect();
+
+    // Sort by earnedAt to find the first one
+    const sortedPlants = allPlantsOfType.sort((a, b) => 
+      new Date(a.earnedAt).getTime() - new Date(b.earnedAt).getTime()
+    );
+
+    const isNewType = sortedPlants.length > 0 && sortedPlants[0]._id === plant._id;
+
     return {
       ...plant,
       plantType,
+      isNewType,
     };
   },
 });
@@ -487,7 +509,7 @@ export const getPlantsEarnedFromActivities = query({
   },
 });
 
-// Get plant stash data using profile unlocked plant types
+// Get plant stash data using profile unlocked plant types (optimized)
 export const getPlantStashData = query({
   args: {},
   handler: async (ctx) => {
@@ -496,25 +518,28 @@ export const getPlantStashData = query({
       return { plants: [], maxDistance: 0 };
     }
 
-    // Get user profile with unlocked plant types
-    const profile = await ctx.db
-      .query("userProfiles")
-      .withIndex("by_user", (q) => q.eq("userId", userId))
-      .first();
+    // Run all queries in parallel for better performance
+    const [profile, allPlantTypes, userPlants] = await Promise.all([
+      // Get user profile with unlocked plant types
+      ctx.db
+        .query("userProfiles")
+        .withIndex("by_user", (q) => q.eq("userId", userId))
+        .first(),
+      
+      // Get all plant types (should be exactly 100: 1km to 100km)
+      ctx.db
+        .query("plantTypes")
+        .order("asc")
+        .take(100), // Limit to prevent fetching too many
+      
+      // Get user's unplanted plants count (with limit to prevent overflow)
+      ctx.db
+        .query("plants")
+        .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", false))
+        .take(200) // Reasonable limit for unplanted plants
+    ]);
 
     const unlockedPlantTypeIds = profile?.unlockedPlantTypes || [];
-
-    // Get all plant types (should be exactly 100: 1km to 100km)
-    const allPlantTypes = await ctx.db
-      .query("plantTypes")
-      .order("asc")
-      .take(100); // Limit to prevent fetching too many
-
-    // Get user's unplanted plants count (with limit to prevent overflow)
-    const userPlants = await ctx.db
-      .query("plants")
-      .withIndex("by_user_planted", (q) => q.eq("userId", userId).eq("isPlanted", false))
-      .take(200); // Reasonable limit for unplanted plants
 
     // Count unplanted plants by type
     const unplantedCounts: Record<string, number> = {};

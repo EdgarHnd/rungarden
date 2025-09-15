@@ -1,8 +1,8 @@
 {
   "expo": {
-    "name": "Run Garden",
+    "name": "RunGarden",
     "slug": "run-garden",
-    "version": "1.0.1",
+    "version": "1.0.4",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "rungarden",
@@ -35,7 +35,7 @@
     "android": {
       "adaptiveIcon": {
         "foregroundImage": "./assets/images/adaptive-icon.png",
-        "backgroundColor": "#0D1B2A"
+        "backgroundColor": "#FBF6F2"
       },
       "edgeToEdgeEnabled": true,
       "package": "com.edgarhnd.rungarden",
@@ -59,7 +59,7 @@
           "image": "./assets/images/splash-icon.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#0D1B2A"
+          "backgroundColor": "#FBF6F2"
         }
       ],
       [
@@ -74,7 +74,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/icon.png",
-          "color": "#D9D9D9",
+          "color": "#FBF6F2",
           "defaultChannel": "default"
         }
       ],

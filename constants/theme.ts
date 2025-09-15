@@ -136,6 +136,7 @@ export const Theme = {
     medium: 'SF-Pro-Rounded-Medium',
     semibold: 'SF-Pro-Rounded-Semibold',
     bold: 'SF-Pro-Rounded-Bold',
+    black: 'SF-Pro-Rounded-Black'
   },
 };
 

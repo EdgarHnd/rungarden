@@ -1,7 +1,9 @@
 import LoadingScreen from '@/components/LoadingScreen';
+import PrimaryButton from '@/components/PrimaryButton';
+import { Fonts } from '@/constants/Fonts';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
-import { formatDistance } from '@/utils/formatters';
+import { formatDistance, formatPace } from '@/utils/formatters';
 import { useAuthActions } from "@convex-dev/auth/react";
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useConvexAuth, useQuery } from "convex/react";
@@ -10,17 +12,8 @@ import { useRouter } from 'expo-router';
 import React, { useMemo, useState } from 'react';
 import { Alert, Image, SafeAreaView, ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
-// Helper function to get image source from path
-const getImageSource = (imagePath: string) => {
-  // Map image paths to actual require statements
-  const imageMap: { [key: string]: any } = {
-    'assets/images/plants/01.png': require('../../assets/images/plants/01.png'),
-    'assets/images/plants/carrot.png': require('../../assets/images/plants/carrot.png'),
-    'assets/images/plants/sakura.png': require('../../assets/images/plants/sakura.png'),
-  };
-
-  return imageMap[imagePath] || null;
-};
+import { useAnalytics } from '@/provider/AnalyticsProvider';
+import { getImageSource } from '@/utils/plantImageMapping';
 
 interface ActivityWithPlant {
   _id: string;
@@ -40,6 +33,7 @@ interface DayData {
 }
 
 export default function ProfileScreen() {
+  const analytics = useAnalytics();
   const { signOut } = useAuthActions();
   const { isAuthenticated } = useConvexAuth();
   const router = useRouter();
@@ -147,7 +141,7 @@ export default function ProfileScreen() {
     const totalDistance = day.activities.reduce((sum, act) => sum + act.distance, 0);
     const totalDuration = day.activities.reduce((sum, act) => sum + act.duration, 0);
     const plantsText = day.plantsEarned.length > 0
-      ? `\n\n🌱 Plants earned: ${day.plantsEarned.map(p => p.plantType?.emoji || '🌱').join(' ')}`
+      ? `\n\n🌱 Plants earned: ${day.plantsEarned.map(p => p.plantType?.name || 'Unknown Plant').join(', ')}`
       : '';
 
     Alert.alert(
@@ -174,9 +168,9 @@ export default function ProfileScreen() {
     );
   };
 
-  const getPlantEmoji = (day: DayData) => {
+  const getPlantData = (day: DayData) => {
     if (day.plantsEarned.length === 0) return null;
-    return day.plantsEarned[0]?.plantType?.emoji || '🌱';
+    return day.plantsEarned[0]?.plantType || null;
   };
 
   if (!isAuthenticated) {
@@ -219,16 +213,18 @@ export default function ProfileScreen() {
       >
         {/* Header */}
         <View style={styles.header}>
-          <TouchableOpacity
+          <PrimaryButton
+            title="Support"
+            size="small"
+            hapticFeedback="light"
+            textTransform='none'
+            icon={<FontAwesome5 name="headset" size={20} color={Theme.colors.background.primary} />}
             style={styles.supportButton}
             onPress={() => {
               Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
               router.push('/support');
             }}
-          >
-            <FontAwesome5 name="headset" size={20} color={Theme.colors.background.primary} />
-            <Text style={styles.supportButtonText}>Support</Text>
-          </TouchableOpacity>
+          />
           <TouchableOpacity
             style={styles.settingsButton}
             onPress={() => {
@@ -267,6 +263,12 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => {
+                analytics.track({
+                  name: 'edit_profile_opened',
+                  properties: {
+                    from_screen: 'profile',
+                  },
+                });
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push('/edit-profile');
               }}
@@ -279,6 +281,12 @@ export default function ProfileScreen() {
             <TouchableOpacity
               style={styles.actionButton}
               onPress={() => {
+                analytics.track({
+                  name: 'add_friend_opened',
+                  properties: {
+                    from_screen: 'profile',
+                  },
+                });
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                 router.push('/add-friend');
               }}
@@ -328,33 +336,18 @@ export default function ProfileScreen() {
 
               {/* Plant Illustration */}
               <View style={styles.treeContainer}>
-                {(() => {
-                  const imagePath = lastRunPlant?.plantType?.imagePath;
-                  const imageSource = imagePath ? getImageSource(imagePath) : null;
-
-                  if (imageSource) {
-                    return (
-                      <Image
-                        source={imageSource}
-                        style={styles.treeImage}
-                        resizeMode="contain"
-                      />
-                    );
-                  } else {
-                    return (
-                      <Text style={styles.treeEmoji}>
-                        {lastRunPlant?.plantType?.emoji || '🌳'}
-                      </Text>
-                    );
-                  }
-                })()}
+                <Image
+                  source={getImageSource(lastRunPlant?.plantType?.imagePath, lastRunPlant?.plantType?.distanceRequired)}
+                  style={styles.treeImage}
+                  resizeMode="contain"
+                />
               </View>
 
               <Text style={styles.distanceText}>
-                DISTANCE {formatDistance(lastRun.distance, 'metric')}
+                DISTANCE {formatDistance(lastRun.distance, metricSystem)}
               </Text>
               <Text style={styles.paceText}>
-                PACE {lastRun.duration > 0 ? Math.round((lastRun.duration / 60) / (lastRun.distance / 1000)) : 0}:{String(Math.round(((lastRun.duration / 60) / (lastRun.distance / 1000) % 1) * 60)).padStart(2, '0')} /km
+                PACE {formatPace(lastRun.duration, lastRun.distance, metricSystem)}
               </Text>
             </TouchableOpacity>
           </View>
@@ -388,7 +381,7 @@ export default function ProfileScreen() {
             ))}
 
             {calendarDays.map((day, index) => {
-              const plantEmoji = getPlantEmoji(day);
+              const plantData = getPlantData(day);
               const hasActivity = day.activities.length > 0;
               const dayNumber = new Date(day.date).getDate();
 
@@ -398,14 +391,18 @@ export default function ProfileScreen() {
                   style={[
                     styles.calendarDay,
                     hasActivity && styles.calendarDayWithActivity,
-                    plantEmoji && styles.calendarDayWithPlant
+                    plantData && styles.calendarDayWithPlant
                   ]}
                   onPress={() => showDayDetails(day)}
                   disabled={!hasActivity}
                   activeOpacity={0.7}
                 >
-                  {plantEmoji ? (
-                    <Text style={styles.dayPlantEmoji}>{plantEmoji}</Text>
+                  {plantData ? (
+                    <Image
+                      source={getImageSource(plantData.imagePath, plantData.distanceRequired)}
+                      style={styles.dayPlantImage}
+                      resizeMode="contain"
+                    />
                   ) : (
                     <Text style={[
                       styles.dayNumber,
@@ -460,12 +457,12 @@ const styles = StyleSheet.create({
     paddingBottom: 0,
   },
   supportButton: {
-    padding: 12,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 8,
-    backgroundColor: Theme.colors.accent.primary,
+    // padding: 12,
+    // borderRadius: 8,
+    // flexDirection: 'row',
+    // alignItems: 'center',
+    // gap: 8,
+    // backgroundColor: Theme.colors.accent.primary,
   },
   settingsButton: {
     padding: 12,
@@ -492,12 +489,12 @@ const styles = StyleSheet.create({
   },
   avatarText: {
     fontSize: 32,
-    fontWeight: 'bold',
+    fontFamily: Fonts.SFProRounded.Bold,
     color: 'white',
   },
   userName: {
     fontSize: 28,
-    fontWeight: 'bold',
+    fontFamily: Fonts.SFProRounded.Bold,
     color: Theme.colors.text.primary,
     marginBottom: 20,
     textAlign: 'center',
@@ -517,7 +514,7 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: 16,
-    fontWeight: '600',
+    fontFamily: Fonts.SFProRounded.Semibold,
     color: Theme.colors.text.primary,
   },
   integratedStats: {
@@ -532,17 +529,18 @@ const styles = StyleSheet.create({
   },
   integratedStatValue: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontFamily: Fonts.SFProRounded.Bold,
     color: Theme.colors.text.primary,
   },
   integratedStatLabel: {
     fontSize: 14,
+    fontFamily: Fonts.SFProRounded.Regular,
     color: Theme.colors.text.secondary,
     textAlign: 'center',
   },
   sectionTitle: {
     fontSize: 20,
-    fontWeight: 'bold',
+    fontFamily: Fonts.SFProRounded.Bold,
     color: Theme.colors.text.primary,
   },
   lastRunContainer: {
@@ -550,12 +548,12 @@ const styles = StyleSheet.create({
     marginTop: 0,
   },
   lastRunCard: {
-    backgroundColor: '#F5F5F5',
+    backgroundColor: 'white',
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
     borderWidth: 3,
-    borderColor: '#000000',
+    borderColor: Theme.colors.text.primary,
   },
   lastRunHeader: {
     flexDirection: 'row',
@@ -570,43 +568,42 @@ const styles = StyleSheet.create({
   },
   lastRunHeaderButtonText: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    fontFamily: Fonts.SFProRounded.Bold,
     color: Theme.colors.text.primary,
   },
   dayOfWeek: {
     fontSize: 24,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
+    fontFamily: Fonts.SFProRounded.Bold,
+    color: Theme.colors.text.primary,
     marginBottom: 4,
   },
   runDate: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666666',
+    fontFamily: Fonts.SFProRounded.Regular,
+    color: Theme.colors.text.secondary,
     marginBottom: 20,
   },
   treeContainer: {
-    marginVertical: 20,
   },
   treeEmoji: {
     fontSize: 80,
   },
   treeImage: {
-    width: 80,
-    height: 80,
+    width: 140,
+    height: 140,
   },
   distanceText: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
+    fontFamily: Fonts.SFProRounded.Bold,
+    color: Theme.colors.text.primary,
     marginTop: 20,
     marginBottom: 4,
     letterSpacing: 1,
   },
   paceText: {
     fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
+    fontFamily: Fonts.SFProRounded.Bold,
+    color: Theme.colors.text.primary,
     letterSpacing: 1,
   },
   calendarContainer: {
@@ -628,12 +625,12 @@ const styles = StyleSheet.create({
   },
   monthButtonText: {
     fontSize: 24,
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    fontFamily: Fonts.SFProRounded.Bold,
     color: Theme.colors.text.primary,
   },
   monthTitle: {
     fontSize: 18,
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    fontFamily: Fonts.SFProRounded.Bold,
     color: Theme.colors.text.primary,
   },
   calendarGrid: {
@@ -657,15 +654,16 @@ const styles = StyleSheet.create({
   },
   dayNumber: {
     fontSize: 16,
-    fontFamily: 'SF-Pro-Rounded-Semibold',
+    fontFamily: Fonts.SFProRounded.Semibold,
     color: Theme.colors.text.primary,
   },
   dayNumberActive: {
-    color: '#000000',
-    fontFamily: 'SF-Pro-Rounded-Bold',
+    color: Theme.colors.text.primary,
+    fontFamily: Fonts.SFProRounded.Bold,
   },
-  dayPlantEmoji: {
-    fontSize: 24,
+  dayPlantImage: {
+    width: 32,
+    height: 32,
   },
   activitiesContainer: {
     margin: 20,
@@ -680,6 +678,7 @@ const styles = StyleSheet.create({
   },
   emptyStateText: {
     fontSize: 16,
+    fontFamily: Fonts.SFProRounded.Regular,
     color: Theme.colors.text.secondary,
     marginTop: 12,
     textAlign: 'center',

@@ -11,10 +11,10 @@ export const formatDistance = (meters: number, metricSystem: MetricSystem = 'met
 
   if (metricSystem === 'imperial') {
     const miles = meters * 0.000621371;
-    return `${miles.toFixed(0)} mi`;
+    return `${miles.toFixed(1)} mi`;
   } else {
     const kilometers = meters / 1000;
-    return `${kilometers.toFixed(0)} km`;
+    return `${kilometers.toFixed(1)} km`;
   }
 };
 
@@ -98,9 +98,7 @@ export const formatDate = (dateString: string): string => {
   const date = new Date(dateString);
   return date.toLocaleDateString('en-US', {
     month: 'short',
-    day: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
+    day: 'numeric'
   });
 };
 
@@ -154,4 +152,24 @@ export const milesToMeters = (miles: number): number => {
  */
 export const metersToMiles = (meters: number): number => {
   return meters * 0.000621371;
+};
+
+/**
+ * Format distance for plant requirements - always shows km first, then miles in parentheses for imperial users
+ * @param meters - Distance in meters
+ * @param metricSystem - User's preferred metric system
+ * @returns Formatted distance string with km first, miles in parentheses for imperial
+ */
+export const formatPlantDistance = (meters: number, metricSystem: MetricSystem = 'metric'): string => {
+  if (!meters || meters === 0) return '0km';
+
+  const kilometers = meters / 1000;
+  const kmFormatted = `${kilometers.toFixed(kilometers < 1 ? 1 : 0)}km`;
+  
+  if (metricSystem === 'imperial') {
+    const miles = meters * 0.000621371;
+    return `${kmFormatted} (${miles.toFixed(1)}mi)`;
+  }
+  
+  return kmFormatted;
 }; 

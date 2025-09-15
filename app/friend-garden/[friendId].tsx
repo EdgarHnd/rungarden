@@ -13,9 +13,12 @@ import {
 } from 'react-native';
 
 import DraggablePlant from '@/components/DraggablePlant';
+import GardenCanvas from '@/components/GardenCanvas';
+import IsometricPlatform from '@/components/IsometricPlatform';
 import LoadingScreen from '@/components/LoadingScreen';
 import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { DEFAULT_GRID_CONFIG } from '@/utils/isometricGrid';
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get('window');
 
@@ -103,8 +106,20 @@ export default function FriendGardenScreen() {
         <View style={styles.placeholder} />
       </View>
 
-      {/* Garden Canvas - no scrolling for now */}
-      <View style={styles.gardenContainer}>
+      {/* Garden Canvas */}
+      <GardenCanvas
+        onGridTap={() => { }}
+        onDoubleTap={() => { }}
+        unlockedTiles={[]}
+        showGrid={false}
+        enableZoom={false}
+      >
+        {/* Isometric platform (background) */}
+        <IsometricPlatform
+          gridConfig={DEFAULT_GRID_CONFIG}
+        />
+
+        {/* Render friend's plants */}
         {plants.map((plant) => (
           <DraggablePlant
             key={plant._id}
@@ -114,7 +129,7 @@ export default function FriendGardenScreen() {
             unlockedTiles={[]}
           />
         ))}
-      </View>
+      </GardenCanvas>
     </SafeAreaView>
   );
 }
@@ -138,10 +153,8 @@ const styles = StyleSheet.create({
     width: 40,
     height: 40,
     borderRadius: 20,
-    backgroundColor: Theme.colors.background.secondary,
     justifyContent: 'center',
     alignItems: 'center',
-    ...Theme.shadows.small,
   },
   titleContainer: {
     flex: 1,

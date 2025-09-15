@@ -479,7 +479,7 @@ class DatabaseStravaService {
         stravaTokenExpiresAt: undefined,
         stravaAthleteId: undefined,
         stravaAccessRevoked: true,
-        lastStravaSync: null,
+        lastStravaSync: undefined,
       });
       
     } catch (error) {
@@ -495,7 +495,7 @@ class DatabaseStravaService {
     try {
       console.log('[DatabaseStravaService] Setting up Strava webhook...');
       const result = await this.convexClient.action(api.stravaWebhooks.ensureWebhook);
-      return result;
+      return result as { success: boolean; message: string; id?: number };
     } catch (error) {
       console.error('[DatabaseStravaService] Error setting up webhook:', error);
       return { 

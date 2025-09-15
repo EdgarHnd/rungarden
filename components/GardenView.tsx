@@ -1,27 +1,38 @@
 import { Theme } from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
+import { useAnalytics } from '@/provider/AnalyticsProvider';
+import { useSyncProvider } from '@/provider/SyncProvider';
+import { FontAwesome5 } from '@expo/vector-icons';
 import { useConvex, useMutation, useQuery } from 'convex/react';
+import { Asset } from 'expo-asset';
 import * as Haptics from 'expo-haptics';
-import { router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { router, useFocusEffect } from 'expo-router';
+import { useCallback, useEffect, useState } from 'react';
 import {
   Alert,
   Dimensions,
+  Image,
   StyleSheet,
   Text,
   TouchableOpacity,
   View
 } from 'react-native';
-import { formatDate, formatDistance } from '../utils/formatters';
+import { formatDate, formatPlantDistance } from '../utils/formatters';
 import {
+  DEFAULT_GRID_CONFIG,
   GridPosition
 } from '../utils/isometricGrid';
 import DraggablePlant from './DraggablePlant';
 import GardenCanvas from './GardenCanvas';
+import IsometricPlatform from './IsometricPlatform';
 import InitialSyncModal from './modals/InitialSyncModal';
 import PlantCelebrationModal from './modals/PlantCelebrationModal';
+import PrimaryButton from './PrimaryButton';
 
 const { width: screenWidth } = Dimensions.get('window');
+
+import { CLASSIC_PLANT_IMAGES, getImageSource } from '../utils/plantImageMapping';
+import LoadingScreen from './LoadingScreen';
 
 interface PlantInGarden {
   _id: string;
@@ -60,11 +71,13 @@ interface PlantInventoryItem {
 
 
 export default function GardenView() {
+  const analytics = useAnalytics();
   const [showDebugModal, setShowDebugModal] = useState(false);
   const [showCelebrationModal, setShowCelebrationModal] = useState(false);
   const [showInitialSyncModal, setShowInitialSyncModal] = useState(false);
   const [debugSyncResult, setDebugSyncResult] = useState<any>(null);
   const [shouldAnimatePlants, setShouldAnimatePlants] = useState(true);
+  const [imagesReady, setImagesReady] = useState(false);
   const [errorModal, setErrorModal] = useState<{
     show: boolean;
     title: string;
@@ -93,6 +106,9 @@ export default function GardenView() {
   // Convex client for manual queries
   const convex = useConvex();
 
+  // Get celebration trigger from SyncProvider
+  const { triggerCelebrationCheck } = useSyncProvider();
+
   // Get activity data for selected plant
   const selectedPlantActivity = useQuery(
     api.activities.getActivityById,
@@ -110,7 +126,7 @@ export default function GardenView() {
   const resetAllData = useMutation(api.migration.resetAllData);
   const resetPlants = useMutation(api.migration.resetPlants);
   const resetActivities = useMutation(api.migration.resetActivities);
-  const resetGardensAndPlantTypes = useMutation(api.migration.resetGardensAndPlantTypes);
+  const resetGardensOnly = useMutation(api.migration.resetGardensOnly);
   const resetUserProfiles = useMutation(api.migration.resetUserProfiles);
   const getDataCounts = useQuery(api.migration.getDataCounts);
 
@@ -121,6 +137,32 @@ export default function GardenView() {
       initializeGarden().catch(console.error);
     }
   }, [gardenLayout, initializeGarden]);
+
+  // Function to trigger new plant animations (can be called when plants are added)
+  const triggerPlantAnimations = useCallback(() => {
+    setShouldAnimatePlants(true);
+
+    // Auto-reset after animations complete
+    const resetTimer = setTimeout(() => {
+      setShouldAnimatePlants(false);
+    }, 3000);
+
+    return () => clearTimeout(resetTimer);
+  }, []);
+
+  // Trigger animations when the screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      // Add a small delay to ensure the screen is fully rendered
+      const focusTimer = setTimeout(() => {
+        if (gardenPlants && gardenPlants.length > 0 && imagesReady) {
+          triggerPlantAnimations();
+        }
+      }, 300); // 300ms delay for smooth transition
+
+      return () => clearTimeout(focusTimer);
+    }, [gardenPlants?.length, imagesReady, triggerPlantAnimations])
+  );
 
   // Calculate animation delays for chained effect
   const getPlantAnimationDelay = (plant: PlantInGarden, index: number) => {
@@ -162,14 +204,9 @@ export default function GardenView() {
 
   // Reset animations when plants change significantly
   useEffect(() => {
-    if (gardenPlants && gardenPlants.length > 0) {
+    if (gardenPlants && gardenPlants.length > 0 && imagesReady) {
       // Trigger animations on initial load or when new plants are added
       setShouldAnimatePlants(true);
-
-      // Also trigger wave haptics for automatic animations (like initial load)
-      const hapticTimer = setTimeout(() => {
-        triggerWaveHaptics();
-      }, 100); // Small delay to ensure plants are rendered
 
       // Reset animation flag after all animations should be complete
       const maxDelay = gardenPlants.reduce((max, plant, index) => {
@@ -182,108 +219,65 @@ export default function GardenView() {
 
       return () => {
         clearTimeout(resetTimer);
-        clearTimeout(hapticTimer);
       };
     }
-  }, [gardenPlants?.length]); // Only trigger when plant count changes
+  }, [gardenPlants?.length, imagesReady]); // Only trigger when plant count changes
 
-  // Function to trigger new plant animations (can be called when plants are added)
-  const triggerPlantAnimations = () => {
-    setShouldAnimatePlants(true);
-
-    // Trigger wave haptics that follow the animation pattern
-    triggerWaveHaptics();
-
-    // Auto-reset after animations complete
-    const resetTimer = setTimeout(() => {
-      setShouldAnimatePlants(false);
-    }, 3000);
-
-    return () => clearTimeout(resetTimer);
-  };
-
-  // Create haptic sequence that follows the actual animation wave
-  const triggerWaveHaptics = () => {
-    if (!gardenPlants || gardenPlants.length === 0) {
-      console.log('🌱 No plants found for wave haptics');
-      return;
-    }
-
-    const validPlants = gardenPlants.filter(plant => plant.plantType !== null);
-
-    // Get actual animation delays for all plants
-    const plantsWithDelays = validPlants.map((plant, index) => ({
-      plant,
-      delay: getPlantAnimationDelay(plant, index)
-    })).sort((a, b) => a.delay - b.delay);
-
-    if (plantsWithDelays.length === 0) return;
-
-    console.log('🌱 Creating haptic sequence synced with', plantsWithDelays.length, 'plant animations');
-
-    // Create haptic pulses that follow the actual wave progression
-    const totalWaveDuration = Math.max(...plantsWithDelays.map(item => item.delay)) + 1000;
-    const hapticMoments: Array<{ delay: number; intensity: 'Light' | 'Medium' }> = [];
-
-    // Method 1: Haptic pulses at key animation moments
-    const waveSegments = Math.ceil(plantsWithDelays.length / 4); // Divide wave into segments
-
-    for (let segment = 0; segment < 4; segment++) {
-      const segmentStart = Math.floor(segment * plantsWithDelays.length / 4);
-      const segmentEnd = Math.floor((segment + 1) * plantsWithDelays.length / 4);
-
-      if (segmentStart < plantsWithDelays.length) {
-        const segmentPlants = plantsWithDelays.slice(segmentStart, segmentEnd);
-        if (segmentPlants.length > 0) {
-          // Haptic at the beginning of each wave segment
-          const segmentDelay = segmentPlants[0].delay + 300; // Sync with plant growth peak
-          const intensity = segment === 3 ? 'Medium' : 'Light'; // Final segment gets medium pulse
-
-          hapticMoments.push({ delay: segmentDelay, intensity });
+  // Preload all plant images used in the current garden
+  useEffect(() => {
+    let isMounted = true;
+    const preload = async () => {
+      try {
+        if (!gardenPlants || gardenPlants.length === 0) {
+          if (isMounted) setImagesReady(true);
+          return;
         }
-      }
-    }
 
-    // Method 2: Add haptics at wave crescendo points (25%, 50%, 75%, 100%)
-    const crescendoPoints = [0.25, 0.5, 0.75, 1.0];
-    crescendoPoints.forEach((point, index) => {
-      const crescendoDelay = totalWaveDuration * point;
-      const intensity = point >= 0.75 ? 'Medium' : 'Light';
+        // Collect unique image asset paths from plant types
+        const paths = Array.from(new Set(
+          gardenPlants
+            .map(p => p.plantType?.imagePath)
+            .filter(Boolean) as string[]
+        ));
 
-      // Only add if not too close to existing haptic moments
-      const tooClose = hapticMoments.some(moment => Math.abs(moment.delay - crescendoDelay) < 200);
-      if (!tooClose) {
-        hapticMoments.push({ delay: crescendoDelay, intensity });
-      }
-    });
+        // Map paths to static requires to allow Asset loading
+        const requireMap: Record<string, any> = {
+          'assets/images/plants/01.png': require('../assets/images/plants/01.png'),
+          'assets/images/plants/carrot.png': require('../assets/images/plants/carrot.png'),
+          'assets/images/plants/sakura.png': require('../assets/images/plants/sakura.png'),
+          'assets/images/plants/dandelion.png': require('../assets/images/plants/dandelion.png'),
+          ...CLASSIC_PLANT_IMAGES
+        };
 
-    // Sort by delay and remove duplicates
-    const sortedHaptics = hapticMoments
-      .sort((a, b) => a.delay - b.delay)
-      .filter((haptic, index, array) => {
-        // Remove if too close to previous haptic (within 150ms)
-        return index === 0 || haptic.delay - array[index - 1].delay >= 150;
-      });
+        const assets = paths.map(p => {
+          // Check if it's a classic plant path
+          const classicMatch = p.match(/classic\/(\d+)\.png$/);
+          if (classicMatch) {
+            const kmDistance = classicMatch[1];
+            return CLASSIC_PLANT_IMAGES[kmDistance] ?? require('../assets/images/plants/dandelion.png');
+          }
+          return requireMap[p] ?? require('../assets/images/plants/dandelion.png');
+        });
 
-    // Execute the synchronized haptic sequence
-    sortedHaptics.forEach((pulse, index) => {
-      setTimeout(() => {
-        try {
-          const intensityMap = {
-            'Light': Haptics.ImpactFeedbackStyle.Light,
-            'Medium': Haptics.ImpactFeedbackStyle.Medium,
-          };
-
-          Haptics.impactAsync(intensityMap[pulse.intensity]);
-          console.log(`🌱 Wave-synced haptic ${index + 1}/${sortedHaptics.length} (${pulse.intensity}) at ${Math.round(pulse.delay)}ms`);
-        } catch (error) {
-          console.log('🌱 Haptic error:', error);
+        // If no mapped assets, still mark ready
+        if (assets.length === 0) {
+          if (isMounted) setImagesReady(true);
+          return;
         }
-      }, pulse.delay);
-    });
 
-    console.log(`🌱 Scheduled ${sortedHaptics.length} haptics synced with animation wave over ${Math.round(totalWaveDuration)}ms`);
-  };
+        await Asset.loadAsync(assets);
+        if (isMounted) setImagesReady(true);
+      } catch (e) {
+        if (isMounted) setImagesReady(true);
+      }
+    };
+
+    setImagesReady(false);
+    preload();
+    return () => { isMounted = false; };
+  }, [gardenPlants?.length]);
+
+
 
   // Handle grid tap (no longer used for manual planting)
   const handleGridTap = (gridPosition: GridPosition) => {
@@ -293,6 +287,16 @@ export default function GardenView() {
   // Handle plant tap - show plant details modal
   const handlePlantTap = (plant: PlantInGarden) => {
     try {
+      analytics.track({
+        name: 'plant_tapped',
+        properties: {
+          plant_type: plant.plantType?.name,
+          plant_rarity: plant.plantType?.rarity,
+          plant_stage: plant.currentStage,
+          has_activity: !!plant.earnedFromActivityId,
+        },
+      });
+
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
       setSelectedPlantDetails(plant);
     } catch (error) {
@@ -308,7 +312,19 @@ export default function GardenView() {
   const handlePlantGridPositionChange = async (plantId: string, gridPosition: GridPosition) => {
     if (!gardenLayout) return;
 
+    const plant = gardenPlants?.find(p => p._id === plantId);
+
     try {
+      analytics.track({
+        name: 'plant_moved',
+        properties: {
+          plant_type: plant?.plantType?.name,
+          plant_rarity: plant?.plantType?.rarity,
+          from_position: plant?.gridPosition,
+          to_position: gridPosition,
+        },
+      });
+
       // In simplified grid, all positions are available
       await updatePlantInGarden({
         plantId: plantId as any,
@@ -317,7 +333,6 @@ export default function GardenView() {
 
       Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     } catch (error: any) {
-      console.log('Grid position update error:', error);
       showErrorModal(
         '❌ Move Failed',
         error?.message || 'Could not move your plant to that position.',
@@ -348,6 +363,12 @@ export default function GardenView() {
 
 
   const openStash = () => {
+    analytics.track({
+      name: 'stash_opened',
+      properties: {
+        from_screen: 'garden',
+      },
+    });
     router.push('/stash');
   };
 
@@ -394,11 +415,11 @@ export default function GardenView() {
         }
       }
 
-      // Step 3: Reset gardens and plant types
-      const gardensResult = await resetGardensAndPlantTypes({});
+      // Step 3: Reset gardens only (preserve plant types)
+      const gardensResult = await resetGardensOnly({});
       totalGardensDeleted = gardensResult.gardensDeleted;
-      totalPlantTypesDeleted = gardensResult.plantTypesDeleted;
-      totalDeleted += gardensResult.gardensDeleted + gardensResult.plantTypesDeleted;
+      totalPlantTypesDeleted = 0; // Plant types are preserved
+      totalDeleted += gardensResult.gardensDeleted;
 
       // Step 4: Reset user profiles
       const profilesResult = await resetUserProfiles({});
@@ -406,7 +427,7 @@ export default function GardenView() {
 
       showErrorModal(
         '✅ Reset Complete!',
-        `Successfully reset all data:\n• ${plantsDeleted} plants deleted\n• ${activitiesDeleted} activities deleted\n• ${totalGardensDeleted} gardens deleted\n• ${totalPlantTypesDeleted} plant types deleted\n• ${totalProfilesReset} profiles reset\n\nTotal: ${totalDeleted} items deleted`,
+        `Successfully reset all data:\n• ${plantsDeleted} plants deleted\n• ${activitiesDeleted} activities deleted\n• ${totalGardensDeleted} gardens deleted\n• Plant types preserved ✨\n• ${totalProfilesReset} profiles reset\n\nTotal: ${totalDeleted} items deleted`,
         'Done'
       );
 
@@ -424,7 +445,6 @@ export default function GardenView() {
   const generateDebugSyncResult = async () => {
     try {
       if (!profile) {
-        console.error('[GardenView] No profile available for debug sync result');
         return null;
       }
 
@@ -442,7 +462,6 @@ export default function GardenView() {
       const sourceActivities = recentActivities.filter(a => a.source === sourceFilter);
 
       if (sourceActivities.length === 0) {
-        console.log('[GardenView] No activities found for debug sync result');
         return {
           created: 0,
           updated: 0,
@@ -467,7 +486,6 @@ export default function GardenView() {
           plantsEarned = await convex.query(api.plants.getPlantsEarnedFromActivities, {
             activityIds
           });
-          console.log('[GardenView] Debug: Fetched plant data for', activitiesWithPlants.length, 'activities, got', plantsEarned.length, 'plant types');
         } catch (error) {
           console.error('[GardenView] Error fetching plants for activities:', error);
           plantsEarned = [];
@@ -491,7 +509,6 @@ export default function GardenView() {
   // Debug functions for testing
   const createFakeActivity = async (distance: number) => {
     try {
-      console.log('Creating fake activity with distance:', distance);
       setShowDebugModal(false);
 
       const now = new Date();
@@ -509,6 +526,11 @@ export default function GardenView() {
         activities: [fakeActivity],
         initialSync: false,
       });
+
+      // Trigger celebration check after debug activity creation
+      setTimeout(() => {
+        triggerCelebrationCheck();
+      }, 1000); // Small delay to ensure database operations complete
 
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       showErrorModal(
@@ -530,9 +552,7 @@ export default function GardenView() {
 
   if (!gardenLayout) {
     return (
-      <View style={styles.loadingContainer}>
-        <Text style={styles.loadingText}>🌱 Preparing your garden...</Text>
-      </View>
+      <LoadingScreen />
     );
   }
 
@@ -540,18 +560,18 @@ export default function GardenView() {
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => setShowDebugModal(true)} activeOpacity={0.7}>
-          <Text style={styles.title}>Run Garden</Text>
+        <TouchableOpacity onPress={__DEV__ ? () => setShowDebugModal(true) : undefined} activeOpacity={0.7}>
+          <Text style={styles.title}>RunGarden</Text>
         </TouchableOpacity>
         <View style={styles.headerButtons}>
-          <TouchableOpacity
-            style={styles.inventoryButton}
+          <PrimaryButton
+            title="Plants"
             onPress={openStash}
-          >
-            <Text style={styles.inventoryButtonText}>
-              Plant Collection
-            </Text>
-          </TouchableOpacity>
+            size="small"
+            hapticFeedback="light"
+            icon={<FontAwesome5 name="seedling" size={20} color={Theme.colors.background.primary} />}
+            textTransform='none'
+          />
         </View>
       </View>
 
@@ -560,21 +580,17 @@ export default function GardenView() {
       <GardenCanvas
         onGridTap={handleGridTap}
         onDoubleTap={() => {
-          console.log('🌱 Double-tap detected! Starting animations and haptics...');
-
-          // Initial double-tap confirmation haptic (subtle)
-          try {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            console.log('🌱 Double-tap haptic triggered');
-          } catch (error) {
-            console.log('🌱 Double-tap haptic error:', error);
-          }
-
+          // Simple haptic feedback on double-tap
+          Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
           triggerPlantAnimations();
         }}
         unlockedTiles={[]} // All tiles are available in simplified grid
-        showGrid={true}
+        showGrid={false}
       >
+        {/* Isometric platform (background) */}
+        <IsometricPlatform
+          gridConfig={DEFAULT_GRID_CONFIG}
+        />
         {/* Render planted plants with chained animations */}
         {gardenPlants?.filter(plant => plant.plantType !== null).map((plant, index) => (
           <DraggablePlant
@@ -615,13 +631,17 @@ export default function GardenView() {
       {selectedPlantDetails && (
         <View style={styles.errorOverlay}>
           <View style={styles.plantModal}>
-            <Text style={styles.plantEmoji}>{selectedPlantDetails.plantType?.emoji || '🌱'}</Text>
+            <Image
+              source={getImageSource(selectedPlantDetails.plantType?.imagePath, selectedPlantDetails.plantType?.distanceRequired)}
+              style={styles.plantImage}
+              resizeMode="contain"
+            />
             <Text style={styles.plantName}>{selectedPlantDetails.plantType?.name || 'Unknown Plant'}</Text>
 
             {/* Distance Required */}
             {selectedPlantDetails.plantType?.distanceRequired && (
               <Text style={styles.plantDistance}>
-                Distance required: {formatDistance(selectedPlantDetails.plantType.distanceRequired, metricSystem)}
+                Distance required: {formatPlantDistance(selectedPlantDetails.plantType.distanceRequired, metricSystem)}
               </Text>
             )}
 
@@ -633,15 +653,18 @@ export default function GardenView() {
             )}
 
             <View style={styles.modalButtonsContainer}>
-              <TouchableOpacity
-                style={[styles.errorButton, styles.cancelButton]}
+              <PrimaryButton
+                title="Close"
                 onPress={() => setSelectedPlantDetails(null)}
-              >
-                <Text style={styles.errorButtonText}>Close</Text>
-              </TouchableOpacity>
+                size="small"
+                variant="secondary"
+                hapticFeedback="light"
+                style={styles.modalButton}
+                textTransform="none"
+              />
               {selectedPlantDetails.earnedFromActivityId && (
-                <TouchableOpacity
-                  style={[styles.errorButton, styles.viewRunButton]}
+                <PrimaryButton
+                  title="View Run"
                   onPress={() => {
                     setSelectedPlantDetails(null);
                     router.push({
@@ -651,9 +674,12 @@ export default function GardenView() {
                       }
                     });
                   }}
-                >
-                  <Text style={styles.errorButtonText}>View Run</Text>
-                </TouchableOpacity>
+                  size="small"
+                  variant="primary"
+                  hapticFeedback="light"
+                  textTransform="none"
+                  style={styles.modalButton}
+                />
               )}
             </View>
           </View>
@@ -661,7 +687,7 @@ export default function GardenView() {
       )}
 
       {/* Debug Modal */}
-      {showDebugModal && (
+      {__DEV__ && showDebugModal && (
         <View style={styles.errorOverlay}>
           <View style={styles.errorModal}>
             <Text style={styles.errorTitle}>🧪 Debug Mode</Text>
@@ -731,7 +757,6 @@ export default function GardenView() {
                   if (syncResult) {
                     setDebugSyncResult(syncResult);
                     setShowInitialSyncModal(true);
-                    console.log('[GardenView] Debug sync result:', syncResult);
                   } else {
                     showErrorModal(
                       '❌ Debug Failed',
@@ -786,11 +811,6 @@ export default function GardenView() {
           setShowInitialSyncModal(false);
           setDebugSyncResult(null);
           // In a real scenario, this would plant all the earned plants
-          showErrorModal(
-            '🌱 Plants Added!',
-            'All earned plants have been added to your garden!',
-            'Awesome!'
-          );
         }}
         metricSystem={metricSystem}
         source={profile?.stravaSyncEnabled ? "strava" : "healthkit"}
@@ -808,6 +828,7 @@ export default function GardenView() {
         plantData={{
           emoji: '🌻',
           name: 'Sunflower',
+          isNewType: true,
         }}
         onClose={() => setShowCelebrationModal(false)}
         metricSystem={metricSystem}
@@ -829,8 +850,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 24,
-    paddingTop: 20,
+    paddingHorizontal: 20,
+    paddingTop: 10,
     paddingBottom: 16,
   },
   loadingContainer: {
@@ -853,19 +874,6 @@ const styles = StyleSheet.create({
   headerButtons: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  inventoryButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    alignItems: 'center',
-    justifyContent: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    borderRadius: 16,
-  },
-  inventoryButtonText: {
-    color: '#FFFFFF',
-    fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Medium',
   },
 
 
@@ -932,14 +940,11 @@ const styles = StyleSheet.create({
     marginTop: 16,
     justifyContent: 'center',
     alignItems: 'center',
+    gap: 12,
   },
-  cancelButton: {
-    backgroundColor: '#6b7280',
-    marginRight: 6,
-  },
-  viewRunButton: {
-    backgroundColor: '#22c55e',
-    marginLeft: 6,
+  modalButton: {
+    flex: 1,
+    maxWidth: 120,
   },
 
   // Plant Details Modal styles
@@ -960,9 +965,9 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     elevation: 8,
   },
-  plantEmoji: {
-    fontSize: 64,
-    marginBottom: 16,
+  plantImage: {
+    width: 180,
+    height: 180,
   },
   plantName: {
     fontSize: 24,

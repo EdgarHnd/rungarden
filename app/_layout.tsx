@@ -9,6 +9,7 @@ import { useEffect } from 'react';
 import { Platform } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AnalyticsProviderComponent } from '../provider/AnalyticsProvider';
+import { MixpanelProvider } from '../provider/MixpanelProvider';
 import SyncProvider from '../provider/SyncProvider';
 // Temporarily disabled RevenueCat for testing
 
@@ -21,11 +22,7 @@ const convex = new ConvexReactClient(process.env.EXPO_PUBLIC_CONVEX_URL!, {
   unsavedChangesWarning: false,
 });
 
-// Create mock provider for testing (no token needed)
-const mixpanelProvider = {
-  initialize: () => Promise.resolve(),
-  track: () => { },
-} as any;
+const mixpanelProvider = new MixpanelProvider(process.env.EXPO_PUBLIC_MIXPANEL_TOKEN!);
 
 const secureStorage = {
   getItem: SecureStore.getItemAsync,
@@ -107,8 +104,8 @@ export default function RootLayout() {
   }
 
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <AnalyticsProviderComponent provider={mixpanelProvider}>
+    <AnalyticsProviderComponent provider={mixpanelProvider}>
+      <GestureHandlerRootView style={{ flex: 1 }}>
         <ConvexAuthProvider
           client={convex}
           storage={
@@ -129,7 +126,7 @@ export default function RootLayout() {
             </SyncProvider>
           </Authenticated>
         </ConvexAuthProvider>
-      </AnalyticsProviderComponent>
-    </GestureHandlerRootView>
+      </GestureHandlerRootView>
+    </AnalyticsProviderComponent>
   );
 }

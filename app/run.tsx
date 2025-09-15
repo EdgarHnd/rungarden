@@ -3,11 +3,14 @@ import { api } from '@/convex/_generated/api';
 
 import { RunSummary, useRunTracker } from '@/hooks/useRunTracker';
 import { useAnalytics } from '@/provider/AnalyticsProvider';
+import { useSyncProvider } from '@/provider/SyncProvider';
 import { FontAwesome5 } from '@expo/vector-icons';
 import { useMutation, useQuery } from 'convex/react';
 import * as Haptics from 'expo-haptics';
+import { LinearGradient } from 'expo-linear-gradient';
 import { router, useNavigation } from 'expo-router';
 
+import { formatDistanceValue, formatPace, getDistanceUnit } from '@/utils/formatters';
 import React, { useState } from 'react';
 import { Alert, Modal, Pressable, SafeAreaView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 
@@ -64,19 +67,22 @@ const styles = StyleSheet.create({
   },
 
   startButton: {
-    backgroundColor: Theme.colors.accent.primary,
-    borderWidth: 5,
-    borderColor: Theme.colors.accent.secondary,
-    borderRadius: Theme.borderRadius.full,
-    alignItems: 'center',
     width: 120,
     height: 120,
+    borderRadius: 60,
+    overflow: 'hidden',
+  },
+  startButtonGradient: {
+    width: '100%',
+    height: '100%',
     justifyContent: 'center',
+    alignItems: 'center',
   },
   startButtonText: {
     fontSize: 22,
     fontFamily: Theme.fonts.bold,
-    color: Theme.colors.text.primary,
+    color: '#FFFFFF',
+    textTransform: 'uppercase',
   },
   header: {
     flexDirection: 'row',
@@ -372,11 +378,13 @@ const styles = StyleSheet.create({
     width: 120,
     height: 120,
     borderRadius: 60,
-    backgroundColor: Theme.colors.accent.primary,
-    borderWidth: 5,
-    borderColor: Theme.colors.accent.secondary,
-    justifyContent: 'center',
+    overflow: 'hidden',
     marginHorizontal: Theme.spacing.xxl,
+  },
+  centralPauseButtonGradient: {
+    width: '100%',
+    height: '100%',
+    justifyContent: 'center',
     alignItems: 'center',
   },
   finishButtonContainer: {
@@ -413,6 +421,7 @@ const styles = StyleSheet.create({
 
 export default function RunRecordingScreen() {
   const analytics = useAnalytics();
+  const { triggerCelebrationCheck } = useSyncProvider();
   const profile = useQuery(api.userProfile.getOrCreateProfile);
   const isMetric = (profile?.metricSystem ?? 'metric') === 'metric';
 
@@ -432,7 +441,7 @@ export default function RunRecordingScreen() {
     reset,
   } = useRunTracker();
 
-  const recordRun = useMutation(api.activities.recordManualRun);
+  const recordRun = useMutation(api.activities.syncActivitiesFromHealthKit);
   const [saving, setSaving] = useState(false);
   const [finishedSummary, setFinishedSummary] = useState<RunSummary | null>(null);
 
@@ -464,12 +473,6 @@ export default function RunRecordingScreen() {
   const paceConverted = isMetric ? paceRaw : paceRaw / 0.621371; // min per mile
   const speedRaw = distance >= 10 && elapsed > 0 ? distKm / (elapsed / 3600) : 0; // km/h
   const speedConverted = isMetric ? speedRaw : speedRaw * 0.621371; // mph
-  const formatPace = (val: number) => {
-    if (val === 0 || !isFinite(val)) return '--:--';
-    const minutes = Math.floor(val);
-    const seconds = Math.round((val - minutes) * 60);
-    return `${minutes}:${seconds < 10 ? '0' : ''}${seconds}`;
-  };
 
   const handleStart = async () => {
     analytics.track({
@@ -515,13 +518,25 @@ export default function RunRecordingScreen() {
         }
       });
 
-      const activityId = await recordRun({
-        startDate: finishedSummary.startDate,
-        endDate: finishedSummary.endDate,
-        duration: Math.round(finishedSummary.durationSec / 60),
-        distance: finishedSummary.distanceMeters,
-        polyline: JSON.stringify(finishedSummary.polyline),
+      const result = await recordRun({
+        activities: [{
+          healthKitUuid: `manual-${Date.now()}`,
+          startDate: finishedSummary.startDate,
+          endDate: finishedSummary.endDate,
+          duration: Math.round(finishedSummary.durationSec / 60),
+          distance: finishedSummary.distanceMeters,
+          calories: Math.round(finishedSummary.distanceMeters * 0.06), // Rough estimate
+          workoutName: 'Manual Run',
+        }],
+        initialSync: false,
       });
+      const activityId = result.newRuns[0]?._id;
+
+      // Trigger celebration check after successful run save
+      setTimeout(() => {
+        triggerCelebrationCheck();
+      }, 1000); // Small delay to ensure database operations complete
+
       setFinishedSummary(null);
       router.replace(`/activity-detail?id=${activityId}`);
     } catch (err) {
@@ -668,8 +683,16 @@ export default function RunRecordingScreen() {
                 Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
                 handleStart();
               } : undefined}
+              activeOpacity={0.8}
             >
-              <Text style={styles.startButtonText}>START</Text>
+              <LinearGradient
+                colors={['#4FA1FF', '#2B27FF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.startButtonGradient}
+              >
+                <Text style={styles.startButtonText}>START</Text>
+              </LinearGradient>
             </TouchableOpacity>
           </View>
         ) : (
@@ -700,10 +723,18 @@ export default function RunRecordingScreen() {
                   pause();
                 }
               }}
+              activeOpacity={0.8}
             >
-              <Text style={styles.startButtonText}>
-                {isPaused ? 'RESUME' : 'PAUSE'}
-              </Text>
+              <LinearGradient
+                colors={['#4FA1FF', '#2B27FF']}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 0, y: 1 }}
+                style={styles.centralPauseButtonGradient}
+              >
+                <Text style={styles.startButtonText}>
+                  {isPaused ? 'RESUME' : 'PAUSE'}
+                </Text>
+              </LinearGradient>
             </TouchableOpacity>
 
             {/* Finish Button */}
@@ -737,8 +768,8 @@ export default function RunRecordingScreen() {
                 <View style={styles.modalMetricsRow}>
                   <View style={styles.metricBox}>
                     <Text style={styles.metricLabel}>DISTANCE</Text>
-                    <Text style={styles.metricValue}>{isMetric ? (finishedSummary!.distanceMeters / 1000).toFixed(2) : ((finishedSummary!.distanceMeters / 1000) * 0.621371).toFixed(2)}</Text>
-                    <Text style={styles.metricUnit}>{isMetric ? 'KM' : 'MI'}</Text>
+                    <Text style={styles.metricValue}>{formatDistanceValue(finishedSummary!.distanceMeters, isMetric ? 'metric' : 'imperial')}</Text>
+                    <Text style={styles.metricUnit}>{getDistanceUnit(isMetric ? 'metric' : 'imperial').toUpperCase()}</Text>
                   </View>
                   <View style={styles.metricBox}>
                     <Text style={styles.metricLabel}>TIME</Text>
@@ -746,13 +777,7 @@ export default function RunRecordingScreen() {
                   </View>
                   <View style={styles.metricBox}>
                     <Text style={styles.metricLabel}>PACE</Text>
-                    <Text style={styles.metricValue}>{
-                      (() => {
-                        const raw = (finishedSummary!.durationSec / 60) / (finishedSummary!.distanceMeters / 1000);
-                        const val = isMetric ? raw : raw / 0.621371;
-                        return `${formatPace(val)} /${isMetric ? 'km' : 'mi'}`;
-                      })()
-                    }</Text>
+                    <Text style={styles.metricValue}>{formatPace(finishedSummary!.durationSec / 60, finishedSummary!.distanceMeters, isMetric ? 'metric' : 'imperial')}</Text>
                   </View>
                 </View>
                 <View style={styles.modalButtonsRow}>

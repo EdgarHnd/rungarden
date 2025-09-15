@@ -1,3 +1,4 @@
+import Theme from '@/constants/theme';
 import { api } from '@/convex/_generated/api';
 import { formatDistance, formatDuration } from '@/utils/formatters';
 import { useQuery } from 'convex/react';
@@ -7,7 +8,7 @@ import {
   StyleSheet,
   Text,
   TouchableOpacity,
-  View,
+  View
 } from 'react-native';
 
 interface ActivityCardProps {
@@ -15,17 +16,7 @@ interface ActivityCardProps {
   handleActivityPress: (activity: any) => void;
 }
 
-// Helper function to get image source from path
-const getImageSource = (imagePath: string) => {
-  // Map image paths to actual require statements
-  const imageMap: { [key: string]: any } = {
-    'assets/images/plants/01.png': require('../assets/images/plants/01.png'),
-    'assets/images/plants/carrot.png': require('../assets/images/plants/carrot.png'),
-    'assets/images/plants/sakura.png': require('../assets/images/plants/sakura.png'),
-  };
-
-  return imageMap[imagePath] || null;
-};
+import { getImageSource } from '@/utils/plantImageMapping';
 
 export const ActivityCard = ({
   activity,
@@ -46,122 +37,87 @@ export const ActivityCard = ({
       activeOpacity={0.8}
     >
       <View style={styles.cardContent}>
-        {/* Left side - Date and Plant */}
-        <View style={styles.leftSection}>
-          <Text style={styles.dayOfWeek}>
-            {new Date(activity.startDate).toLocaleDateString('en-US', { weekday: 'long' })}
-          </Text>
-          <Text style={styles.runDate}>
-            {new Date(activity.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-          </Text>
-
-          {/* Plant Illustration */}
-          <View style={styles.plantContainer}>
-            {(() => {
-              const imagePath = activityPlant?.plantType?.imagePath;
-              const imageSource = imagePath ? getImageSource(imagePath) : null;
-
-              if (imageSource) {
-                return (
-                  <Image
-                    source={imageSource}
-                    style={styles.plantImage}
-                    resizeMode="contain"
-                  />
-                );
-              } else {
-                return (
-                  <Text style={styles.plantEmoji}>
-                    {activityPlant?.plantType?.emoji || '🌱'}
-                  </Text>
-                );
-              }
-            })()}
+        {/* Top Row - Date and Duration */}
+        <View style={styles.topRow}>
+          <View style={styles.dateContainer}>
+            <Text style={styles.dayOfWeek}>
+              {new Date(activity.startDate).toLocaleDateString('en-US', { weekday: 'long' })}
+            </Text>
+            <Text style={styles.runDate}>
+              {new Date(activity.startDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+            </Text>
           </View>
+          <Text style={styles.durationText}>
+            {formatDuration(activity.duration)}
+          </Text>
         </View>
 
-        {/* Right side - Stats */}
-        <View style={styles.rightSection}>
+        {/* Bottom Row - Plant and Distance */}
+        <View style={styles.bottomRow}>
+          <Image
+            source={getImageSource(activityPlant?.plantType?.imagePath, activityPlant?.plantType?.distanceRequired)}
+            style={styles.plantImage}
+            resizeMode="contain"
+          />
           <Text style={styles.distanceText}>
-            DISTANCE {formatDistance(activity.distance, metricSystem)}
-          </Text>
-          <Text style={styles.paceText}>
-            PACE {activity.duration > 0 ? Math.round((activity.duration / 60) / (activity.distance / 1000)) : 0}:{String(Math.round(((activity.duration / 60) / (activity.distance / 1000) % 1) * 60)).padStart(2, '0')} /km
-          </Text>
-          <Text style={styles.durationText}>
-            DURATION {formatDuration(activity.duration)}
+            {formatDistance(activity.distance, metricSystem)}
           </Text>
         </View>
       </View>
-    </TouchableOpacity>
+    </TouchableOpacity >
   );
 };
 
 const styles = StyleSheet.create({
   activityCard: {
-    backgroundColor: '#F5F5F5',
-    borderRadius: 20,
+    backgroundColor: "white",
+    borderRadius: Theme.borderRadius.xl,
     borderWidth: 3,
-    borderColor: '#000000',
-    marginVertical: 8,
+    borderColor: Theme.colors.text.primary,
+    marginVertical: Theme.spacing.xs,
   },
   cardContent: {
+    flexDirection: 'column',
+    padding: Theme.spacing.lg,
+  },
+  topRow: {
     flexDirection: 'row',
-    padding: 20,
+    justifyContent: 'space-between',
     alignItems: 'center',
+    marginBottom: Theme.spacing.md,
   },
-  leftSection: {
-    flex: 1,
-    alignItems: 'flex-start',
-  },
-  rightSection: {
-    flex: 2,
+  bottomRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
     alignItems: 'flex-end',
-    paddingLeft: 20,
   },
   dayOfWeek: {
-    fontSize: 20,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
-    marginBottom: 4,
+    fontSize: 16,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
+  },
+  dateContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Theme.spacing.sm,
   },
   runDate: {
-    fontSize: 14,
-    fontFamily: 'SF-Pro-Rounded-Regular',
-    color: '#666666',
-    marginBottom: 16,
-  },
-  plantContainer: {
-    alignItems: 'center',
-  },
-  plantEmoji: {
-    fontSize: 48,
-  },
-  plantImage: {
-    width: 48,
-    height: 48,
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
   },
   distanceText: {
-    fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
-    marginBottom: 6,
-    letterSpacing: 1,
-    textAlign: 'right',
+    fontSize: 24,
+    fontFamily: Theme.fonts.bold,
+    color: Theme.colors.text.primary,
   },
-  paceText: {
-    fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
-    marginBottom: 6,
-    letterSpacing: 1,
-    textAlign: 'right',
+  plantImage: {
+    width: 80,
+    height: 80,
   },
   durationText: {
-    fontSize: 12,
-    fontFamily: 'SF-Pro-Rounded-Bold',
-    color: '#000000',
-    letterSpacing: 1,
-    textAlign: 'right',
+    fontSize: 16,
+    fontFamily: Theme.fonts.medium,
+    color: Theme.colors.text.secondary,
   },
 }); 

@@ -1,8 +1,7 @@
-import React, { useEffect } from 'react';
+import { Image } from 'expo-image';
+import React, { memo, useEffect } from 'react';
 import {
-  Image,
   StyleSheet,
-  Text,
   View
 } from 'react-native';
 import {
@@ -35,6 +34,7 @@ interface PlantInGarden {
     name: string;
     emoji: string;
     imagePath?: string;
+    distanceRequired?: number;
     growthStages: Array<{ stage: number; name: string; emoji: string }>;
     rarity: 'common' | 'uncommon' | 'rare' | 'epic' | 'legendary' | 'mythical';
     category?: string;
@@ -64,29 +64,10 @@ const getPlantEmoji = (plant: PlantInGarden) => {
   return '🌱';
 };
 
-// Helper function to get the correct plant image path
-const getPlantImagePath = (plant: PlantInGarden) => {
-  // Check if plant type has an image
-  if (plant.plantType?.imagePath) {
-    return plant.plantType.imagePath;
-  }
 
-  return null;
-};
+import { getImageSource } from '../utils/plantImageMapping';
 
-// Helper function to get image source from path
-const getImageSource = (imagePath: string) => {
-  // Map image paths to actual require statements
-  const imageMap: { [key: string]: any } = {
-    'assets/images/plants/01.png': require('../assets/images/plants/01.png'),
-    'assets/images/plants/carrot.png': require('../assets/images/plants/carrot.png'),
-    'assets/images/plants/sakura.png': require('../assets/images/plants/sakura.png'),
-  };
-
-  return imageMap[imagePath] || null;
-};
-
-export default function DraggablePlant({
+const DraggablePlant = memo(function DraggablePlant({
   plant,
   onGridPositionChange,
   onPlantTap,
@@ -96,11 +77,13 @@ export default function DraggablePlant({
 }: DraggablePlantProps) {
   // Base plant size
   const baseSize = 18;
+  const HIGH_RES_IMAGE_PX = 100;
+  const DISPLAYED_SIZE_PX = 32;
+  const initialScale = DISPLAYED_SIZE_PX / HIGH_RES_IMAGE_PX;
 
   // Animation shared values
   const scale = useSharedValue(shouldAnimate ? 0 : 1);
   const opacity = useSharedValue(shouldAnimate ? 0 : 1);
-  const rotation = useSharedValue(0);
   const translateY = useSharedValue(shouldAnimate ? 20 : 0);
   const scaleX = useSharedValue(shouldAnimate ? 0.8 : 1);
   const scaleY = useSharedValue(shouldAnimate ? 1.2 : 1);
@@ -156,30 +139,23 @@ export default function DraggablePlant({
           })
         );
 
-        // Fourth phase: Gentle celebration sway
-        rotation.value = withSequence(
-          withDelay(500, withTiming(8, { duration: 250 })),
-          withTiming(-5, { duration: 400 }),
-          withTiming(2, { duration: 300 }),
-          withTiming(0, { duration: 250 })
-        );
       };
 
       // Apply delay for chained animation effect
       const timeoutId = setTimeout(startAnimation, animationDelay);
       return () => clearTimeout(timeoutId);
     }
-  }, [shouldAnimate, animationDelay, scale, opacity, rotation, translateY, scaleX, scaleY]);
+  }, [shouldAnimate, animationDelay, scale, opacity, translateY, scaleX, scaleY]);
 
   // Animated styles
   const animatedStyle = useAnimatedStyle(() => {
     return {
       transform: [
-        { scale: scale.value },
+        // Apply a high-res downscale so zooming stays crisp
+        { scale: scale.value * initialScale },
         { scaleX: scaleX.value },
         { scaleY: scaleY.value },
         { translateY: translateY.value },
-        { rotate: `${rotation.value}deg` },
       ],
       opacity: opacity.value,
     };
@@ -218,39 +194,37 @@ export default function DraggablePlant({
         <Animated.View style={[styles.plantTouchArea, animatedStyle]}>
           <View style={styles.plantImageContainer}>
 
-            {/* Plant emoji or image */}
-            {(() => {
-              const imagePath = getPlantImagePath(plant);
-              const imageSource = imagePath ? getImageSource(imagePath) : null;
-
-              if (imageSource) {
-                return (
-                  <Image
-                    source={imageSource}
-                    style={[
-                      styles.plantImage,
-                      plant.isWilted === true && styles.wiltedPlant,
-                    ]}
-                    resizeMode="contain"
-                  />
-                );
-              } else {
-                return (
-                  <Text style={[
-                    styles.plantEmoji,
-                    plant.isWilted === true && styles.wiltedPlant,
-                  ]}>
-                    {getPlantEmoji(plant)}
-                  </Text>
-                );
-              }
-            })()}
+            {/* Plant image */}
+            <Image
+              source={getImageSource(plant.plantType?.imagePath, plant.plantType?.distanceRequired)}
+              style={[
+                styles.plantImage,
+                plant.isWilted === true && styles.wiltedPlant,
+              ]}
+              contentFit="contain"
+              transition={0}
+              cachePolicy="memory-disk"
+              priority="high"
+              recyclingKey={plant._id}
+            />
           </View>
         </Animated.View>
       </TapGestureHandler>
     </View>
   );
-}
+}, (prevProps, nextProps) => {
+  // Custom comparison for better performance
+  return (
+    prevProps.plant._id === nextProps.plant._id &&
+    prevProps.plant.gridPosition?.row === nextProps.plant.gridPosition?.row &&
+    prevProps.plant.gridPosition?.col === nextProps.plant.gridPosition?.col &&
+    prevProps.plant.isWilted === nextProps.plant.isWilted &&
+    prevProps.shouldAnimate === nextProps.shouldAnimate &&
+    prevProps.animationDelay === nextProps.animationDelay
+  );
+});
+
+export default DraggablePlant;
 
 const styles = StyleSheet.create({
   plantContainer: {
@@ -273,8 +247,9 @@ const styles = StyleSheet.create({
     textAlign: 'center',
   },
   plantImage: {
-    width: 32,
-    height: 32,
+    // Render at high resolution and scale down via transform for crisp zooming
+    width: 80,
+    height: 80,
   },
   wiltedPlant: {
     opacity: 0.6,

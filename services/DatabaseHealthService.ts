@@ -74,10 +74,15 @@ class DatabaseHealthService {
       if (currentYearActivities.length === 0) {
         // Mark initial sync as completed even if no activities
         if (initialSync) {
-          await this.convexClient.mutation(api.userProfile.updateProfile, {
-            healthKitInitialSyncCompleted: true,
-          });
-          console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed (no activities)');
+          try {
+            await this.convexClient.mutation(api.userProfile.updateProfile, {
+              healthKitInitialSyncCompleted: true,
+            });
+            console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed (no activities)');
+          } catch (profileError) {
+            console.warn('[DatabaseHealthService] Failed to mark initial sync completed (auth issue):', profileError);
+            // Don't throw - we can still return a successful result
+          }
         }
         
         return {
@@ -113,10 +118,15 @@ class DatabaseHealthService {
 
       // Mark initial sync as completed (only if we actually had activities to sync)
       if (initialSync && syncResult.created > 0) {
-        await this.convexClient.mutation(api.userProfile.updateProfile, {
-          healthKitInitialSyncCompleted: true,
-        });
-        console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed (with activities)');
+        try {
+          await this.convexClient.mutation(api.userProfile.updateProfile, {
+            healthKitInitialSyncCompleted: true,
+          });
+          console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed (with activities)');
+        } catch (profileError) {
+          console.warn('[DatabaseHealthService] Failed to mark initial sync completed (auth issue), but sync was successful:', profileError);
+          // Don't throw - the sync itself was successful, just the profile update failed
+        }
       }
 
       console.log(`[DatabaseHealthService] Initial sync completed:`, syncResult);
@@ -195,10 +205,16 @@ class DatabaseHealthService {
 
       // Mark initial sync as completed if this was initial sync
       if (initialSync) {
-        await this.convexClient.mutation(api.userProfile.updateProfile, {
-          healthKitInitialSyncCompleted: true,
-        });
-        console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed');
+        try {
+          await this.convexClient.mutation(api.userProfile.updateProfile, {
+            healthKitInitialSyncCompleted: true,
+          });
+          console.log('[DatabaseHealthService] Marked HealthKit initial sync as completed');
+        } catch (profileError) {
+          console.warn('[DatabaseHealthService] Failed to mark initial sync completed (auth issue), but sync was successful:', profileError);
+          // Don't throw - the sync itself was successful, just the profile update failed
+          // This can happen due to timing issues with authentication
+        }
       }
 
       console.log('[DatabaseHealthService] Sync completed:', syncResult);
@@ -221,7 +237,7 @@ class DatabaseHealthService {
   }
 
   /**
-   * Enable auto-sync by subscribing to HealthKit changes
+   * Enable auto-sync by subscribing to HealthKit changes and enabling background delivery
    */
   async enableAutoSync(): Promise<boolean> {
     try {
@@ -234,11 +250,15 @@ class DatabaseHealthService {
         return false;
       }
 
-      // For now, let's try a simpler approach - just log that auto-sync is enabled
-      // The background subscription might not work properly with the new HealthKit library
-      console.log('[DatabaseHealthService] Auto-sync enabled - will sync when app becomes active');
+      // Enable background delivery for HealthKit data
+      const backgroundDeliveryEnabled = await HealthService.enableBackgroundDelivery();
+      if (backgroundDeliveryEnabled) {
+        console.log('[DatabaseHealthService] Background delivery enabled successfully');
+      } else {
+        console.warn('[DatabaseHealthService] Background delivery could not be enabled, but continuing with auto-sync');
+      }
       
-      // Try to set up background subscription, but don't fail if it doesn't work
+      // Set up background subscription for real-time updates
       try {
         this.backgroundSubscription = HealthService.subscribeToWorkoutChanges(async () => {
           console.log('[DatabaseHealthService] Auto-sync triggered by HealthKit change');
@@ -268,6 +288,7 @@ class DatabaseHealthService {
         console.warn('[DatabaseHealthService] Background subscription failed, but auto-sync is still enabled:', subscriptionError);
       }
 
+      console.log('[DatabaseHealthService] Auto-sync enabled - will sync via background delivery and app state changes');
       return true;
     } catch (error) {
       console.error('[DatabaseHealthService] Error enabling auto-sync:', error);
@@ -278,13 +299,23 @@ class DatabaseHealthService {
   /**
    * Disable auto-sync
    */
-  disableAutoSync(): void {
+  async disableAutoSync(): Promise<void> {
+    console.log('[DatabaseHealthService] Disabling auto-sync...');
+    
+    // Disable background subscription
     if (this.backgroundSubscription) {
-      console.log('[DatabaseHealthService] Disabling auto-sync...');
       if (typeof this.backgroundSubscription === 'function') {
         this.backgroundSubscription();
       }
       this.backgroundSubscription = null;
+    }
+    
+    // Disable background delivery
+    try {
+      await HealthService.disableBackgroundDelivery();
+      console.log('[DatabaseHealthService] Background delivery disabled');
+    } catch (error) {
+      console.warn('[DatabaseHealthService] Error disabling background delivery:', error);
     }
   }
 

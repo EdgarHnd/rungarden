@@ -15,6 +15,10 @@ const schema = defineSchema({
     phoneNumber: v.optional(v.string()),
     region: v.optional(v.string()),
 
+    // Personal information from onboarding
+    gender: v.optional(v.union(v.literal("female"), v.literal("male"), v.literal("other"))),
+    age: v.optional(v.number()),
+
     totalDistance: v.number(),       // metres
     totalWorkouts: v.number(),
     totalCalories: v.number(),
@@ -22,6 +26,10 @@ const schema = defineSchema({
     // Basic preferences
     metricSystem: v.optional(v.union(v.literal("metric"), v.literal("imperial"))),
     weekStartDay: v.optional(v.union(v.literal(0), v.literal(1))), // 0 = Sunday, 1 = Monday
+    
+    // Training preferences from onboarding
+    daysPerWeek: v.optional(v.number()), // How many days per week they want to train
+    preferredDays: v.optional(v.array(v.string())), // Array of preferred training days
     
     // Garden preferences
     gardenTheme: v.optional(v.string()), // Future: different garden themes
