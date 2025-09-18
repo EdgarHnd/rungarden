@@ -72,7 +72,7 @@ const styles = StyleSheet.create({
   activityCard: {
     backgroundColor: "white",
     borderRadius: Theme.borderRadius.xl,
-    borderWidth: 3,
+    //borderWidth: 3,
     borderColor: Theme.colors.text.primary,
     marginVertical: Theme.spacing.xs,
   },

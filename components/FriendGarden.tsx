@@ -154,7 +154,7 @@ const styles = StyleSheet.create({
     borderRadius: 12,
     position: 'relative',
     overflow: 'hidden',
-    borderWidth: 3,
+    //  borderWidth: 3,
     borderColor: Theme.colors.text.primary,
   },
   plantContainer: {

@@ -552,8 +552,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
     padding: 24,
     alignItems: 'center',
-    borderWidth: 3,
-    borderColor: Theme.colors.text.primary,
   },
   lastRunHeader: {
     flexDirection: 'row',
